@@ -1,0 +1,65 @@
+/**
+ * EDUSPARK-INPUT-SURFACE-IDENTITY-1.0
+ * Global visual identity for every editable field (light / morning theme).
+ *
+ * Page → Card → Input (three layers). Dark mode unchanged.
+ */
+
+[data-theme='morning'] .v-field--variant-outlined .v-field__field,
+[data-theme='morning'] .v-field--variant-filled .v-field__field,
+[data-theme='morning'] .v-field--variant-solo .v-field__field {
+  background-color: var(--em-input-bg) !important;
+  background-image: none !important;
+  box-shadow: var(--em-input-inset-shadow) !important;
+  color: var(--em-text);
+  transition: var(--em-input-shell-transition) !important;
+}
+
+[data-theme='morning'] .v-field--variant-outlined .v-field__outline {
+  --v-field-border-opacity: 1 !important;
+  --v-field-border-width: var(--em-input-border-width) !important;
+  color: var(--em-input-border) !important;
+  opacity: 1 !important;
+  transition: var(--em-input-shell-transition) !important;
+}
+
+[data-theme='morning'] .v-field--variant-outlined:hover .v-field__outline {
+  color: var(--em-input-border-hover) !important;
+}
+
+[data-theme='morning'] .v-field--variant-outlined.v-field--focused .v-field__outline,
+[data-theme='morning'] .v-field--focused .v-field__outline {
+  --v-field-border-opacity: 1 !important;
+  color: var(--em-input-border-focus) !important;
+}
+
+[data-theme='morning'] .v-field--focused .v-field__field {
+  background-color: var(--em-input-bg) !important;
+  box-shadow: var(--em-input-inset-shadow) !important;
+}
+
+[data-theme='morning'] .v-field--variant-outlined.v-field--focused,
+[data-theme='morning'] .v-field--focused {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Textarea — same shell, no white bleed-through */
+[data-theme='morning'] textarea.v-field__input {
+  background-color: transparent !important;
+}
+
+/* em-select and legacy wrappers */
+[data-theme='morning'] .em-select .v-field {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[data-theme='morning'] .em-select .v-field--focused {
+  box-shadow: none !important;
+}
+
+[data-theme='morning'] .em-select .v-field--variant-outlined .v-field__field {
+  background-color: var(--em-input-bg) !important;
+  box-shadow: var(--em-input-inset-shadow) !important;
+}

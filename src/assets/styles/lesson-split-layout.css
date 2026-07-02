@@ -1,0 +1,114 @@
+/**
+ * UI-4.5 — Split Teacher Layout
+ */
+
+.lesson-session-layout--split {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'content'
+    'assistant'
+    'quiz';
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.lesson-session-layout__content {
+  grid-area: content;
+  min-width: 0;
+}
+
+.lesson-session-layout__assistant {
+  grid-area: assistant;
+  min-width: 0;
+}
+
+.lesson-session-layout__quiz {
+  grid-area: quiz;
+  min-width: 0;
+  scroll-margin-top: 88px;
+}
+
+.lesson-assistant-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: min(420px, 50vh);
+}
+
+.lesson-assistant-panel__teacher {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lesson-assistant-panel__name {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  line-height: 1.3;
+}
+
+.lesson-assistant-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lesson-assistant-panel__chat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lesson-quiz-section {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lesson-quiz-section__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (min-width: 1280px) {
+  .lesson-session-layout--split {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 32%);
+    grid-template-areas:
+      'content assistant'
+      'quiz quiz';
+    gap: 1rem 1.25rem;
+  }
+
+  .lesson-session-layout__assistant {
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 96px);
+    align-self: start;
+  }
+
+  .lesson-assistant-panel {
+    max-height: calc(100vh - 96px);
+    min-height: min(560px, calc(100vh - 120px));
+  }
+
+  .lesson-learn-flow__section--teacher {
+    display: none;
+  }
+}
+
+@media (max-width: 1279px) {
+  .lesson-quiz-section__title {
+    margin-bottom: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-session-layout__assistant {
+    position: static;
+    max-height: none;
+  }
+}

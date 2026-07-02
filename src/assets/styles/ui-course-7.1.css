@@ -1,0 +1,294 @@
+/**
+ * COURSE-7.1 — Current lesson focus & learning path hierarchy
+ */
+
+.course-experience {
+  gap: var(--em-space-md);
+}
+
+/* ——— Hero: teacher context, not the main action ——— */
+.course-hero__avatar :deep(.teacher-avatar),
+.course-hero__avatar {
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+}
+
+.course-hero__teacher {
+  font-family: var(--font-display);
+  font-size: clamp(1.125rem, 2.5vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.course-hero__welcome {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  max-width: 42ch;
+}
+
+.course-hero__lead {
+  align-items: center !important;
+}
+
+/* ——— Current lesson: primary focus ——— */
+.course-current-lesson {
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  box-shadow: var(--em-shadow-sm);
+  overflow: hidden;
+}
+
+.course-current-lesson__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.course-current-lesson__lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.course-current-lesson__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.16);
+}
+
+.course-current-lesson__eyebrow {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--em-primary-deep);
+  line-height: 1.3;
+}
+
+.course-current-lesson__title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 3vw, 1.45rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  color: var(--em-text);
+}
+
+.course-current-lesson__meta {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--em-text-muted);
+}
+
+.course-current-lesson__sep {
+  margin-inline: 4px;
+  opacity: 0.5;
+}
+
+.course-current-lesson__actions {
+  display: flex;
+  align-items: center;
+}
+
+.course-current-lesson__cta {
+  min-width: 168px;
+  max-width: 100%;
+  width: fit-content;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.course-current-lesson--empty .course-current-lesson__title {
+  font-size: 1rem;
+}
+
+/* ——— Journey: denser path ——— */
+.course-journey {
+  padding: 0;
+}
+
+.course-journey__head {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+  margin-bottom: 10px;
+}
+
+.course-journey__list {
+  gap: 2px;
+}
+
+.course-journey__item {
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.5rem;
+}
+
+.course-journey__rail {
+  padding-top: 0.55rem;
+}
+
+.course-journey__dot {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.course-journey__line {
+  min-height: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.course-journey__card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 0.2rem;
+  padding: 10px 12px;
+  min-height: 48px;
+  border-radius: 10px;
+}
+
+.course-journey__card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: start;
+}
+
+.course-journey__lesson-num {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--em-text-helper);
+  line-height: 1.2;
+}
+
+.course-journey__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--em-text);
+}
+
+.course-journey__status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+/* State hierarchy */
+.course-journey__item--current .course-journey__card {
+  border-color: rgba(99, 102, 241, 0.28);
+  background: var(--em-card-l2);
+  box-shadow: var(--em-shadow-sm);
+}
+
+.course-journey__item--current .course-journey__title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--em-text);
+}
+
+.course-journey__item--current .course-journey__lesson-num {
+  color: var(--em-primary-deep);
+}
+
+.course-journey__item--current .course-journey__status {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--em-primary-deep);
+}
+
+.course-journey__item--current .course-journey__dot {
+  transform: none;
+  box-shadow: none;
+}
+
+.course-journey__item--upcoming .course-journey__card {
+  opacity: 0.92;
+}
+
+.course-journey__item--upcoming .course-journey__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--em-text-muted);
+}
+
+.course-journey__item--upcoming .course-journey__status {
+  background: var(--em-surface-control);
+  color: var(--em-text-helper);
+}
+
+.course-journey__item--completed .course-journey__card {
+  opacity: 0.78;
+}
+
+.course-journey__item--completed .course-journey__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--em-text-helper);
+}
+
+.course-journey__item--completed .course-journey__status {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--em-success-deep, #059669);
+}
+
+.course-journey__item--locked .course-journey__card {
+  opacity: 0.5;
+}
+
+.course-journey__item--locked .course-journey__status {
+  background: var(--em-surface-control);
+  color: var(--em-text-subtle);
+}
+
+/* Skip duplicate emphasis: current lesson highlighted in dedicated block */
+.course-journey__item--current .course-journey__card {
+  border-style: dashed;
+  border-width: 1px;
+}
+
+@media (min-width: 600px) {
+  .course-current-lesson__inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .course-current-lesson__lead {
+    flex: 1;
+  }
+
+  .course-current-lesson__actions {
+    flex-shrink: 0;
+  }
+}
+
+[data-theme='morning'] .course-current-lesson {
+  background: linear-gradient(180deg, var(--em-card-l3) 0%, var(--em-card-l1) 100%);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+[data-theme='morning'] .course-current-lesson__icon {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.14);
+}

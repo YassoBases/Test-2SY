@@ -1,0 +1,52 @@
+/**
+ * UI-3.2 — Language Home (Mission First)
+ */
+
+.language-home__hero-block {
+  animation: lang-home-in var(--em-duration-slow) var(--em-ease-spring) both;
+}
+
+.language-home__below {
+  animation: lang-home-in var(--em-duration-slow) var(--em-ease-spring) 120ms both;
+}
+
+@keyframes lang-home-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.language-home__footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--em-border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  font-size: var(--em-text-caption);
+  color: var(--em-text-muted);
+}
+
+.language-home__footer a,
+.language-home__footer-link {
+  color: var(--em-cyan);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.language-home__footer-link:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .language-home__hero-block,
+  .language-home__below {
+    animation: none;
+  }
+}

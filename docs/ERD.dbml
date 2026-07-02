@@ -1,0 +1,655 @@
+// EduSpark — Entity Relationship Diagram (DBML)
+// Source: backend/app/models/*.py + Alembic 0001–0007
+// Generated: 2026-06-01
+
+Project EduSpark {
+  database_type: 'PostgreSQL'
+  Note: '''
+    ORM: SQLAlchemy 2.x (app.models)
+    Migrations: alembic/versions (head: 0007_subscription_lifecycle)
+    All users (student, teacher, parent) share the users table; role via users.role + optional user_roles.
+  '''
+}
+
+// =============================================================================
+// Authentication
+// =============================================================================
+
+Table users {
+  id integer [pk, increment]
+  email varchar(255) [unique, not null]
+  name varchar(255) [not null]
+  hashed_password varchar(255) [not null]
+  role varchar [not null, note: 'enum: teacher|student|parent']
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Central identity; FK target for most domain tables.'
+}
+
+Table auth_sessions {
+  id integer [pk, increment]
+  user_id integer [not null, ref: > users.id]
+  refresh_token_hash varchar(255) [unique, not null]
+  device_name varchar(120)
+  device_type varchar(32)
+  ip_address varchar(64)
+  user_agent text
+  last_seen_at timestamptz
+  expires_at timestamptz [not null]
+  revoked_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table roles {
+  id integer [pk, increment]
+  slug varchar(32) [unique, not null]
+  name_ar varchar(120) [not null]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Extended roles e.g. admin via slug; complements users.role.'
+}
+
+Table user_roles {
+  id integer [pk, increment]
+  user_id integer [not null, ref: > users.id]
+  role_id integer [not null, ref: > roles.id]
+  granted_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (user_id, role_id) [unique, name: 'uq_user_role']
+  }
+}
+
+Table audit_logs {
+  id integer [pk, increment]
+  actor_user_id integer [ref: > users.id]
+  entity_type varchar(64) [not null]
+  entity_id integer
+  action varchar(64) [not null]
+  old_values jsonb
+  new_values jsonb
+  ip_address varchar(64)
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// =============================================================================
+// Teachers (catalog)
+// =============================================================================
+
+Table teacher_profiles {
+  id integer [pk, increment]
+  user_id integer [unique, not null, ref: - users.id]
+  full_name varchar(255) [not null]
+  image_url varchar(1024)
+  bio text
+  rating float [not null, default: 4.8]
+  student_count integer [not null, default: 0]
+  active boolean [not null, default: true]
+  setup_completed_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table teacher_voice_samples {
+  id integer [pk, increment]
+  teacher_profile_id integer [not null, ref: > teacher_profiles.id]
+  storage_path varchar(1024) [not null]
+  duration_seconds float [not null, default: 0]
+  uploaded_at timestamptz [not null, default: `now()`]
+  processing_status varchar(32) [not null]
+  error_message text
+  transcript text
+  persona_prompt text
+}
+
+Table teacher_profile_subjects {
+  id integer [pk, increment]
+  teacher_profile_id integer [not null, ref: > teacher_profiles.id]
+  subject_id integer [not null, ref: > subjects.id]
+
+  indexes {
+    (teacher_profile_id, subject_id) [unique, name: 'uq_teacher_subject']
+  }
+}
+
+Table teacher_profile_grades {
+  id integer [pk, increment]
+  teacher_profile_id integer [not null, ref: > teacher_profiles.id]
+  grade integer [not null]
+
+  indexes {
+    (teacher_profile_id, grade) [unique, name: 'uq_teacher_grade']
+  }
+}
+
+// =============================================================================
+// Courses (catalog)
+// =============================================================================
+
+Table subjects {
+  id integer [pk, increment]
+  name_ar varchar(120) [not null]
+  slug varchar(80) [not null]
+  grade integer [not null]
+  is_active boolean [not null, default: true]
+
+  indexes {
+    (grade, slug) [unique, name: 'uq_subject_grade_slug']
+  }
+}
+
+Table courses {
+  id integer [pk, increment]
+  title varchar(500) [not null]
+  description text
+  is_published boolean [not null, default: true]
+  subject_id integer [not null, ref: > subjects.id]
+  teacher_profile_id integer [not null, ref: > teacher_profiles.id]
+  grade integer [not null]
+  price float [not null, default: 0]
+  currency varchar(10) [not null, default: 'SYP']
+  thumbnail_url varchar(1024)
+  banner_url varchar(1024)
+  is_active boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// =============================================================================
+// Students (profiles & onboarding)
+// =============================================================================
+
+Table student_profiles {
+  id integer [pk, increment]
+  user_id integer [unique, not null, ref: - users.id]
+  interests_json text [not null, default: '[]']
+  difficulty varchar(50) [not null, default: 'medium']
+  grade integer
+  onboarding_step varchar [not null, note: 'enum onboarding step']
+  onboarding_completed_at timestamptz
+  payment_completed_at timestamptz
+  parent_link_code varchar(16) [unique, note: '0006_parent_link_code']
+  updated_at timestamptz [not null]
+}
+
+Table student_subject_choices {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  subject_id integer [not null, ref: > subjects.id]
+
+  indexes {
+    (student_id, subject_id) [unique, name: 'uq_student_subject']
+  }
+}
+
+Table student_teacher_choices {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  subject_id integer [not null, ref: > subjects.id]
+  teacher_profile_id integer [not null, ref: > teacher_profiles.id]
+
+  indexes {
+    (student_id, subject_id) [unique, name: 'uq_student_teacher_subject']
+  }
+}
+
+// =============================================================================
+// Parents
+// =============================================================================
+
+Table parent_student_links {
+  id integer [pk, increment]
+  parent_id integer [not null, ref: > users.id]
+  student_id integer [not null, ref: > users.id]
+  relationship_label varchar(64) [not null, default: 'parent']
+  created_at timestamptz [not null, default: `now()`]
+  last_viewed_at timestamptz
+
+  indexes {
+    (parent_id, student_id) [unique, name: 'uq_parent_student']
+  }
+
+  Note: 'M2M between parent user and student user with link metadata.'
+}
+
+// =============================================================================
+// Payments & enrollment
+// =============================================================================
+
+Table student_course_access {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  course_id integer [not null, ref: > courses.id]
+  payment_status varchar [not null, note: 'pending|paid|failed']
+  unlocked_at timestamptz
+  activated_at timestamptz [note: '0007_subscription_lifecycle']
+  expires_at timestamptz [note: '0007_subscription_lifecycle']
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (student_id, course_id) [unique, name: 'uq_student_course']
+  }
+}
+
+Table payments {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  total_amount float [not null]
+  currency varchar(10) [not null, default: 'SYP']
+  method varchar [note: 'card|transfer|wallet|cash']
+  status varchar [not null]
+  reference varchar(64)
+  paid_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table payment_items {
+  id integer [pk, increment]
+  payment_id integer [not null, ref: > payments.id]
+  course_id integer [not null, ref: > courses.id]
+  unit_price float [not null]
+}
+
+// =============================================================================
+// Lessons & media
+// =============================================================================
+
+Table media_objects {
+  id integer [pk, increment]
+  storage_provider varchar(32) [not null, default: 'local']
+  storage_key varchar(1024) [not null]
+  public_url varchar(2048)
+  mime_type varchar(128)
+  file_size_bytes bigint
+  original_filename varchar(500)
+  uploaded_by_user_id integer [ref: > users.id]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table lessons {
+  id integer [pk, increment]
+  teacher_id integer [not null, ref: > users.id]
+  course_id integer [ref: > courses.id]
+  title varchar(500) [not null]
+  description text
+  video_url varchar(1024)
+  homework_path varchar(1024)
+  content_type varchar [not null]
+  sort_order integer [not null, default: 0]
+  is_visible boolean [not null, default: true]
+  subject varchar(120) [not null]
+  grade varchar(50) [not null]
+  status varchar [not null]
+  pdf_path varchar(1024)
+  voice_path varchar(1024)
+  persona_prompt text
+  preview text
+  page_count integer
+  error_message text
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table lesson_assets {
+  id integer [pk, increment]
+  lesson_id integer [not null, ref: > lessons.id]
+  media_object_id integer [ref: > media_objects.id]
+  asset_type varchar [not null, note: 'lessonassettype enum']
+  storage_path varchar(1024) [not null]
+  original_filename varchar(500)
+  mime_type varchar(128)
+  file_size_bytes bigint
+  sort_order integer [not null, default: 0]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table content_chunks {
+  id integer [pk, increment]
+  lesson_id integer [not null, ref: > lessons.id]
+  chunk_index integer [not null]
+  content text [not null]
+  metadata_json text
+
+  Note: 'RAG text chunks; optional pgvector embedding column at DB level when enabled.'
+}
+
+Table chat_messages {
+  id integer [pk, increment]
+  lesson_id integer [not null, ref: > lessons.id]
+  student_id integer [not null, ref: > users.id]
+  role varchar(20) [not null]
+  content text [not null]
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table student_lesson_progress {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  lesson_id integer [not null, ref: > lessons.id]
+  completed_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (student_id, lesson_id) [unique, name: 'uq_student_lesson_progress']
+  }
+}
+
+// =============================================================================
+// Quizzes (AI lesson quizzes)
+// =============================================================================
+
+Table quiz_questions {
+  id integer [pk, increment]
+  lesson_id integer [not null, ref: > lessons.id]
+  question text [not null]
+  options_json text [not null]
+  correct_index integer [not null]
+  hint text
+  sort_order integer [not null, default: 0]
+}
+
+Table quiz_attempts {
+  id integer [pk, increment]
+  lesson_id integer [not null, ref: > lessons.id]
+  student_id integer [not null, ref: > users.id]
+  answers_json text [not null]
+  correct_count integer [not null]
+  feedback_json text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// =============================================================================
+// Quizzes (teacher manual course quizzes) — 0003
+// =============================================================================
+
+Table course_quizzes {
+  id integer [pk, increment]
+  course_id integer [not null, ref: > courses.id]
+  title varchar(500) [not null]
+  description text
+  duration_minutes integer
+  passing_score_percent integer [not null, default: 60]
+  is_published boolean [not null, default: false]
+  due_at timestamptz
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+}
+
+Table course_quiz_questions {
+  id integer [pk, increment]
+  quiz_id integer [not null, ref: > course_quizzes.id]
+  question_type varchar(32) [not null]
+  question_text text [not null]
+  options_json text
+  correct_answer_json text
+  points integer [not null, default: 1]
+  sort_order integer [not null, default: 0]
+  requires_manual_grading boolean [not null, default: false]
+}
+
+Table course_quiz_attempts {
+  id integer [pk, increment]
+  quiz_id integer [not null, ref: > course_quizzes.id]
+  student_id integer [not null, ref: > users.id]
+  status varchar(32) [not null]
+  score float [not null, default: 0]
+  max_score float [not null, default: 0]
+  percent float
+  passed boolean
+  started_at timestamptz [not null]
+  submitted_at timestamptz
+  graded_at timestamptz
+
+  indexes {
+    (quiz_id, student_id) [unique, name: 'uq_course_quiz_attempt']
+  }
+}
+
+Table course_quiz_answers {
+  id integer [pk, increment]
+  attempt_id integer [not null, ref: > course_quiz_attempts.id]
+  question_id integer [not null, ref: > course_quiz_questions.id]
+  answer_json text
+  points_earned float
+  is_correct boolean
+  teacher_feedback text
+  graded_at timestamptz
+  graded_by_user_id integer [ref: > users.id]
+
+  indexes {
+    (attempt_id, question_id) [unique, name: 'uq_course_quiz_answer']
+  }
+}
+
+// =============================================================================
+// Analytics rollups — 0005
+// =============================================================================
+
+Table course_analytics {
+  course_id integer [pk, ref: - courses.id]
+  student_count integer [not null, default: 0]
+  completion_rate float [not null, default: 0]
+  average_quiz_score float
+  active_students integer [not null, default: 0]
+  updated_at timestamptz [not null]
+}
+
+Table teacher_analytics {
+  teacher_profile_id integer [pk, ref: - teacher_profiles.id]
+  total_students integer [not null, default: 0]
+  total_courses integer [not null, default: 0]
+  average_completion float [not null, default: 0]
+  average_rating float
+  updated_at timestamptz [not null]
+}
+
+Table student_analytics {
+  student_id integer [pk, ref: - users.id]
+  completion_rate float [not null, default: 0]
+  average_score float
+  total_study_hours float [not null, default: 0]
+  updated_at timestamptz [not null]
+}
+
+Table student_grade_reports {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  course_id integer [not null, ref: > courses.id]
+  average_score float
+  attendance_percentage float
+  completion_percentage float
+  updated_at timestamptz [not null]
+
+  indexes {
+    (student_id, course_id) [unique, name: 'uq_student_grade_report']
+  }
+}
+
+// =============================================================================
+// AI jobs — 0005
+// =============================================================================
+
+Table ai_jobs {
+  id integer [pk, increment]
+  job_type varchar(64) [not null]
+  status varchar(32) [not null, default: 'pending']
+  lesson_id integer [ref: > lessons.id]
+  payload jsonb
+  result jsonb
+  error_message text
+  created_at timestamptz [not null]
+  started_at timestamptz
+  completed_at timestamptz
+}
+
+// =============================================================================
+// Notifications — 0005
+// =============================================================================
+
+Table notifications {
+  id integer [pk, increment]
+  user_id integer [not null, ref: > users.id]
+  channel varchar [not null, default: 'in_app']
+  type varchar(64) [not null]
+  title varchar(200) [not null]
+  body text [not null]
+  data_json text
+  payload jsonb
+  is_read boolean [not null, default: false]
+  read_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// =============================================================================
+// Attendance, activity, planner (student domain)
+// =============================================================================
+
+Table student_attendance_records {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  date date [not null]
+  status varchar [not null]
+  study_minutes integer [not null, default: 0]
+  consistency_score integer [not null, default: 0]
+  notes text
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    (student_id, date) [unique, name: 'uq_student_attendance_date']
+  }
+}
+
+Table student_activity_events {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  event_type varchar [not null]
+  title varchar(500) [not null]
+  description text
+  payload_json text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table planner_profiles {
+  id integer [pk, increment]
+  student_id integer [unique, not null, ref: - users.id]
+  preferred_period varchar(32) [not null, default: 'evening']
+  school_start varchar(8) [not null, default: '08:00']
+  school_end varchar(8) [not null, default: '14:00']
+  max_daily_minutes integer [not null, default: 120]
+  weak_subjects_json text [not null, default: '[]']
+  memory_json text [not null, default: '{}']
+  updated_at timestamptz [not null]
+}
+
+Table planner_life_events {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  title varchar(255) [not null]
+  event_type varchar [not null]
+  day_of_week integer
+  event_date timestamptz
+  start_time varchar(8)
+  duration_minutes integer [not null, default: 60]
+  is_blocking boolean [not null, default: true]
+  subject varchar(120)
+  metadata_json text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table planner_schedule_slots {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  subject varchar(120) [not null]
+  scheduled_at timestamptz [not null]
+  duration_minutes integer [not null, default: 45]
+  priority integer [not null, default: 1]
+  status varchar [not null]
+  reasoning text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table planner_chat_messages {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > users.id]
+  role varchar(16) [not null]
+  content text [not null]
+  metadata_json text
+  created_at timestamptz [not null, default: `now()`]
+}
+
+// =============================================================================
+// Table groups (dbdiagram.io) — each table listed exactly once
+// Analytics rollups live only in Analytics; content_chunks only in Lessons
+// =============================================================================
+
+TableGroup Authentication {
+  users
+  auth_sessions
+  roles
+  user_roles
+  audit_logs
+}
+
+TableGroup Teachers {
+  teacher_profiles
+  teacher_voice_samples
+  teacher_profile_subjects
+  teacher_profile_grades
+}
+
+TableGroup Students {
+  student_profiles
+  student_subject_choices
+  student_teacher_choices
+  student_course_access
+  student_lesson_progress
+  student_attendance_records
+  student_activity_events
+  planner_profiles
+  planner_life_events
+  planner_schedule_slots
+  planner_chat_messages
+}
+
+TableGroup Parents {
+  parent_student_links
+}
+
+TableGroup Courses {
+  subjects
+  courses
+}
+
+TableGroup Lessons {
+  lessons
+  lesson_assets
+  content_chunks
+  chat_messages
+  media_objects
+}
+
+TableGroup Quizzes {
+  quiz_questions
+  quiz_attempts
+  course_quizzes
+  course_quiz_questions
+  course_quiz_attempts
+  course_quiz_answers
+}
+
+TableGroup Payments {
+  payments
+  payment_items
+}
+
+TableGroup Analytics {
+  course_analytics
+  teacher_analytics
+  student_analytics
+  student_grade_reports
+}
+
+TableGroup AI {
+  ai_jobs
+}
+
+TableGroup Notifications {
+  notifications
+}

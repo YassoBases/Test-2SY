@@ -1,0 +1,1358 @@
+{
+  "common": {
+    "defaultStudentName": "طالب",
+    "roleStudent": "طالب",
+    "ok": "حسناً",
+    "withTeacher": "مع {name}",
+    "teacher": "المعلّم",
+    "lesson": "درس",
+    "lessons": "دروس",
+    "send": "إرسال"
+  },
+  "home": {
+    "greeting": {
+      "morning": "صباح الخير",
+      "evening": "مساء الخير"
+    },
+    "mission": {
+      "defaultHeadline": "ابدأ رحلتك",
+      "defaultLessonTitle": "مهمتك التعليمية تظهر هنا",
+      "defaultCta": "ابدأ",
+      "completeLesson": "أكمل درس «{title}»",
+      "progress": "{done} من {total} دروس مكتملة"
+    },
+    "subjects": {
+      "eyebrow": "بوابتك التعليمية",
+      "title": "موادك",
+      "subtitle": "كل مادة مع معلمها — اختر وتابع",
+      "empty": {
+        "noCourses": "لا توجد مواد لصفك حالياً.",
+        "noGrade": "حدّد صفك لعرض المواد.",
+        "subscriptions": "الاشتراكات",
+        "setGrade": "تحديد الصف"
+      }
+    },
+    "continue": {
+      "title": "تابع من حيث توقفت",
+      "subtitle": "روابط سريعة",
+      "empty": {
+        "title": "لا يوجد نشاط بعد",
+        "description": "اشترك في مادة أو ابدأ أول درس ليظهر هنا.",
+        "action": "الاشتراكات"
+      }
+    },
+    "achievements": {
+      "title": "الإنجازات",
+      "subtitle": "لحظة صغيرة للاحتفال بخطوتك التالية",
+      "recent": {
+        "label": "آخر إنجاز",
+        "empty": "ابدأ التعلّم لفتح شارتك الأولى"
+      },
+      "next": {
+        "label": "الهدف التالي",
+        "empty": "أنت على الطريق الصحيح!"
+      },
+      "viewAll": "عرض كل الإنجازات"
+    },
+    "journey": {
+      "title": "الأنشطة الأخيرة",
+      "subtitle": "نظرة على تقدّمك في كل مادة",
+      "lockReason": "اشترك لفتح المادة",
+      "empty": {
+        "noCourses": "لا توجد مواد متاحة لصفك حالياً.",
+        "noGrade": "حدّد صفك لعرض مسارك."
+      },
+      "status": {
+        "done": "مكتمل",
+        "active": "قيد التقدّم",
+        "ready": "جاهز للبدء",
+        "locked": "مقفل"
+      },
+      "progressLine": "{percent}% · {done}/{total} دروس"
+    },
+    "report": {
+      "title": "تقريري",
+      "subtitle": "ملخص سريع لرحلتك — بدون تعقيد",
+      "lastQuizNone": "لم يُختبر بعد",
+      "stats": {
+        "activeSubjects": "عدد المواد النشطة",
+        "completedLessons": "عدد الدروس المكتملة",
+        "lastQuiz": "آخر نتيجة اختبار",
+        "studyDays": "أيام الدراسة هذا الأسبوع"
+      }
+    },
+    "missionDetail": {
+      "title": "تفاصيل المهمة",
+      "subtitle": "معلومات الجلسة والمادة",
+      "withTeacher": "مع {name}",
+      "progress": "{done} من {total} دروس في هذه المادة"
+    },
+    "dailyFocus": {
+      "eyebrow": "تركيز اليوم",
+      "progress": "التقدّم"
+    },
+    "quickActions": {
+      "title": "إجراءات سريعة",
+      "subtitle": "اختصارات لأهم ما تحتاجه الآن",
+      "chat": {
+        "title": "محادثة المعلم",
+        "description": "اسأل وتواصل مباشرة"
+      },
+      "lesson": {
+        "title": "متابعة الدرس",
+        "description": "أكمل من حيث توقفت"
+      },
+      "language": {
+        "title": "ممارسة اللغة",
+        "description": "قراءة · استماع · تحدث"
+      },
+      "planner": {
+        "title": "المخطط الذكي",
+        "description": "خطتك الأسبوعية"
+      },
+      "quiz": {
+        "title": "الكويزات",
+        "description": "اختبر معلوماتك"
+      },
+      "achievements": {
+        "title": "إنجازاتي",
+        "description": "شارات ونقاط XP"
+      }
+    },
+    "catalog": {
+      "progress": {
+        "zeroOf": "0 من {total} دروس",
+        "of": "{done} من {total} دروس",
+        "completedOnly": "{done} دروس مكتملة",
+        "unavailable": "غير متاح",
+        "notStarted": "لم تبدأ بعد"
+      },
+      "cta": {
+        "locked": "اشترك للفتح",
+        "done": "مراجعة",
+        "active": "متابعة",
+        "ready": "ابدأ"
+      }
+    }
+  },
+  "chat": {
+    "headerHint": "اسأل أي سؤال حول هذا الدرس",
+    "clear": {
+      "tooltip": "مسح المحادثة",
+      "aria": "مسح المحادثة"
+    },
+    "empty": {
+      "title": "ابدأ محادثة مع {teacher}",
+      "hint": "اسأل أي سؤال حول هذا الدرس — الشرح بأسلوب معلمك."
+    },
+    "input": {
+      "waitForLesson": "انتظر اكتمال تجهيز الدرس…",
+      "defaultPlaceholder": "اسأل معلّمك…",
+      "placeholder": "اسأل {teacher}…"
+    },
+    "voice": {
+      "stopRecording": "إيقاف التسجيل",
+      "recordQuestion": "تسجيل سؤال صوتي"
+    },
+    "send": {
+      "aria": "إرسال"
+    },
+    "sources": "المصادر"
+  },
+  "course": {
+    "locked": {
+      "withTeacher": "مع {teacher}",
+      "title": "هذه المادة مقفلة حالياً",
+      "subscribePrompt": "اشترك لفتح {count} {countLabel} مع {teacher}",
+      "subscribeCta": "اشترك لفتح المادة والكويزات"
+    },
+    "backToCourses": "العودة لدوراتي",
+    "tabs": {
+      "lessons": "الدروس",
+      "quizzes": "الكويزات"
+    },
+    "errors": {
+      "openChat": "تعذر فتح المحادثة",
+      "loadTeacherProfile": "تعذر تحميل ملف المعلّم",
+      "loadCourse": "تعذر تحميل الدورة"
+    },
+    "hero": {
+      "withTeacher": "مع {teacher}",
+      "welcome": "يسرّني مرافقتك في هذه المادة. سنسير خطوة بخطوة حتى إتقان المفاهيم.",
+      "includeParent": "مشاركة ولي الأمر",
+      "messageTeacher": "مراسلة المعلّم",
+      "viewProfile": "ملف المعلّم",
+      "progress": {
+        "lessonsWaiting": "{count} دروس في انتظارك",
+        "lessonsCompleted": "{done} من {total} دروس مكتملة",
+        "lessonWaiting": "1 درس في انتظارك",
+        "allCompleted": "أكملت جميع دروس هذه المادة",
+        "percentOfSubject": "{pct}% من المادة"
+      }
+    },
+    "current": {
+      "withTeacher": "مع {teacher}",
+      "eyebrow": {
+        "allDone": "أكملت المادة",
+        "current": "درسك الحالي",
+        "continue": "تابع من هنا"
+      },
+      "cta": {
+        "review": "مراجعة الدرس",
+        "start": "ابدأ الدرس",
+        "continue": "متابعة التعلّم"
+      },
+      "position": "الدرس {n} من {total}",
+      "empty": {
+        "title": "لم تُضَف دروس بعد",
+        "subtitle": "سيظهر درسك الحالي هنا عندما يجهّز المعلّم المحتوى"
+      },
+      "progress": {
+        "lessonsCompleted": "{done} من {total} دروس مكتملة"
+      }
+    },
+    "journey": {
+      "ariaLabel": "مسار الدروس",
+      "title": "بقية المسار",
+      "emptyTitle": "لم تُضَف دروس بعد",
+      "lessonNumber": "الدرس {n}",
+      "state": {
+        "completed": "مكتمل",
+        "current": "الدرس الحالي",
+        "upcoming": "قادم",
+        "locked": "مقفل"
+      },
+      "emptySubtitle": "عندما يجهّز معلّمك الدروس ستظهر هنا"
+    },
+    "card": {
+      "lockReason": "اشترك لفتح المادة",
+      "grade": "الصف {grade}",
+      "lessonCount": "{n} درس",
+      "progress": "التقدّم",
+      "expiringSoon": "ينتهي خلال {n} يوم",
+      "subscribe": "اشترك لفتح المادة",
+      "renew": "تجديد الاشتراك",
+      "continue": "متابعة التعلّم"
+    },
+    "quizzes": {
+      "title": "كويزات المعلم",
+      "subtitle": "اختبارات يدوية من معلمك",
+      "meta": "{n} أسئلة · {points} نقطة · النجاح {pass}% · {duration} د · التسليم {date}",
+      "yourScore": "نتيجتك:",
+      "cta": {
+        "continue": "متابعة",
+        "start": "بدء",
+        "viewResult": "عرض النتيجة",
+        "continueQuiz": "متابعة الكويز",
+        "startQuiz": "بدء الكويز"
+      },
+      "pendingGrading": "بانتظار تصحيح المعلم",
+      "subtitleFull": "اختبارات يدوية من المعلم — منفصلة عن كويز الذكاء الاصطناعي داخل الدروس",
+      "metaLine": "{n} أسئلة · {points} نقطة · النجاح {pass}%{duration}{due}",
+      "duration": " · {n} د",
+      "due": " · التسليم {date}",
+      "status": {
+        "passed": "ناجح {pct}%",
+        "graded": "مُصحَّح",
+        "submitted": "مُسلَّم",
+        "inProgress": "جاري",
+        "available": "متاح"
+      },
+      "empty": {
+        "title": "لا توجد كويزات منشورة بعد",
+        "subtitle": "سيظهر هنا أي كويز ينشره المعلم لهذه الدورة"
+      },
+      "errors": {
+        "load": "تعذر تحميل الكويزات"
+      }
+    }
+  },
+  "subscriptions": {
+    "header": {
+      "eyebrow": "اشترك وافتح موادك",
+      "title": "الاشتراكات",
+      "subtitleWithGrade": "الصف {grade} — جميع المواد المتاحة من معلميك",
+      "subtitleNoGrade": "حدّد صفك من التسجيل"
+    },
+    "kpi": {
+      "unlocked": "مواد مفعّلة",
+      "available": "مواد متاحة لصفك"
+    },
+    "teacherProfileAria": "ملف المعلّم {name}",
+    "status": {
+      "unlocked": "مفعّل",
+      "locked": "مقفل"
+    },
+    "teacherProfile": "ملف المعلّم",
+    "chips": {
+      "video": "فيديو {n}",
+      "pdf": "PDF {n}",
+      "homework": "واجب {n}",
+      "ai": "ذكي {n}",
+      "lessons": "{n} درس"
+    },
+    "cta": {
+      "continue": "متابعة التعلّم",
+      "subscribe": "اشترك الآن"
+    },
+    "empty": "لا توجد مواد منشورة لصفك حالياً — سيظهر المحتوى عند رفع المعلمين لدروسهم.",
+    "errors": {
+      "load": "تعذر تحميل الاشتراكات",
+      "subscribe": "تعذر إتمام الاشتراك",
+      "loadTeacherProfile": "تعذر تحميل ملف المعلّم"
+    },
+    "success": {
+      "activated": "تم تفعيل {subject} — يمكنك فتح الدروس الآن"
+    }
+  },
+  "achievements": {
+    "header": {
+      "eyebrow": "التقدّم والإنجازات",
+      "title": "🏆 إنجازاتي",
+      "subtitle": "تتبّع مستواك ونقاط XP وسلسلة التعلّم والشارات"
+    },
+    "level": "المستوى {n}",
+    "totalXp": "{xp} XP إجمالي",
+    "levelProgress": "تقدّم المستوى",
+    "xpToNext": "{xp} XP للمستوى {n}",
+    "maxLevel": "أعلى مستوى!",
+    "streakDaysShort": "🔥 {n} يوم",
+    "longestStreak": "أطول سلسلة: {n} يوم",
+    "badgeCount": "{earned} / {total} شارة",
+    "sections": {
+      "recentXp": "آخر نشاط XP",
+      "recentXpSubtitle": "أحدث الإنجازات ومصادر النقاط",
+      "streak": "سلسلة الدراسة",
+      "streakSubtitle": "التزامك اليومي يبني سلسلة أقوى",
+      "streakDays": "يوم متتالي",
+      "streakGoal": "الهدف التالي: 30 يوماً للشارة الذهبية",
+      "badges": "الشارات",
+      "badgesSubtitle": "افتح الشارات بالتعلّم والالتزام — المقفلة بالرمادي",
+      "xpRules": "قواعد كسب XP",
+      "xpRulesSubtitle": "القيم الحالية من نظام التلعيب — تُحدَّث تلقائياً من الخادم",
+      "futureRewards": "مكافآت مستقبلية",
+      "futureRewardsSubtitle": "قريباً — للمعلومات فقط في هذه المرحلة"
+    },
+    "widgets": {
+      "currentLevel": "المستوى الحالي",
+      "level": "المستوى",
+      "streak": "سلسلة",
+      "achievement": "إنجاز",
+      "achievementsTitle": "الإنجازات",
+      "latestAchievements": "أحدث الإنجازات",
+      "noAchievementsYet": "لا إنجازات بعد — استمر في التعلّم!",
+      "achievementBadge": "إنجاز",
+      "noXpActivity": "لا نشاط XP بعد — ابدأ درساً أو أكمل مهمة في المخطط الذكي!"
+    },
+    "xpCategories": {
+      "lessons": "الدروس والدورات",
+      "quizzes": "الاختبارات",
+      "planner": "المخطط الذكي",
+      "streaks": "السلاسل والالتزام",
+      "other": "أخرى"
+    },
+    "futureRewardsIntro": "نقاط XP التي تجمعها اليوم ستُستخدم قريباً في مزايا إضافية على المنصة — هذه المرحلة للمعلومات فقط.",
+    "futureRewardItems": {
+      "specialTitles": {
+        "title": "ألقاب خاصة",
+        "description": "ألقاب مميزة تعكس مستواك وإنجازاتك أمام زملائك."
+      },
+      "leaderboards": {
+        "title": "لوحات المتصدرين",
+        "description": "مقارنة تقدّمك مع طلاب صفك في التعلّم والالتزام."
+      },
+      "competitions": {
+        "title": "مسابقات",
+        "description": "تحديات دورية بجوائز معنوية ومزايا تعليمية."
+      },
+      "rewards": {
+        "title": "مكافآت",
+        "description": "استبدال XP بمكافآت تعليمية عند تفعيل المتجر لاحقاً."
+      },
+      "platformPerks": {
+        "title": "مزايا المنصة",
+        "description": "وصول مبكر لميزات جديدة ومحتوى حصري للمتفوّقين."
+      }
+    }
+  },
+  "attendance": {
+    "consecutiveDays": "أيام متتالية",
+    "attendancePercent": "{n}% حضور",
+    "weeklyCalendar": "تقويم الأسبوع",
+    "minutesShort": "{n} د",
+    "monthlyOverview": "نظرة شهرية",
+    "present": "حاضر",
+    "partial": "جزئي",
+    "absent": "غائب",
+    "recentWeeksCommitment": "التزام الأسابيع الأخيرة"
+  },
+  "planner": {
+    "header": {
+      "eyebrow": "مخطط دراسي ذكي",
+      "title": "المخطط الذكي",
+      "subtitle": "خطة أسبوعية مبنية على أدائك — مواد ضعيفة، امتحانات قادمة، وسلسلة التعلم"
+    },
+    "generateCta": "توليد الخطة",
+    "banner": {
+      "default": "يُولّد المخطط تلقائياً من درجاتك وتقدّمك — أو تحدّث مع المساعد لتخصيص الجدول",
+      "reordered": "تم إعادة ترتيب الجدول بناءً على أدائك الحالي"
+    },
+    "sections": {
+      "weeklyPlan": "الخطة الأسبوعية",
+      "weeklyPlanSubtitle": "مهامك موزّعة على أيام الأسبوع حسب الأولوية",
+      "subjectAnalysis": "تحليل المواد",
+      "subjectAnalysisSubtitle": "قوي · متوسط · ضعيف — بناءً على الدرجات والإكمال",
+      "recommendations": "توصيات ذكية",
+      "recommendationsSubtitle": "🔥 عالية · ⚠️ متوسطة · ✅ منخفضة"
+    }
+  },
+  "lesson": {
+    "card": {
+      "status": {
+        "completed": "مكتمل",
+        "new": "جديد"
+      },
+      "progress": "التقدّم",
+      "pages": "{n} ص",
+      "start": "ابدأ التعلّم",
+      "pdf": "ملف الدرس"
+    },
+    "pdf": {
+      "loading": "جاري تحميل PDF…",
+      "page": "صفحة {page} / {total}",
+      "percentRead": "{n}% مقروء",
+      "errors": {
+        "load": "تعذر تحميل ملف PDF"
+      }
+    },
+    "quiz": {
+      "results": {
+        "summary": "{correct} من {total} إجابات صحيحة",
+        "correct": "صحيحة",
+        "wrong": "خاطئة",
+        "retry": "إعادة الاختبار",
+        "back": "العودة لدوراتي",
+        "excellent": "أداء ممتاز!",
+        "good": "جيد — واصل!",
+        "review": "راجع الدرس وحاول مرة أخرى",
+        "excellentEmoji": "أداء ممتاز! 🎉",
+        "goodPractice": "جيد — واصل التمرين"
+      },
+      "optionLetters": [
+        "أ",
+        "ب",
+        "ج",
+        "د"
+      ],
+      "title": "اختبار سريع",
+      "regenerateTooltip": "توليد أسئلة جديدة من الدرس",
+      "regenerateAria": "توليد أسئلة جديدة",
+      "reviewMistakes": "راجع أخطاءك",
+      "yourAnswer": "جوابك:",
+      "correctAnswer": "الصحيح:",
+      "remedial": {
+        "eyebrow": "تدريب حسب الخطأ",
+        "title": "أسئلة علاجية"
+      },
+      "noMistakes": "ممتاز، ما عندك أخطاء بهذا الاختبار.",
+      "generating": "جاري توليد الاختبار من محتوى الدرس…",
+      "generateFailed": "تعذر توليد الاختبار — جرّب لاحقاً أو اسأل المعلم",
+      "pendingProcessing": "الاختبار سيظهر تلقائياً بعد اكتمال المعالجة",
+      "noAiSource": "ركّز على المحادثة مع المعلّم",
+      "generateCta": "توليد اختبار من الدرس",
+      "noAnswer": "بدون إجابة"
+    },
+    "helper": {
+      "prompt": "هل لديك سؤال حول هذا الدرس؟",
+      "cta": "اسأل المعلّم"
+    },
+    "assistant": {
+      "subtitle": "معك في هذا الدرس"
+    },
+    "header": {
+      "pdf": "ملف الدرس",
+      "sessionProgress": "تقدّم الجلسة",
+      "nextStep": "الخطوة التالية"
+    },
+    "steps": {
+      "ariaLabel": "خطوات جلسة الدرس",
+      "completed": "{label} — مكتملة",
+      "current": "{label} — الخطوة الحالية",
+      "upcoming": "{label} — قادمة"
+    },
+    "concepts": {
+      "framing": "هذه أهم الأفكار في هذا الدرس",
+      "explain": "اشرح هذا المفهوم",
+      "example": "أعطني مثالاً",
+      "quiz": "اختبرني",
+      "ask": "اسأل المعلم",
+      "explainPrompt": "اشرح لي مفهوم «{concept}» في هذا الدرس",
+      "examplePrompt": "أعطني مثالاً على «{concept}» من هذا الدرس",
+      "quizPrompt": "اختبرني في «{concept}» من هذا الدرس",
+      "askPrompt": "عندي سؤال عن «{concept}»: "
+    },
+    "learn": {
+      "ariaLabel": "مسار التعلّم",
+      "videoTitle": "فيديو الدرس",
+      "step": "الخطوة {n}",
+      "pdfHeadline": "اقرأ شرح {teacher}",
+      "continueReading": "تابع قراءة شرح المعلّم",
+      "chatDisabled": "انتظر اكتمال تجهيز الدرس",
+      "eyebrow": "خطوة التعلّم",
+      "titleWithTeacher": "تعلّم مع {teacher}",
+      "stepLabel": "الخطوة {n}",
+      "startWatching": "ابدأ بمشاهدة شرح {teacher}",
+      "videoUnavailable": "فيديو الدرس غير متاح حالياً",
+      "reviewWithTeacher": "راجع مع المعلّم",
+      "understoodIdeas": "هل فهمت هذه الأفكار؟",
+      "consolidateConcepts": "ثبّت المفاهيم",
+      "coreConcepts": "المفاهيم الأساسية",
+      "emptyContent": "لا يوجد محتوى قراءة أو فيديو لهذا الدرس — معلّمك متاح للمساعدة أو يمكنك الاختبار.",
+      "prompts": {
+        "watch": "شاهد الشرح",
+        "read": "اقرأ الدرس",
+        "review": "راجع الأفكار",
+        "interact": "تفاعل مع المفاهيم",
+        "empty": "تابع جلسة الدرس خطوة بخطوة مع معلّمك.",
+        "joined": "{parts} — في مسار واحد متصل دون التنقل بين أدوات."
+      }
+    },
+    "completion": {
+      "title": "إكمال الدرس",
+      "verified": "موثّق",
+      "instructions": "أكمل جميع متطلبات الدرس ثم اضغط «إنهاء الدرس» لتسجيل الإكمال الموثّق.",
+      "completedAtLabel": "تاريخ الإكمال:",
+      "overallProgress": "التقدّم الكلي",
+      "requirements": {
+        "video": "مشاهدة 90% من الفيديو",
+        "pdf": "قراءة ملف الدرس",
+        "quizSubmit": "تسليم الاختبار",
+        "quizScore": "نتيجة الاختبار ≥ 70%",
+        "engage": "تفاعل مع محتوى الدرس",
+        "videoFull": "مشاهدة الفيديو بالكامل (90%)",
+        "pdfFull": "قراءة PDF حتى الصفحة الأخيرة",
+        "quizAll": "حل جميع الاختبارات",
+        "quizPerfect": "تحقيق العلامة الكاملة في الكويز (100%)"
+      },
+      "quizSubmitted": {
+        "yes": "تم الإرسال",
+        "no": "لم يُرسل بعد"
+      },
+      "done": "✓ تم إكمال الدرس",
+      "completedAt": "تاريخ الإكمال {date}",
+      "finishCta": "إنهاء الدرس",
+      "retryCta": "إعادة المحاولة"
+    },
+    "nav": {
+      "backToLessons": "العودة إلى الدروس",
+      "previous": "الدرس السابق",
+      "next": "الدرس التالي",
+      "position": "الدرس {n} من {total}",
+      "goToNext": "الانتقال إلى الدرس التالي"
+    },
+    "tabs": {
+      "askTeacher": "اسأل المعلّم",
+      "quiz": "اختبر نفسك"
+    },
+    "progress": {
+      "eyebrow": "تقدمك",
+      "sessionTitle": "جلسة التعلم",
+      "nextStep": "الخطوة التالية",
+      "stats": {
+        "questions": "أسئلة",
+        "quiz": "اختبار",
+        "mistakes": "أخطاء"
+      }
+    },
+    "feedback": {
+      "title": "التغذية الراجعة",
+      "empty": "أجب على الأسئلة لتحصل على تغذية راجعة فورية"
+    },
+    "plan": {
+      "title": "خطة تعلم صغيرة",
+      "chip": {
+        "review": "مراجعة",
+        "consolidate": "تثبيت"
+      }
+    },
+    "ai": {
+      "preparingTitle": "جاري تحضير الدرس",
+      "preparingHint": "المعلّم يجهّز محتوى الدرس والاختبار — يستغرق عادةً دقيقة.",
+      "processingFailed": "تعذر إكمال المعالجة الذكية لهذا الدرس.",
+      "chatDisabledHint": "المعلّم يجهّز الدرس — جرّب بعد لحظات",
+      "assistantFailed": "تعذر تجهيز المساعدة",
+      "waitForContent": "انتظر اكتمال تجهيز محتوى الدرس"
+    },
+    "fallback": {
+      "label": "وصول احتياطي للمحتوى",
+      "tabs": {
+        "video": "الفيديو",
+        "pdf": "الملف"
+      },
+      "videoHint": "الفيديو متاح في مسار التعلّم أعلاه — مسار واحد متصل مع بقية الدرس.",
+      "goToVideo": "الانتقال إلى الفيديو في مسار التعلّم",
+      "pdfHint": "ملف الدرس جزء من مسار التعلّم — اقرأه ضمن التسلسل الكامل للدرس.",
+      "goToPdf": "الانتقال إلى الملف في مسار التعلّم"
+    },
+    "chat": {
+      "clear": {
+        "title": "مسح المحادثة",
+        "subtitle": "سيتم مسح رسائلك مع هذا الدرس فقط.",
+        "confirm": "هل تريد بدء محادثة جديدة مع المعلّم؟",
+        "confirmCta": "مسح",
+        "cancel": "إلغاء"
+      }
+    },
+    "verify": {
+      "blockedTitle": "لا يمكن إكمال هذا الدرس بعد",
+      "requirements": "المطلوب:",
+      "success": "تم إكمال الدرس بنجاح!",
+      "incomplete": "أكمل المتطلبات الناقصة أولاً."
+    },
+    "errors": {
+      "verify": "تعذر التحقق من إكمال الدرس",
+      "loadTitle": "تعذر تحميل الدرس",
+      "load": "تعذر تحميل هذا الدرس من الخادم"
+    },
+    "flow": {
+      "position": "الدرس {n} من {total}",
+      "generateQuiz": {
+        "text": "ولّدي اختباراً من الدرس حتى تقيسي فهمك.",
+        "cta": "توليد اختبار"
+      },
+      "mistakes": {
+        "one": "باقي خطأ واحد. راجعيه ثم جرّبي اختباراً جديداً لتوصلي إلى 100%.",
+        "many": "باقي {n} أخطاء. راجعيها ثم جرّبي اختباراً جديداً لتوصلي إلى 100%.",
+        "cta": "اختبار جديد"
+      },
+      "askTeacher": {
+        "text": "اسألي المعلّم سؤالاً واحداً عن الدرس حتى تكتمل جلسة التعلم.",
+        "cta": "اسألني"
+      },
+      "complete": {
+        "text": "مكتمل. خلصتِ الاختبار بدون أخطاء وتفاعلتِ مع المعلّم.",
+        "cta": "تحدّي جديد"
+      },
+      "plan": {
+        "reviewLabel": "خطة مراجعة مركزة",
+        "consolidateLabel": "خطة تثبيت سريعة",
+        "reviewMistake": {
+          "title": "راجعي نقطة الخطأ",
+          "withAnswer": "ركزي على الجواب الصحيح: {answer}.",
+          "generic": "راجعي الأسئلة التي ظهرت فيها أخطاء."
+        },
+        "askTeacher": {
+          "title": "اسألي المعلّم عنها",
+          "description": "خلي المعلّم يشرح سبب الخطأ بجملة مبسطة من الدرس.",
+          "cta": "اشرح الخطأ"
+        },
+        "remedial": {
+          "title": "أسئلة علاجية",
+          "description": "تدرّبي بسؤالين على نفس فكرة الخطأ قبل إعادة الاختبار.",
+          "regenerate": "إعادة توليد",
+          "start": "ابدأ"
+        },
+        "followUp": {
+          "title": "اختبار متابعة",
+          "description": "بعد المراجعة جرّبي اختباراً جديداً حتى ترتفع النتيجة."
+        },
+        "mastery": {
+          "title": "الفهم الأساسي مكتمل",
+          "description": "نتيجتك كاملة، فانتقلي من الحفظ إلى تثبيت الفكرة."
+        },
+        "challenge": {
+          "title": "سؤال تحدّي",
+          "withKeywords": "اطلبي سؤالاً أعمق عن: {keywords}.",
+          "generic": "اطلبي سؤالاً أعمق من الدرس.",
+          "cta": "تحدّي"
+        },
+        "newQuiz": {
+          "title": "اختبار مختلف",
+          "description": "ولّدي اختباراً جديداً لتتأكدي أن الفهم ثابت."
+        }
+      },
+      "quiz": {
+        "remaining": {
+          "done": "اكتمل الاختبار.",
+          "one": "بقي سؤال واحد لإكمال الاختبار.",
+          "two": "بقي سؤالان لإكمال الاختبار.",
+          "many": "بقي {n} أسئلة لإكمال الاختبار."
+        }
+      }
+    }
+  },
+  "teacherProfile": {
+    "subtitle": "{subject} — الصف {grade}",
+    "studentCount": "{n} طالب",
+    "bio": "نبذة",
+    "courses": "الدورات"
+  },
+  "teacherContact": {
+    "label": "معلّم المادة",
+    "status": "نشط",
+    "includeParent": "السماح لولي الأمر بالمشاركة",
+    "subscribeTooltip": "يجب الاشتراك بالمادة لمراسلة المعلّم",
+    "message": "مراسلة المعلّم",
+    "viewProfile": "عرض ملف المعلّم"
+  },
+  "parents": {
+    "title": "أولياء الأمور المرتبطون",
+    "subtitle": "الحسابات التي يمكنها متابعة تقدّمك — للعرض فقط ولا يمكنك إزالة الربط من هنا",
+    "empty": "لا يوجد أولياء أمور مرتبطون بهذا الحساب",
+    "summary": {
+      "total": "إجمالي المرتبطين",
+      "recent": "نشطون مؤخراً"
+    },
+    "status": {
+      "active": "نشط"
+    },
+    "linkedAt": "رُبط {date}",
+    "lastSeen": "آخر مشاهدة {date}",
+    "noActivity": "لم يُسجّل نشاط بعد",
+    "defaultInitial": "و",
+    "errors": {
+      "load": "تعذر تحميل أولياء الأمور المرتبطين"
+    }
+  },
+  "languages": {
+    "errors": {
+      "submitAnswers": "تعذر إرسال الإجابات",
+      "submitMessage": "تعذر إرسال الرسالة",
+      "saveReview": "تعذر حفظ المراجعة",
+      "submitTest": "تعذر إرسال الاختبار",
+      "emptyRecording": "التسجيل فارغ — حاول مرة أخرى",
+      "submitWriting": "تعذر الإرسال",
+      "load": "تعذر التحميل"
+    },
+    "hub": {
+      "header": {
+        "eyebrow": "تعلّم اللغات",
+        "title": "رحلتك في الإنجليزية",
+        "subtitle": "ابدأ من مهمتك اليوم — خطوة واحدة في كل مرة"
+      },
+      "placementCta": "ابدأ اختبار تحديد المستوى",
+      "placement": {
+        "eyebrow": "الخطوة الأولى",
+        "title": "حدّد مستواك لنبدأ رحلتك",
+        "body": "اختبار قصير يوضّح لك أين أنت وما مهمتك التالية — لا يمكن بدء الدروس قبله.",
+        "cta": "ابدأ اختبار تحديد المستوى"
+      },
+      "subscription": {
+        "expires": "اشتراكك {status} — ينتهي {date}",
+        "status": "اشتراكك {status}"
+      },
+      "footer": {
+        "fullPath": "المسار الكامل",
+        "insights": "الرؤى",
+        "placementResults": "نتائج التحديد",
+        "retakeAfter": "إعادة الاختبار بعد {date}"
+      },
+      "status": {
+        "expiringSoon": "ينتهي قريباً",
+        "expired": "منتهي",
+        "pending": "غير مفعّل",
+        "active": "مفعّل"
+      },
+      "journeyProgress": "{pct}% نحو {next}"
+    },
+    "skills": {
+      "reading": "القراءة",
+      "listening": "الاستماع",
+      "writing": "الكتابة",
+      "speaking": "التحدث",
+      "vocabulary": "المفردات"
+    },
+    "common": {
+      "back": "العودة",
+      "retry": "حاول مرة أخرى",
+      "submit": "إرسال",
+      "empty": "لا يوجد محتوى بعد",
+      "lessons": "الدروس",
+      "questions": "الأسئلة",
+      "selectLesson": "اختر درساً من القائمة.",
+      "emptyLessons": "لا توجد دروس منشورة لمستواك حالياً.",
+      "submitAnswers": "إرسال الإجابات",
+      "inProgress": "جاري",
+      "passedLesson": "نجحت في الدرس",
+      "levelLine": "مستواك في {skill}: {student} — الدروس المتاحة حالياً عند مستوى {lesson}.",
+      "levelLineShort": "مستواك في {skill}: {student} — الدروس المتاحة حالياً عند مستوى {lesson}.",
+      "higherContentSoon": "(سيتم إضافة محتوى أعلى قريباً)."
+    },
+    "writing": {
+      "subtitle": "تمارين كتابة بدون تقييم ذكاء اصطناعي",
+      "emptyPrompts": "لا توجد تمارين كتابة لمستواك حالياً.",
+      "selectPrompt": "اختر تمريناً من القائمة.",
+      "minimum": "الحد الأدنى: {words} كلمة · {sentences} جمل",
+      "counters": "الكلمات: {words} · الجمل: {sentences}",
+      "resultLine": "النتيجة: {score}% — {status}",
+      "errors": {
+        "loadPrompt": "تعذر تحميل التمرين",
+        "submit": "تعذر إرسال الكتابة"
+      }
+    },
+    "vocabulary": {
+      "title": "المفردات",
+      "subtitle": "بطاقات تعلّم الكلمات — Known أو Review Later",
+      "levelAlert": "مستواك في القراءة: {student} — البطاقات المتاحة حالياً عند مستوى {lesson}.",
+      "spacedRepetition": "التكرار المتباعد",
+      "dueToday": "{count} مستحقة اليوم",
+      "hideMeaning": "إخفاء المعنى",
+      "showMeaning": "إظهار المعنى",
+      "memoryPrompt": "ما مدى تذكّرك لهذه الكلمة؟",
+      "rating": {
+        "again": "مرة أخرى",
+        "hard": "صعب",
+        "good": "جيد",
+        "easy": "سهل"
+      },
+      "noneDue": "لا توجد كلمات مستحقة الآن 🎉",
+      "emptyCards": "لا توجد بطاقات مفردات لمستواك حالياً.",
+      "revealHint": "اضغط «إظهار المعنى» لرؤية الترجمة.",
+      "errors": {
+        "load": "تعذر تحميل المفردات",
+        "saveReview": "تعذر حفظ المراجعة"
+      }
+    },
+    "speaking": {
+      "subtitle": "سجّل صوتك — مدرب التحدث يراجع أداءك",
+      "emptyPrompts": "لا توجد تمارين تحدث لمستواك حالياً.",
+      "selectPrompt": "اختر تمريناً من القائمة.",
+      "minimumSeconds": "الحد الأدنى: {seconds} ثانية",
+      "startRecording": "بدء التسجيل",
+      "stopRecording": "إيقاف",
+      "errors": {
+        "loadPrompt": "تعذر تحميل التمرين",
+        "microphone": "تعذر الوصول للميكروفون",
+        "submit": "تعذر إرسال تمرين التحدث"
+      }
+    },
+    "reading": {
+      "subtitle": "دروس القراءة حسب مستواك الحالي",
+      "errors": {
+        "loadList": "تعذر تحميل دروس القراءة",
+        "loadLesson": "تعذر تحميل الدرس"
+      },
+      "resultLine": "النتيجة: {score}% — {status}"
+    },
+    "listening": {
+      "subtitle": "استمع وأجب عن الأسئلة",
+      "audioUnavailableTitle": "ملف الصوتي غير متوفر",
+      "audioUnavailableBody": "يمكنك الإجابة عن الأسئلة عندما يتوفر الصوت لاحقاً. لن يتعطل التطبيق.",
+      "errors": {
+        "loadList": "تعذر تحميل دروس الاستماع"
+      },
+      "resultLine": "النتيجة: {score}%"
+    },
+    "placement": {
+      "title": "اختبار تحديد المستوى",
+      "subtitle": "أجب على الأسئلة الأربعة المهارات لتحديد مستواك",
+      "progress": "{step} — سؤال {current} / {total}",
+      "answered": "{answered} / {total} مُجاب",
+      "speaking": {
+        "hint": "سجّل إجابتك صوتياً. سيتم حفظ التسجيل تلقائياً.",
+        "minimum": "الحد الأدنى: {seconds} ثانية",
+        "elapsed": "{elapsed} / {total} ثانية",
+        "lastRecording": "آخر تسجيل محفوظ",
+        "savedDuration": "المدة المحفوظة: {seconds} ثانية"
+      },
+      "finishCta": "إنهاء وإظهار النتائج",
+      "results": {
+        "title": "نتيجة تحديد المستوى",
+        "method": "المنهجية: {method}",
+        "overallLevel": "المستوى العام: {level}",
+        "strength": "نقطة القوة:",
+        "focus": "محور التركيز:",
+        "duration": "المدة التقديرية للمسار:",
+        "durationNote": "(تقدير مبدئي — سيتم تحسينه في لوحة التعلّم)"
+      },
+      "startJourney": "ابدأ رحلة التعلّم",
+      "errors": {
+        "save": "تعذر حفظ الإجابة",
+        "submit": "تعذر إنهاء اختبار تحديد المستوى",
+        "start": "تعذر بدء اختبار تحديد المستوى",
+        "recording": "تعذر بدء التسجيل",
+        "upload": "تعذر رفع التسجيل",
+        "speakingComplete": "أكمل سؤال التحدث: {prompt}",
+        "speakingAll": "أكمل جميع أسئلة التحدث قبل إنهاء الاختبار"
+      },
+      "leaveConfirm": "لديك إجابات غير محفوظة. هل تريد المغادرة؟",
+      "prev": "السابق",
+      "next": "التالي",
+      "startRecording": "بدء التسجيل",
+      "stopRecording": "إيقاف",
+      "emptyRecording": "التسجيل فارغ — حاول مرة أخرى",
+      "duration": {
+        "oneWeek": "حوالي أسبوع واحد",
+        "twoWeeks": "حوالي أسبوعين",
+        "weeks": "حوالي {n} أسابيع"
+      }
+    },
+    "progress": {
+      "title": "التحليلات والتقدّم",
+      "subtitle": "مستواك وإنجازاتك وإحصائيات تعلّمك",
+      "trend": "اتجاه التحسّن",
+      "trendWeeks": "الأسوع الأخير: {recent}% · السابق: {prior}%",
+      "statsTitle": "إحصائيات التعلّم",
+      "stats": {
+        "conversations": "محادثات",
+        "speaking": "تمارين تحدث",
+        "writing": "تمارين كتابة",
+        "studyMinutes": "وقت الدراسة (د)",
+        "objectives": "أهداف مكتملة",
+        "scenarios": "سيناريوهات"
+      },
+      "achievements": "الإنجازات",
+      "scenarioProgress": "تقدّم السيناريوهات",
+      "scenarioLine": "{mastery} · أفضل نتيجة {score} · {count} مرة",
+      "recentActivity": "النشاط الأخير",
+      "noActivity": "لا يوجد نشاط بعد.",
+      "errors": {
+        "load": "تعذر تحميل التحليلات"
+      }
+    },
+    "curriculum": {
+      "title": "مسارك التعليمي",
+      "subtitle": "أين أنت اليوم — وما الخطوة التالية في رحلتك",
+      "rules": "القواعد",
+      "examples": "أمثلة",
+      "goPractice": "انتقل للتمرين",
+      "errors": {
+        "promotion": "تعذر تحميل اختبار الترقية",
+        "submitTest": "تعذر إرسال الاختبار",
+        "loadLesson": "تعذر تحميل الدرس",
+        "loadPath": "تعذر تحميل المسار التعليمي"
+      }
+    },
+    "certificates": {
+      "title": "الشهادات",
+      "subtitle": "شهادات CEFR عند إتقان جميع المهارات للمستوى",
+      "eligibility": "أهلية الشهادات",
+      "yours": "شهاداتك",
+      "empty": "لا توجد شهادات بعد. أكمل جميع المهارات للمستوى المطلوب للحصول على شهادتك الأولى.",
+      "table": {
+        "level": "المستوى",
+        "number": "رقم الشهادة",
+        "issued": "تاريخ الإصدار",
+        "verify": "رمز التحقق",
+        "actions": "إجراءات"
+      },
+      "verify": "التحقق",
+      "status": {
+        "issued": "صادرة",
+        "eligible": "مؤهل",
+        "notYet": "غير مؤهل بعد"
+      },
+      "requirement": "القراءة والاستماع والكتابة والتحدث ≥ {level}",
+      "errors": {
+        "load": "تعذّر تحميل الشهادات"
+      }
+    },
+    "lessonsPage": {
+      "title": "دروس القواعد والمفردات",
+      "subtitle": "دروس قصيرة تشرح القواعد والمفردات — مع أمثلة وتمارين سريعة",
+      "levelBanner": "دروس لمستواك الحالي: {level}",
+      "empty": "لا توجد دروس متاحة لمستواك حالياً.",
+      "practice": "تمرين",
+      "examples": "أمثلة",
+      "type": {
+        "grammar": "القواعد",
+        "vocabulary": "المفردات"
+      },
+      "showAnswer": "إظهار الإجابة",
+      "errors": {
+        "load": "تعذر تحميل الدروس"
+      }
+    },
+    "scenarios": {
+      "eyebrow": "السيناريوهات",
+      "library": {
+        "title": "سيناريوهات المحادثة",
+        "subtitle": "تمرّن على الإنجليزية في مواقف حياتية موجّهة"
+      },
+      "all": "الكل",
+      "recommended": "موصى به",
+      "empty": "لا توجد سيناريوهات",
+      "errors": {
+        "load": "تعذر تحميل السيناريوهات"
+      },
+      "detail": {
+        "back": "كل السيناريوهات",
+        "defaultTitle": "سيناريو",
+        "level": "المستوى {level}+",
+        "adaptive": "تكيّف: {level}",
+        "studentRole": "ستلعب دور",
+        "aiRole": "شخصية الذكاء الاصطناعي",
+        "targetSkills": "المهارات المستهدفة",
+        "opening": "الرسالة الافتتاحية",
+        "locked": "مقفل — يتطلب {level}",
+        "start": "بدء السيناريو",
+        "errors": {
+          "load": "تعذر تحميل السيناريو",
+          "start": "تعذر بدء السيناريو"
+        }
+      },
+      "conversation": {
+        "defaultTitle": "محادثة",
+        "back": "السيناريوهات",
+        "level": "المستوى {level}",
+        "stop": "إيقاف",
+        "finish": "إنهاء والحصول على التقييم",
+        "thinking": "جاري التفكير…",
+        "speak": "تحدّث",
+        "recording": "جاري التسجيل…",
+        "placeholder": "أو اكتب ردّك بالإنجليزية…",
+        "errors": {
+          "load": "تعذر تحميل الجلسة",
+          "message": "تعذر إرسال الرسالة",
+          "voice": "تعذر معالجة الصوت",
+          "end": "تعذر إنهاء الجلسة"
+        }
+      },
+      "completion": {
+        "title": "اكتمل السيناريو",
+        "subtitle": "ملخص أدائك",
+        "defaultTitle": "انتهى السيناريو",
+        "wentWell": "ما نجح",
+        "toImprove": "ما يحتاج تحسين",
+        "corrections": "التصحيحات",
+        "vocabulary": "مفردات مقترحة",
+        "nextRecommended": "السيناريو التالي الموصى به",
+        "start": "ابدأ",
+        "browse": "تصفّح السيناريوهات",
+        "noFeedback": "لا يتوفر تقييم لهذه الجلسة."
+      },
+      "scores": {
+        "communication": "تواصل",
+        "grammar": "قواعد",
+        "vocabulary": "مفردات",
+        "fluency": "طلاقة"
+      }
+    },
+    "subscribe": {
+      "eyebrow": "اشتراك مميز",
+      "title": "تعلّم اللغة الإنجليزية",
+      "subtitle": "فعّل اشتراكك للوصول إلى اختبار المستوى والمسار الشخصي",
+      "errors": {
+        "load": "تعذر تحميل المنتج",
+        "subscribe": "فشل الاشتراك"
+      },
+      "success": "تم تفعيل الاشتراك — سيتم توجيهك لبدء اختبار المستوى قريباً (المرحلة التالية)."
+    },
+    "practice": {
+      "title": "تمرّن",
+      "subtitle": "اختر مهارة — كل التدريب في مكان واحد",
+      "skills": {
+        "speaking": {
+          "label": "التحدث",
+          "description": "محادثة وتمارين نطق"
+        },
+        "reading": {
+          "label": "القراءة",
+          "description": "نصوص وتمارين فهم"
+        },
+        "listening": {
+          "label": "الاستماع",
+          "description": "مقاطع صوتية وأسئلة"
+        },
+        "writing": {
+          "label": "الكتابة",
+          "description": "مواضيع وردود مكتوبة"
+        },
+        "vocabulary": {
+          "label": "المفردات",
+          "description": "بطاقات وتكرار متباعد"
+        },
+        "grammar": {
+          "label": "القواعد",
+          "description": "دروس قواعد منظّمة"
+        }
+      }
+    }
+  },
+  "manualQuiz": {
+    "header": {
+      "eyebrow": "كويز"
+    },
+    "defaultTitle": "اختبار",
+    "backToCourse": "العودة للدورة",
+    "startCta": "بدء الكويز",
+    "submitCta": "تسليم الكويز",
+    "previous": "السابق",
+    "next": "التالي",
+    "true": "صح",
+    "false": "خطأ",
+    "pendingGrading": "بانتظار التصحيح",
+    "timer": {
+      "remaining": "الوقت المتبقي",
+      "expired": "انتهى الوقت",
+      "remainingLine": "الوقت المتبقي: {time}"
+    },
+    "subtitle": {
+      "result": "نتيجة المحاولة",
+      "default": "كويز يدوي من المعلم"
+    },
+    "passed": "ناجح —",
+    "failed": "لم يتحقق شرط النجاح —",
+    "pendingEssays": "يوجد أسئلة مقالية قيد التصحيح —",
+    "passingScore": "درجة النجاح: {pct}%",
+    "questionsCount": "{n} أسئلة",
+    "totalPoints": "إجمالي الدرجات: {n} نقطة",
+    "duration": "المدة: {n} دقيقة",
+    "questionProgress": "سؤال {current} من {total}",
+    "points": "{n} نقطة",
+    "yourAnswer": "إجابتك",
+    "essayAnswer": "إجابتك المقالية",
+    "essayGradingNote": "سيُصحَّح هذا السؤال من قبل المعلم",
+    "errors": {
+      "timeExpired": "انتهى وقت الكويز",
+      "start": "تعذر بدء الكويز",
+      "submit": "تعذر التسليم",
+      "load": "تعذر تحميل الكويز"
+    }
+  },
+  "profile": {
+    "header": {
+      "eyebrow": "ملفي",
+      "title": "من أنا؟",
+      "subtitle": "هويتك التعليمية تساعدنا على تخصيص تجربتك"
+    },
+    "saveCta": "حفظ ملفي",
+    "saveSuccess": "تم حفظ ملفك بنجاح",
+    "errors": {
+      "save": "تعذر حفظ ملفك"
+    },
+    "hero": {
+      "joinedSince": "معنا منذ {date}",
+      "activeLearner": "متعلّم نشط",
+      "enrolledCourses": "دورة مسجّلة",
+      "activeSubjects": "مادة نشطة",
+      "defaultInitial": "ط"
+    },
+    "sections": {
+      "goal": {
+        "title": "هدفي",
+        "subtitle": "ما الذي تحلم بتحقيقه من تعلّمك؟"
+      },
+      "learn": {
+        "title": "كيف أتعلم",
+        "explanationLength": "طول الشرح",
+        "challengeLevel": "مستوى التحدي",
+        "understandingStyle": "أسلوب الفهم",
+        "teacherStyle": "أسلوب المعلّم معك"
+      },
+      "adaptation": {
+        "title": "كيف سأساعدك؟",
+        "subtitle": "بناءً على اختياراتك أعلاه، هكذا سأتكيّف معك:",
+        "empty": "اختر تفضيلاتك في «كيف أتعلم» لأعرض لك كيف سأساعدك"
+      },
+      "interests": {
+        "title": "اهتماماتي",
+        "subtitle": "المواد والهوايات التي تحبها — نستخدمها في الأمثلة والشرح"
+      },
+      "age": {
+        "title": "الفئة العمرية",
+        "placeholder": "اختر فئتك العمرية",
+        "help": "تُستخدم لتبسيط الشرح والأمثلة."
+      },
+      "family": {
+        "title": "العائلة والمتابعة"
+      }
+    }
+  },
+  "routine": {
+    "title": "المخطط والالتزام",
+    "subtitle": "ذكاء اصطناعي يبني برنامجك الكامل — من الصحيان للنوم",
+    "onboarding": {
+      "hero": {
+        "title": "خليني أتعرف عليك أولاً",
+        "subtitle": "شوية معلومات بسيطة وبنبني برنامجك المثالي سوا",
+        "subtitleEmoji": "شوية معلومات بسيطة وبنبني برنامجك المثالي سوا 🚀"
+      },
+      "grade": {
+        "title": "في أي صف أنت؟",
+        "subtitle": "هذا بيساعدنا نخصص برنامجك على عمرك"
+      },
+      "school": {
+        "title": "مواعيد المدرسة",
+        "subtitle": "من أي ساعة لأي ساعة دوامك؟"
+      },
+      "sleep": {
+        "title": "الصحيان والنوم",
+        "subtitle": "روتين النوم أساس يومك الناجح"
+      },
+      "wakeTime": "وقت الصحيان",
+      "sleepTime": "وقت النوم",
+      "schoolDays": {
+        "title": "أيام المدرسة",
+        "subtitle": "اختار الأيام يلي عندك فيها دوام"
+      },
+      "activities": {
+        "title": "الأنشطة",
+        "heading": "عندك نشاطات إضافية؟",
+        "subtitle": "رياضة، دروس خاصة، أو أي شي بياخد من وقتك أسبوعياً",
+        "when": "{name} — متى وأي أيام؟",
+        "days": "الأيام",
+        "subject": "المادة",
+        "subjectPlaceholder": "رياضيات، كيمياء..."
+      },
+      "nextCta": "التالي — حكي مع المساعد"
+    },
+    "settings": {
+      "title": "الإعدادات",
+      "subtitle": "تعديل بياناتك بدون مسح البرنامج",
+      "grade": "الصف",
+      "schoolTime": "وقت المدرسة",
+      "sleepSection": "الصحيان والنوم",
+      "wakeShort": "صحيان",
+      "sleepShort": "نوم",
+      "schoolDays": "أيام المدرسة",
+      "deleteSchedule": "حذف البرنامج والبدء من جديد",
+      "saveChanges": "حفظ التعديلات"
+    },
+    "chat": {
+      "inputPlaceholder": "اكتب هنا...",
+      "assistantLabel": "مساعدك الذكي",
+      "typing": "{name} يكتب...",
+      "pinnedLabel": "سؤال للمساعد",
+      "uploadExams": "رفع جدول الامتحانات",
+      "uploadPdfFormats": "PDF فقط — حتى 500 MB",
+      "manualExams": "إدخال يدوي",
+      "upcomingExams": "امتحاناتك القادمة:",
+      "addExam": "+ إضافة",
+      "typingWithName": "{name} يكتب...",
+      "submitToAi": "إرسال للذكاء",
+      "examTable": {
+        "title": "جدول امتحاناتك القادمة",
+        "subject": "المادة",
+        "date": "التاريخ",
+        "time": "الوقت",
+        "unknownSubject": "مادة غير محددة",
+        "unknownTime": "غير محدد"
+      },
+      "scheduleReady": "برنامجك الأسبوعي جاهز — هيك حيكون شكله",
+      "emptyDay": "يوم فارغ"
+    },
+    "common": {
+      "cancel": "إلغاء",
+      "confirm": "تأكيد",
+      "save": "حفظ",
+      "delete": "حذف",
+      "from": "من",
+      "to": "لـ"
+    },
+    "preview": {
+      "title": "معاينة البرنامج",
+      "confirmSave": "تأكيد وحفظ",
+      "reviewTitle": "راجع معلوماتك قبل ما نبني برنامجك",
+      "reviewHint": "تأكد إنها صحيحة، أو عدّل أي يوم بالضغط على القلم ✏️",
+      "gradeChip": "الصف {grade}",
+      "schoolChip": "المدرسة {start} – {end}",
+      "wakeChip": "استيقاظ {time}",
+      "sleepChip": "نوم {time}",
+      "editSettings": "تعديل الإعدادات",
+      "sevenDays": "أيامك السبعة",
+      "confirmBuild": "تأكيد المعلومات وابني برنامجي",
+      "building": "جاري بناء برنامجك...",
+      "buildingHint": "كل ما حكينا عن يوم، رح ينعلّم هون 👇",
+      "editDay": "عدّل هذا اليوم"
+    },
+    "gradeInfo": {
+      "sleep": "نوم: {time}",
+      "study": "دراسة: {hours}",
+      "notes": {
+        "79": "توازن دراسة ونشاط",
+        "1011": "راحة قبل الدراسة",
+        "12bac": "نوم 7 ساعات لا تنقص"
+      },
+      "studyHours": {
+        "79": "1-2 س",
+        "1011": "2-3 س",
+        "12bac": "4-6 س"
+      }
+    },
+    "review": {
+      "aiTitle": "مراجعة الذكاء الاصطناعي",
+      "subtitle": "اقتراحات لتحسين برنامجك",
+      "loading": "الذكاء الاصطناعي يراجع برنامجك...",
+      "suggestions": "الاقتراحات:",
+      "priority": {
+        "high": "مهم",
+        "medium": "متوسط",
+        "low": "اختياري"
+      },
+      "editSchedule": "تعديل البرنامج",
+      "finish": "انتهيت — شوف برنامجي",
+      "savedPreview": "معاينة برنامجك المحفوظ"
+    },
+    "view": {
+      "weeklyTitle": "برنامجك الأسبوعي",
+      "renewWeek": "تجديد الأسبوع"
+    },
+    "delete": {
+      "title": "حذف البرنامج؟",
+      "body": "هذا سيمسح برنامجك الأسبوعي وسجل المحادثة. الإعدادات تبقى.",
+      "confirm": "نعم، احذف"
+    },
+    "exams": {
+      "confirmTitle": "تأكيد الامتحانات",
+      "confirmSubtitle": "راجع البيانات المستخرجة وعدّلها إذا لزم",
+      "noneDetected": "لم يتم التعرف على امتحانات في الملف",
+      "add": "إضافة امتحان",
+      "save": "حفظ الامتحانات",
+      "unknownDate": "تاريخ غير محدد"
+    },
+    "progress": {
+      "notStarted": "لسا ما بدأنا — يلا نحكي عن أول يوم بأسبوعك",
+      "allDone": "تمام! كل الأيام جاهزة — برنامجك قاعد يتبنى الآن",
+      "partial": "جمعنا {done} من {total} أيام — كمل معي شوي وخلصنا"
+    },
+    "messages": {
+      "welcome": "مرحباً! أنا جاهز لبناء برنامجك اليومي الكامل.\nخبّرني: شو عندك يوم الاثنين؟ من أي ساعة لأي ساعة؟",
+      "buildError": "حدث خطأ أثناء بناء البرنامج.",
+      "genericError": "حدث خطأ",
+      "saveError": "حدث خطأ في حفظ البرنامج.",
+      "uploadError": "حدث خطأ في رفع الصورة.",
+      "pdfTooLarge": "حجم ملف PDF أكبر من {size}",
+      "examsSaved": "تم حفظ {count} امتحان ✅",
+      "examLine": "امتحان {subject} بتاريخ {date} الساعة {time}",
+      "editDay": "بدي أعدّل يوم {day} 📝",
+      "scheduleReady": "البرنامج جاهز! يمكنك مشاهدته الآن."
+    },
+    "dayType": {
+      "school": "مدرسة",
+      "weekend": "عطلة"
+    },
+    "grades": {
+      "g7": "سابع",
+      "g8": "ثامن",
+      "g9": "تاسع",
+      "g10": "عاشر",
+      "g11": "حادي عشر",
+      "g12": "ثاني عشر",
+      "bac": "بكالوريا"
+    },
+    "days": {
+      "monday": "الاثنين",
+      "tuesday": "الثلاثاء",
+      "wednesday": "الأربعاء",
+      "thursday": "الخميس",
+      "friday": "الجمعة",
+      "saturday": "السبت",
+      "sunday": "الأحد",
+      "mon": "اثنين",
+      "tue": "ثلاثاء",
+      "wed": "أربعاء",
+      "thu": "خميس",
+      "fri": "جمعة",
+      "sat": "سبت",
+      "sun": "أحد"
+    },
+    "activities": {
+      "sport": "رياضة",
+      "tutoring": "دروس خاصة",
+      "religious": "نشاط ديني",
+      "music": "موسيقى",
+      "languages": "لغات"
+    }
+  }
+}

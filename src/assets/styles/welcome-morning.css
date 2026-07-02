@@ -1,0 +1,302 @@
+/**
+ * AUTH-2.0 — Morning landing experience
+ * Premium educational atmosphere; aligns with Student Home / Messages / Course.
+ */
+
+/* ——— Atmosphere: layered surfaces, soft mesh ——— */
+[data-theme='morning'] .welcome-page {
+  background: var(--em-surface-base);
+}
+
+[data-theme='morning'] .welcome-bg__aurora--1 {
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.28) 0%, transparent 68%);
+}
+
+[data-theme='morning'] .welcome-bg__aurora--2 {
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.2) 0%, transparent 70%);
+}
+
+[data-theme='morning'] .welcome-bg__aurora--3 {
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.16) 0%, transparent 72%);
+}
+
+[data-theme='morning'] .welcome-bg__sheen {
+  background: linear-gradient(
+    115deg,
+    transparent 40%,
+    rgba(99, 102, 241, 0.04) 48%,
+    rgba(6, 182, 212, 0.05) 52%,
+    transparent 60%
+  );
+  opacity: 0.5;
+}
+
+[data-theme='morning'] .welcome-bg__particle {
+  background: rgba(99, 102, 241, 0.28);
+  box-shadow: none;
+  opacity: 0.22;
+}
+
+/* ——— Typography hierarchy ——— */
+[data-theme='morning'] .welcome-headline {
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 3.2vh, 1.72rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.28;
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .hero-desc {
+  font-size: clamp(0.875rem, 1.85vh, 0.98rem);
+  line-height: 1.65;
+  color: var(--em-text-muted);
+  max-width: min(480px, 92vw);
+}
+
+[data-theme='morning'] .role-paths__label {
+  margin-bottom: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .welcome-enter--logo {
+  filter: drop-shadow(0 2px 12px rgba(99, 102, 241, 0.08));
+}
+
+[data-theme='morning'] .welcome-shell {
+  gap: clamp(0.65rem, 1.75vh, 1rem);
+}
+
+[data-theme='morning'] .welcome-hero {
+  gap: clamp(0.45rem, 1.2vh, 0.7rem);
+}
+
+/* ——— Benefit chips ——— */
+[data-theme='morning'] .welcome-benefits__chip {
+  color: var(--em-text-muted);
+  background: var(--em-card-l1);
+  border: 1px solid var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .welcome-benefits__icon {
+  color: var(--em-primary-deep);
+}
+
+/* ——— Role cards ——— */
+[data-theme='morning'] .role-path__icon-wrap {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .role-path__icon-wrap--student {
+  background: rgba(6, 182, 212, 0.1);
+  border-color: rgba(6, 182, 212, 0.18);
+}
+
+[data-theme='morning'] .role-path__icon-wrap--parent {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.18);
+}
+
+[data-theme='morning'] .role-path__icon-wrap--teacher {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+[data-theme='morning'] .role-path__tagline {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .role-path__detail {
+  color: var(--em-text-helper);
+}
+
+/* ——— Trust section ——— */
+[data-theme='morning'] .welcome-trust__point {
+  background: var(--em-card-l1);
+  border-color: var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .welcome-trust__point-icon {
+  background: var(--em-surface-control);
+}
+
+[data-theme='morning'] .welcome-trust__point-text {
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .instagram-link--card {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%);
+  border-color: var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .instagram-link--card:hover {
+  border-color: var(--em-border-bright);
+  background: var(--em-card-l1);
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .instagram-link__card-icon {
+  background: linear-gradient(135deg, rgba(225, 48, 108, 0.1), rgba(131, 58, 180, 0.08));
+  border-color: rgba(225, 48, 108, 0.16);
+}
+
+[data-theme='morning'] .instagram-link--card .instagram-link__handle {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .instagram-link--card .instagram-link__hint {
+  color: var(--em-text-helper);
+}
+
+/* ——— Deeper morning atmosphere ——— */
+[data-theme='morning'] .welcome-bg__base {
+  background:
+    url("data:image/svg+xml,%3Csvg width='72' height='72' viewBox='0 0 72 72' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%236366f1' fill-opacity='0.04' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(ellipse 92% 58% at 50% -6%, rgba(99, 102, 241, 0.2) 0%, transparent 56%),
+    radial-gradient(ellipse 68% 52% at 4% 94%, rgba(6, 182, 212, 0.14) 0%, transparent 52%),
+    radial-gradient(ellipse 62% 46% at 96% 76%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+    radial-gradient(ellipse 40% 30% at 72% 18%, rgba(6, 182, 212, 0.08) 0%, transparent 55%),
+    linear-gradient(168deg, var(--em-surface-base) 0%, var(--em-surface-secondary) 38%, var(--em-card-l3) 100%);
+}
+
+[data-theme='morning'] .welcome-bg__aurora {
+  filter: blur(96px);
+  opacity: 0.42;
+}
+
+[data-theme='morning'] .welcome-shell::before {
+  content: '';
+  position: absolute;
+  inset: 8% 4% 6%;
+  border-radius: var(--em-radius-xl);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.08) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.08);
+  pointer-events: none;
+  z-index: -1;
+}
+
+[data-theme='morning'] .welcome-cards {
+  width: 100%;
+  padding: 0.15rem 0;
+}
+
+[data-theme='morning'] .welcome-footer {
+  opacity: 1;
+}
+
+/* ——— Role cards: interactive, no glow ——— */
+[data-theme='morning'] .role-path {
+  border-radius: var(--em-radius-md);
+  border: 1px solid var(--em-border-subtle);
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%);
+  box-shadow: var(--em-shadow-sm);
+  color: var(--em-text);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out),
+    background var(--em-duration-fast) var(--em-ease-out),
+    opacity var(--em-duration-standard) ease;
+}
+
+[data-theme='morning'] .role-path__glow {
+  display: none;
+}
+
+[data-theme='morning'] .role-path__title {
+  font-weight: 800;
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .role-path--student {
+  border-color: rgba(6, 182, 212, 0.14);
+}
+
+[data-theme='morning'] .role-path:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: var(--em-border-bright);
+  background: var(--em-card-l1);
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .role-path:hover:not(:disabled) .role-path__icon-wrap {
+  transform: scale(1.04);
+}
+
+[data-theme='morning'] .role-path--active {
+  border-color: var(--em-chip-selected-border);
+  background: linear-gradient(180deg, var(--em-card-l3) 0%, var(--em-card-l2) 100%);
+  box-shadow: var(--em-shadow-card);
+}
+
+[data-theme='morning'] .role-path--active.role-path--student {
+  border-color: rgba(6, 182, 212, 0.32);
+}
+
+[data-theme='morning'] .role-path--navigating {
+  animation: none;
+  transform: translateY(-1px) scale(1.01);
+  border-color: var(--em-primary);
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .role-path--dimmed {
+  opacity: 0.52;
+  transform: scale(0.98);
+}
+
+/* ——— Footer link ——— */
+[data-theme='morning'] .welcome-page .instagram-link:not(.instagram-link--card) {
+  color: var(--em-text-muted);
+  border: 1px solid var(--em-border-subtle);
+  background: var(--em-card-l1);
+  border-radius: var(--em-radius-sm);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .welcome-page .instagram-link:not(.instagram-link--card):hover {
+  color: var(--em-text);
+  border-color: var(--em-border-bright);
+  background: var(--em-card-l2);
+}
+
+[data-theme='morning'] .welcome-page .instagram-link__handle {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .welcome-page .instagram-link__hint {
+  color: var(--em-text-helper);
+}
+
+/* ——— Theme toggle on landing ——— */
+[data-theme='morning'] .welcome-page__toolbar .auth-theme {
+  background: var(--em-card-l1);
+  border-color: var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+@media (max-height: 720px) {
+  [data-theme='morning'] .welcome-headline {
+    font-size: 1.22rem;
+  }
+
+  [data-theme='morning'] .hero-desc {
+    font-size: 0.82rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='morning'] .role-path:hover:not(:disabled) {
+    transform: none;
+  }
+}

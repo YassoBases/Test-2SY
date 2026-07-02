@@ -1,0 +1,182 @@
+/**
+ * Student Home — layout & reveal animations
+ * UI-6.2.5 — Focused learning hub (Hero · Materials · Continue · Achievements)
+ */
+
+.student-home {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.student-home__section {
+  animation: home-section-in var(--em-duration-slow) var(--em-ease-spring) both;
+}
+
+.student-home__section--hero { animation-delay: 0ms; }
+.student-home__section--courses { animation-delay: 70ms; }
+.student-home__section--continue { animation-delay: 140ms; }
+.student-home__section--achievements { animation-delay: 210ms; }
+
+/* Hub hierarchy spacing */
+.student-home__section--hero {
+  margin-bottom: 0.5rem;
+}
+
+.student-home__section--courses {
+  margin-bottom: 1.75rem;
+}
+
+.student-home__section--continue {
+  margin-bottom: 1.25rem;
+}
+
+.student-home__section--achievements {
+  margin-bottom: 1rem;
+}
+
+/* ——— Subjects: dominant section ——— */
+.home-hub-section--subjects :deep(.app-section__head) {
+  margin-bottom: 1.35rem;
+}
+
+.home-hub-section--subjects :deep(.app-section__eyebrow) {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--em-primary-deep);
+  margin-bottom: 0.35rem;
+}
+
+.home-hub-section--subjects :deep(.app-section__title) {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--em-text);
+}
+
+.home-hub-section--subjects :deep(.app-section__subtitle) {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--em-text-muted);
+  margin-top: 0.35rem;
+}
+
+/* ——— Continue: supporting section ——— */
+.home-hub-section--continue :deep(.app-section__head) {
+  margin-bottom: 0.85rem;
+}
+
+.home-hub-section--continue :deep(.app-section__title) {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+}
+
+.home-hub-section--continue :deep(.app-section__subtitle) {
+  font-size: 0.8125rem;
+  color: var(--em-text-helper);
+}
+
+/* ——— Achievements: compact footer ——— */
+.home-hub-section--achievements :deep(.app-section__head) {
+  margin-bottom: 0.85rem;
+}
+
+.home-hub-section--achievements :deep(.app-section__title) {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+}
+
+.home-hub-section--achievements :deep(.app-section__subtitle) {
+  font-size: 0.8125rem;
+  color: var(--em-text-helper);
+}
+
+.home-stagger-item {
+  animation: home-stagger-in 0.55s var(--em-ease-spring) both;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+@keyframes home-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes home-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+[data-theme='morning'] .student-home {
+  gap: 0.35rem;
+}
+
+[data-theme='morning'] .student-home__section--hero {
+  margin-bottom: 1.15rem;
+}
+
+[data-theme='morning'] .student-home__section--courses {
+  margin-bottom: 2.5rem;
+  padding-bottom: 0.75rem;
+}
+
+[data-theme='morning'] .student-home__section--continue {
+  margin-bottom: 1.75rem;
+}
+
+[data-theme='morning'] .student-home__section--achievements {
+  margin-bottom: 1.25rem;
+}
+
+[data-theme='morning'] .student-home__section--courses .catalog-rail {
+  padding: 8px 4px 14px;
+}
+
+@media (min-width: 960px) {
+  [data-theme='morning'] .student-home__section--courses .catalog-rail {
+    gap: 20px;
+  }
+
+  .home-hub-section--subjects :deep(.app-section__title) {
+    font-size: 1.75rem;
+  }
+}
+
+@media (max-width: 599px) {
+  [data-theme='morning'] .student-home__section--hero {
+    margin-bottom: 1.25rem;
+  }
+
+  [data-theme='morning'] .student-home__section--courses {
+    margin-bottom: 2rem;
+  }
+
+  .home-hub-section--subjects :deep(.app-section__title) {
+    font-size: 1.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .student-home__section,
+  .home-stagger-item {
+    animation: none;
+  }
+}

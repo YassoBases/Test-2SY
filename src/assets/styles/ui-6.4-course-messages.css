@@ -1,0 +1,338 @@
+/**
+ * UI-6.4 — Course & Messages experience polish (Morning Mode)
+ * Aligns Course View and Messages with Home design language.
+ */
+
+/* ═══════════════════════════════════════════
+   COURSE VIEW
+   ═══════════════════════════════════════════ */
+
+.course-experience {
+  gap: var(--em-space-lg);
+}
+
+.course-hero {
+  border: 1px solid var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-card) !important;
+  overflow: hidden;
+}
+
+.course-hero__inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.course-hero__lead {
+  align-items: center;
+}
+
+.course-hero__eyebrow,
+.course-hero__subject {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--em-primary-deep);
+  line-height: 1.35;
+}
+
+.course-hero__teacher {
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  color: var(--em-text);
+}
+
+.course-hero__welcome {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--em-text-muted);
+  max-width: 40ch;
+}
+
+.course-hero__progress {
+  font-size: 0.8125rem;
+  color: var(--em-text-helper);
+}
+
+.course-hero__secondary {
+  border-top: 1px solid var(--em-border-subtle);
+}
+
+.course-hero__next-label {
+  font-size: 0.8125rem;
+  color: var(--em-text-helper);
+}
+
+.course-tabs {
+  margin-bottom: var(--em-space-sm) !important;
+}
+
+.course-tabs :deep(.v-tab) {
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  min-height: 44px;
+}
+
+.course-view .locked-screen {
+  max-width: 420px;
+  margin-inline: auto;
+  padding: var(--em-space-xl) var(--em-space-lg) !important;
+  border-radius: var(--em-radius-md);
+}
+
+.course-journey {
+  padding: 0;
+}
+
+.course-journey__head {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+  margin-bottom: var(--em-space-md);
+}
+
+.course-journey__empty {
+  border-radius: var(--em-radius-md);
+  border: 1px dashed var(--em-border);
+  background: var(--em-surface-secondary);
+  padding: var(--em-space-xl) var(--em-space-lg);
+}
+
+.course-journey__dot {
+  background: var(--em-surface-control);
+  border: 1px solid var(--em-border-subtle);
+}
+
+.course-journey__item--current .course-journey__dot {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.28);
+  box-shadow: none;
+  transform: none;
+  color: var(--em-primary-deep);
+}
+
+.course-journey__item--completed .course-journey__dot {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.22);
+  color: var(--em-success-deep);
+}
+
+.course-journey__dot-empty {
+  background: var(--em-text-subtle);
+}
+
+.course-journey__line {
+  background: var(--em-border-subtle);
+}
+
+.course-journey__line--filled {
+  background: rgba(16, 185, 129, 0.35);
+}
+
+.course-journey__card {
+  margin-bottom: var(--em-space-sm);
+  padding: 12px 14px;
+  border: 1px solid var(--em-border-subtle);
+  border-radius: var(--em-radius-sm);
+  background: var(--em-card-l1);
+  min-height: 52px;
+}
+
+.course-journey__card:hover:not(:disabled) {
+  border-color: rgba(99, 102, 241, 0.18);
+  background: var(--em-card-l2);
+}
+
+.course-journey__item--current .course-journey__card {
+  border-color: rgba(99, 102, 241, 0.22);
+  background: var(--em-card-l2);
+  box-shadow: var(--em-shadow-sm);
+}
+
+.course-journey__item--completed .course-journey__card {
+  opacity: 0.88;
+}
+
+.course-journey__item--upcoming .course-journey__card {
+  opacity: 0.72;
+}
+
+.course-journey__item--locked .course-journey__card {
+  opacity: 0.5;
+}
+
+.course-journey__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--em-text);
+  line-height: 1.4;
+}
+
+.course-quizzes-wrap {
+  border-radius: var(--em-radius-md) !important;
+  border: 1px solid var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+  overflow: hidden;
+}
+
+[data-theme='morning'] .course-hero {
+  background: linear-gradient(180deg, var(--em-card-l3) 0%, var(--em-card-l1) 100%) !important;
+  border-color: rgba(99, 102, 241, 0.14) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .course-tabs :deep(.v-slide-group__container) {
+  background: var(--em-surface-control);
+  border-radius: var(--em-radius-sm);
+  padding: 4px;
+}
+
+[data-theme='morning'] .course-tabs :deep(.v-tab--selected) {
+  background: var(--em-card-l1);
+  border-radius: 8px;
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .course-journey__empty {
+  background: var(--em-card-l1);
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .course-journey__card {
+  background: var(--em-card-l1);
+}
+
+[data-theme='morning'] .course-journey__item--current .course-journey__card {
+  background: var(--em-card-l2);
+}
+
+/* ═══════════════════════════════════════════
+   MESSAGES
+   ═══════════════════════════════════════════ */
+
+.wa-messages-app {
+  min-height: calc(100vh - 128px);
+}
+
+.wa-shell {
+  border-radius: var(--em-radius-md);
+  box-shadow: var(--em-shadow-card);
+}
+
+.wa-list-header__title {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.wa-list-section-title {
+  color: var(--em-primary-deep) !important;
+}
+
+.wa-compose-bar {
+  background: var(--em-surface-elevated);
+  border-top: 1px solid var(--em-border-subtle);
+}
+
+.wa-thread-header,
+.wa-thread-header__search {
+  background: var(--em-surface-elevated);
+  border-color: var(--em-border-subtle);
+}
+
+.wa-composer-preview {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .wa-messages-app {
+  --wa-bg: var(--em-surface-base);
+  --wa-pane-bg: var(--em-card-l1);
+  --wa-list-bg: var(--em-surface-secondary);
+  --wa-thread-bg: var(--em-card-l1);
+  --wa-border: var(--em-border-subtle);
+  --wa-incoming: var(--em-card-l1);
+  --wa-incoming-border: var(--em-border-subtle);
+  --wa-outgoing: var(--em-student-bubble-bg);
+  --wa-outgoing-solid: transparent;
+  --wa-accent: var(--em-primary-deep);
+  --wa-text: var(--em-text);
+  --wa-muted: var(--em-text-muted);
+}
+
+[data-theme='morning'] .wa-shell {
+  border-color: var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .wa-timeline {
+  background: var(--em-card-l1);
+}
+
+[data-theme='morning'] .wa-list-search :deep(.v-field__input) {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .wa-compose-bar {
+  background: var(--em-card-l1);
+}
+
+[data-theme='morning'] .msg-row--mine .msg-bubble {
+  background: var(--em-student-bubble-bg);
+  background-color: transparent;
+  color: var(--em-student-bubble-text);
+  border: 1px solid var(--em-student-bubble-border);
+  box-shadow: none;
+}
+
+[data-theme='morning'] .msg-row--other .msg-bubble {
+  background: var(--em-card-l2);
+  border-color: var(--em-border-subtle);
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .msg-row--mine .msg-meta {
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .msg-sender-name--teacher { color: var(--em-primary-deep); }
+[data-theme='morning'] .msg-sender-name--student { color: #0e7490; }
+[data-theme='morning'] .msg-sender-name--parent { color: #6d28d9; }
+
+[data-theme='morning'] .wa-participant-bar,
+[data-theme='morning'] .wa-group-manager {
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .messages-empty__icon {
+  border-color: var(--em-border-subtle);
+  background: var(--em-surface-control);
+}
+
+[data-theme='morning'] .conv-item {
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .conv-item:hover {
+  background: var(--em-surface-control);
+}
+
+[data-theme='morning'] .conv-item--active {
+  background: rgba(99, 102, 241, 0.08);
+  border-inline-end-color: var(--em-primary);
+}
+
+[data-theme='morning'] .conv-item--unread .conv-item__preview {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .conv-item__course {
+  color: var(--em-primary-deep);
+}

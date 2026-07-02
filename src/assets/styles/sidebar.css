@@ -1,0 +1,83 @@
+/**
+ * Shared sidebar shell (all roles)
+ */
+
+.glass-sidebar {
+  background: var(--em-sidebar-bg) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-inline-start: 1px solid var(--em-border) !important;
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .glass-sidebar {
+  background: var(--em-sidebar-wash) !important;
+  backdrop-filter: blur(28px) saturate(1.25);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+  border-inline-start: 1px solid var(--em-sidebar-border) !important;
+  box-shadow:
+    1px 0 0 rgba(255, 255, 255, 0.65) inset,
+    4px 0 28px rgba(12, 25, 48, 0.04);
+  position: relative;
+}
+
+[data-theme='morning'] .glass-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    rgba(99, 102, 241, 0.45) 0%,
+    rgba(6, 182, 212, 0.35) 50%,
+    rgba(99, 102, 241, 0.2) 100%
+  );
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+[data-theme='morning'] .glass-sidebar .v-navigation-drawer__content {
+  position: relative;
+}
+
+.sidebar-brand {
+  text-align: center;
+  padding: var(--em-space-lg) var(--em-space-md);
+}
+
+[data-theme='morning'] .sidebar-brand {
+  padding: var(--em-space-xl) var(--em-space-lg) var(--em-space-lg);
+  margin-bottom: 0.25rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, transparent 100%);
+  border-bottom: 1px solid var(--em-border-subtle);
+}
+
+.sidebar-promo {
+  border-radius: var(--em-radius-md);
+  border: 1px solid var(--em-border);
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.08) 0%,
+    rgba(56, 189, 248, 0.05) 100%
+  );
+}
+
+[data-theme='morning'] .sidebar-promo {
+  background: linear-gradient(
+    145deg,
+    rgba(99, 102, 241, 0.07) 0%,
+    rgba(255, 255, 255, 0.95) 55%,
+    rgba(6, 182, 212, 0.05) 100%
+  );
+  border-color: rgba(99, 102, 241, 0.12);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .sidebar-promo .text-body-2 {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .glass-sidebar .v-divider {
+  opacity: 0;
+  margin: 0;
+}

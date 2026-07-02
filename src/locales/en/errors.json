@@ -1,0 +1,19 @@
+{
+  "generic": "An unexpected error occurred",
+  "network": "Could not reach the server",
+  "unauthorized": "Session expired — please sign in again",
+  "forbidden": "You do not have permission for this action",
+  "notFound": "Item not found",
+  "loadFailed": "Could not load data",
+  "saveFailed": "Could not save changes",
+  "timeoutSuffix": " — the operation took longer than expected.",
+  "timeoutProcessing": "Processing took longer than expected. Check the lessons panel — it may have completed in the background.",
+  "networkFastApi": "Could not reach the server. Make sure FastAPI is running at http://127.0.0.1:8000",
+  "internalServerError": "An unexpected server error occurred. Check FastAPI logs or try again.",
+  "validation422": "Submitted data is invalid. Check required fields.",
+  "badRequest400": "Invalid request. Check form values.",
+  "serverError500": "A server error occurred. Try again or check FastAPI logs.",
+  "exportFailed": "Could not export the report as {format}.",
+  "exportTimeout": "Exporting {format} took longer than expected — please try again.",
+  "exportDownloadFailed": "Could not download the {format} file. It may be too large or the connection dropped — please try again."
+}

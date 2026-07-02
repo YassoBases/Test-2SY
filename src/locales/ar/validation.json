@@ -1,0 +1,20 @@
+{
+  "required": "هذا الحقل مطلوب",
+  "email": "أدخل بريداً إلكترونياً صالحاً",
+  "passwordMin": "كلمة المرور قصيرة جداً",
+  "passwordMatch": "كلمتا المرور غير متطابقتين",
+  "fields": {
+    "title": "العنوان",
+    "description": "الوصف",
+    "duration_minutes": "مدة الكويز",
+    "passing_score_percent": "درجة النجاح",
+    "is_published": "نشر للطلاب",
+    "due_at": "موعد التسليم"
+  },
+  "quiz": {
+    "dueAtFuture": "موعد التسليم يجب أن يكون في المستقبل",
+    "titleRequired": "عنوان الكويز مطلوب",
+    "durationInvalid": "مدة الكويز غير صالحة",
+    "passingScoreInvalid": "درجة النجاح غير صالحة"
+  }
+}

@@ -1,0 +1,48 @@
+/**
+ * Teacher upload / drop zones — use global input tokens where applicable.
+ * Field shells: eduspark-input-surface.css (platform-wide).
+ */
+
+.teacher-layout .course-image-upload__zone,
+.create-course-dialog .course-image-upload__zone,
+.add-lesson-workspace .lesson-source-panel__dropzone,
+.teacher-form-surface .course-image-upload__zone {
+  background: var(--em-teacher-upload-bg) !important;
+  border: 2px dashed var(--em-teacher-upload-border) !important;
+  border-radius: var(--em-teacher-input-radius) !important;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease !important;
+}
+
+.teacher-layout .course-image-upload__zone:hover,
+.teacher-layout .course-image-upload__zone:focus-visible,
+.create-course-dialog .course-image-upload__zone:hover,
+.create-course-dialog .course-image-upload__zone:focus-visible,
+.add-lesson-workspace .lesson-source-panel__dropzone:hover,
+.add-lesson-workspace .lesson-source-panel__dropzone--active,
+.teacher-form-surface .course-image-upload__zone:hover,
+.teacher-form-surface .course-image-upload__zone:focus-visible {
+  border-color: var(--em-input-border-hover, var(--em-teacher-input-border-hover)) !important;
+  outline: none;
+}
+
+[data-theme='morning'] .teacher-layout .course-image-upload__zone:hover,
+[data-theme='morning'] .create-course-dialog .course-image-upload__zone:hover,
+[data-theme='morning'] .add-lesson-workspace .lesson-source-panel__dropzone:hover,
+[data-theme='morning'] .add-lesson-workspace .lesson-source-panel__dropzone--active,
+[data-theme='morning'] .teacher-form-surface .course-image-upload__zone:hover {
+  background: var(--em-input-bg, var(--em-teacher-upload-bg)) !important;
+  border-color: var(--em-input-border-hover) !important;
+}
+
+.create-course-dialog .course-image-upload__preview,
+.teacher-layout .course-image-upload__preview {
+  background: var(--em-teacher-upload-bg) !important;
+  border: var(--em-input-border-width, 1.5px) solid var(--em-input-border, var(--em-teacher-input-border)) !important;
+  border-radius: var(--em-teacher-input-radius) !important;
+}
+
+.lesson-source-panel__dropzone--filled {
+  border-style: solid !important;
+}

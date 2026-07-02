@@ -1,0 +1,457 @@
+/**
+ * UI-6.3 — Student experience consistency (Morning Mode final pass)
+ * Scoped to .student-layout — cards, spacing, typography, buttons, states.
+ * No layout, section, or feature changes.
+ */
+
+/* ═══════════════════════════════════════════
+   SHELL & PAGE RHYTHM
+   ═══════════════════════════════════════════ */
+
+.student-layout .page-container {
+  max-width: 1080px;
+}
+
+.student-layout .page-stack,
+.student-layout .planner-page,
+.student-layout .course-experience,
+.student-layout .routine-page,
+.student-layout .student-home,
+.student-layout .student-identity {
+  --em-page-gap: var(--em-space-xl);
+}
+
+.student-layout .page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--em-page-gap);
+}
+
+.student-layout .page-header {
+  margin-bottom: var(--em-space-xl);
+}
+
+.student-layout .page-header--compact {
+  margin-bottom: var(--em-space-lg);
+}
+
+.student-layout .section-block {
+  margin-bottom: var(--em-space-xl);
+}
+
+.student-layout .page-stack > .section-block:last-child,
+.student-layout .app-section:last-child {
+  margin-bottom: 0;
+}
+
+.student-layout .slide-up-enter-active {
+  min-height: 1px;
+}
+
+/* ═══════════════════════════════════════════
+   TYPOGRAPHY HIERARCHY
+   Page title → Section title → Subtitle → Body → Helper
+   ═══════════════════════════════════════════ */
+
+.student-layout .page-header .section-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.student-layout .page-header .section-title {
+  font-size: clamp(1.375rem, 2.8vw, 1.75rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  margin-bottom: 6px;
+}
+
+.student-layout .page-header .section-subtitle {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  max-width: 52ch;
+  color: var(--em-text-muted);
+}
+
+.student-layout .section-block__title {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--em-text);
+  margin: 0 0 4px;
+}
+
+.student-layout .section-block__subtitle {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--em-text-helper);
+}
+
+.student-layout .text-caption,
+.student-layout .text-body-2.text-medium-emphasis {
+  color: var(--em-text-muted) !important;
+  line-height: 1.45;
+}
+
+.student-layout .text-medium-emphasis {
+  color: var(--em-text-muted) !important;
+}
+
+.student-layout .text-h4,
+.student-layout .text-h5,
+.student-layout .text-h6 {
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.student-layout .v-card-title {
+  line-height: 1.35 !important;
+  letter-spacing: -0.015em;
+}
+
+/* ═══════════════════════════════════════════
+   CARD FAMILY
+   ═══════════════════════════════════════════ */
+
+.student-layout .glass-card,
+.student-layout .content-card,
+.student-layout .app-card,
+.student-layout .analytics-card {
+  border-radius: var(--em-radius-md) !important;
+}
+
+.student-layout .v-card.glass-card.pa-3 {
+  padding: var(--em-space-md) !important;
+}
+
+.student-layout .v-card.glass-card.pa-4,
+.student-layout .analytics-card.pa-4 {
+  padding: var(--em-space-lg) !important;
+}
+
+.student-layout .v-card.glass-card.pa-5,
+.student-layout .v-card.glass-card.pa-6 {
+  padding: var(--em-space-xl) !important;
+}
+
+.student-layout .v-card.glass-card.pa-8 {
+  padding: var(--em-space-2xl) !important;
+}
+
+.student-layout .em-hover-lift {
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out);
+}
+
+.student-layout .em-hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+/* ═══════════════════════════════════════════
+   BUTTONS
+   ═══════════════════════════════════════════ */
+
+.student-layout .v-btn {
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.student-layout .v-btn--size-default {
+  min-height: 40px;
+}
+
+.student-layout .v-btn--size-large {
+  min-height: 44px;
+}
+
+.student-layout .v-btn--size-small {
+  min-height: 34px;
+}
+
+.student-layout .app-btn,
+.student-layout .btn-glow,
+.student-layout .btn-glow-outline {
+  border-radius: var(--em-radius-sm) !important;
+}
+
+/* ═══════════════════════════════════════════
+   EMPTY STATES
+   ═══════════════════════════════════════════ */
+
+.student-layout .app-empty-state__icon,
+.student-layout .empty-state__icon {
+  background: var(--em-surface-control);
+  border: 1px solid var(--em-border-subtle);
+}
+
+.student-layout .app-empty-state__title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.student-layout .app-empty-state__desc {
+  font-size: 0.875rem;
+  color: var(--em-text-muted);
+}
+
+/* ═══════════════════════════════════════════
+   LOADING / SKELETONS
+   ═══════════════════════════════════════════ */
+
+.student-layout .em-loading-grid {
+  gap: var(--em-space-md);
+}
+
+.student-layout .em-loading-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  min-height: 180px;
+}
+
+.student-layout .em-skeleton.v-skeleton-loader {
+  border-radius: var(--em-radius-md) !important;
+  border: 1px solid var(--em-border-subtle);
+}
+
+.student-layout .em-loading-inline {
+  padding: var(--em-space-xl);
+  color: var(--em-text-muted);
+}
+
+/* ═══════════════════════════════════════════
+   MORNING MODE — STUDENT SHELL
+   ═══════════════════════════════════════════ */
+
+[data-theme='morning'] .student-layout .page-header .section-eyebrow,
+[data-theme='morning'] .student-layout .section-eyebrow {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .student-layout .app-section__eyebrow {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .student-layout .app-section__subtitle,
+[data-theme='morning'] .student-layout .section-block__subtitle,
+[data-theme='morning'] .student-layout .page-header .section-subtitle {
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .student-layout .section-block__head {
+  border-bottom-color: var(--em-border-subtle);
+}
+
+/* Cards */
+[data-theme='morning'] .student-layout .glass-card,
+[data-theme='morning'] .student-layout .content-card,
+[data-theme='morning'] .student-layout .app-card,
+[data-theme='morning'] .student-layout .analytics-card {
+  background: var(--em-card-l1) !important;
+  border: 1px solid var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme='morning'] .student-layout .glass-card--elevated,
+[data-theme='morning'] .student-layout .glass-card.glass-card--solid {
+  background: var(--em-card-l1) !important;
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .student-layout .em-hover-lift:hover,
+[data-theme='morning'] .student-layout .analytics-card:hover {
+  border-color: rgba(99, 102, 241, 0.16) !important;
+  box-shadow: var(--em-shadow-md) !important;
+  transform: translateY(-2px);
+}
+
+[data-theme='morning'] .student-layout .neon-value {
+  color: var(--em-text);
+  text-shadow: none;
+}
+
+[data-theme='morning'] .student-layout .analytics-card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+}
+
+/* Empty & loading */
+[data-theme='morning'] .student-layout .app-empty-state__icon {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .student-layout .em-skeleton.v-skeleton-loader {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle);
+}
+
+/* Course */
+[data-theme='morning'] .student-layout .course-hero {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .student-layout .course-hero__welcome,
+[data-theme='morning'] .student-layout .course-hero__subject {
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .student-layout .course-journey__card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+}
+
+/* Lesson flow panels */
+[data-theme='morning'] .student-layout .lesson-session-tools-card,
+[data-theme='morning'] .student-layout .lesson-fallback-card,
+[data-theme='morning'] .student-layout .lesson-learn-flow__video-wrap {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .student-layout .chat-panel {
+  background: var(--em-surface-secondary);
+  border-color: var(--em-border-subtle);
+}
+
+/* Routine */
+[data-theme='morning'] .student-layout .routine-page .onb-section {
+  background: var(--em-card-l1);
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .student-layout .routine-page .onb-section:hover {
+  border-color: rgba(99, 102, 241, 0.16);
+}
+
+[data-theme='morning'] .student-layout .routine-page .onb-icon-primary {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--em-primary-deep);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+[data-theme='morning'] .student-layout .routine-page .onb-icon-info {
+  background: rgba(6, 182, 212, 0.1);
+  color: #0e7490;
+  border-color: rgba(6, 182, 212, 0.18);
+}
+
+[data-theme='morning'] .student-layout .routine-page .grade-chip {
+  background: var(--em-surface-control) !important;
+  border-color: var(--em-border) !important;
+  color: var(--em-text) !important;
+}
+
+[data-theme='morning'] .student-layout .routine-page .grade-chip-active {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 55%, #06b6d4 100%) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.22);
+}
+
+[data-theme='morning'] .student-layout .routine-page .chat-header {
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .student-layout .routine-page .chat-messages {
+  scrollbar-color: rgba(12, 25, 48, 0.12) transparent;
+}
+
+[data-theme='morning'] .student-layout .routine-page .ai-avatar,
+[data-theme='morning'] .student-layout .routine-page .ai-avatar-sm {
+  background: var(--em-surface-control);
+  border-color: rgba(99, 102, 241, 0.16);
+}
+
+[data-theme='morning'] .student-layout .routine-page .msg-bubble-user {
+  background: var(--em-student-bubble-bg);
+  color: var(--em-student-bubble-text);
+  border-color: transparent;
+}
+
+[data-theme='morning'] .student-layout .routine-page .msg-bubble-ai {
+  background: var(--em-card-l1);
+  color: var(--em-text);
+  border-color: var(--em-border-subtle);
+}
+
+/* Languages */
+[data-theme='morning'] .language-home__footer a,
+[data-theme='morning'] .language-home__footer-link {
+  color: var(--em-primary-deep);
+}
+
+/* Messages */
+[data-theme='morning'] .student-layout .wa-messages-app {
+  --wa-text: var(--em-text);
+  --wa-muted: var(--em-text-muted);
+}
+
+[data-theme='morning'] .student-layout .wa-list-header__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Profile */
+[data-theme='morning'] .student-layout .student-identity__hero {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .student-layout .student-identity__stat {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+/* Planner spacing */
+[data-theme='morning'] .student-layout .planner-page .section-block__title {
+  color: var(--em-text);
+}
+
+/* Home hub — depth without noise */
+[data-theme='morning'] .student-layout .journey-hero--primary {
+  background: linear-gradient(180deg, var(--em-card-l3) 0%, var(--em-card-l1) 100%) !important;
+}
+
+[data-theme='morning'] .student-layout .catalog-card {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%) !important;
+}
+
+[data-theme='morning'] .student-layout .achievement-card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: none !important;
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE & MOTION
+   ═══════════════════════════════════════════ */
+
+@media (max-width: 599px) {
+  .student-layout .page-container {
+    padding-inline: var(--em-space-md) !important;
+  }
+
+  .student-layout .page-header {
+    margin-bottom: var(--em-space-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .student-layout .em-hover-lift:hover,
+  [data-theme='morning'] .student-layout .analytics-card:hover {
+    transform: none;
+  }
+}

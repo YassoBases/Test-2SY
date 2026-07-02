@@ -1,0 +1,1358 @@
+{
+  "common": {
+    "defaultStudentName": "Student",
+    "roleStudent": "Student",
+    "ok": "OK",
+    "withTeacher": "With {name}",
+    "teacher": "Teacher",
+    "lesson": "lesson",
+    "lessons": "lessons",
+    "send": "Send"
+  },
+  "home": {
+    "greeting": {
+      "morning": "Good morning",
+      "evening": "Good evening"
+    },
+    "mission": {
+      "defaultHeadline": "Start your journey",
+      "defaultLessonTitle": "Your learning mission appears here",
+      "defaultCta": "Start",
+      "completeLesson": "Complete lesson «{title}»",
+      "progress": "{done} of {total} lessons completed"
+    },
+    "subjects": {
+      "eyebrow": "Your learning portal",
+      "title": "Your subjects",
+      "subtitle": "Each subject with its teacher — pick and continue",
+      "empty": {
+        "noCourses": "No subjects for your grade yet.",
+        "noGrade": "Set your grade to see subjects.",
+        "subscriptions": "Subscriptions",
+        "setGrade": "Set grade"
+      }
+    },
+    "continue": {
+      "title": "Continue where you left off",
+      "subtitle": "Quick links",
+      "empty": {
+        "title": "No activity yet",
+        "description": "Subscribe to a subject or start your first lesson to see it here.",
+        "action": "Subscriptions"
+      }
+    },
+    "achievements": {
+      "title": "Achievements",
+      "subtitle": "A small moment to celebrate your next step",
+      "recent": {
+        "label": "Latest achievement",
+        "empty": "Start learning to unlock your first badge"
+      },
+      "next": {
+        "label": "Next goal",
+        "empty": "You are on the right track!"
+      },
+      "viewAll": "View all achievements"
+    },
+    "journey": {
+      "title": "Recent activity",
+      "subtitle": "Overview of your progress in each subject",
+      "lockReason": "Subscribe to unlock this subject",
+      "empty": {
+        "noCourses": "No subjects available for your grade yet.",
+        "noGrade": "Set your grade to see your path."
+      },
+      "status": {
+        "done": "Completed",
+        "active": "In progress",
+        "ready": "Ready to start",
+        "locked": "Locked"
+      },
+      "progressLine": "{percent}% · {done}/{total} lessons"
+    },
+    "report": {
+      "title": "My report",
+      "subtitle": "A quick summary of your journey — no complexity",
+      "lastQuizNone": "Not tested yet",
+      "stats": {
+        "activeSubjects": "Active subjects",
+        "completedLessons": "Completed lessons",
+        "lastQuiz": "Latest quiz score",
+        "studyDays": "Study days this week"
+      }
+    },
+    "missionDetail": {
+      "title": "Mission details",
+      "subtitle": "Session and subject info",
+      "withTeacher": "With {name}",
+      "progress": "{done} of {total} lessons in this subject"
+    },
+    "dailyFocus": {
+      "eyebrow": "Today's focus",
+      "progress": "Progress"
+    },
+    "quickActions": {
+      "title": "Quick actions",
+      "subtitle": "Shortcuts to what you need now",
+      "chat": {
+        "title": "Teacher chat",
+        "description": "Ask and connect directly"
+      },
+      "lesson": {
+        "title": "Continue lesson",
+        "description": "Pick up where you left off"
+      },
+      "language": {
+        "title": "Language practice",
+        "description": "Reading · listening · speaking"
+      },
+      "planner": {
+        "title": "Smart planner",
+        "description": "Your weekly plan"
+      },
+      "quiz": {
+        "title": "Quizzes",
+        "description": "Test your knowledge"
+      },
+      "achievements": {
+        "title": "My achievements",
+        "description": "Badges and XP"
+      }
+    },
+    "catalog": {
+      "progress": {
+        "zeroOf": "0 of {total} lessons",
+        "of": "{done} of {total} lessons",
+        "completedOnly": "{done} lessons completed",
+        "unavailable": "Unavailable",
+        "notStarted": "Not started yet"
+      },
+      "cta": {
+        "locked": "Subscribe to unlock",
+        "done": "Review",
+        "active": "Continue",
+        "ready": "Start"
+      }
+    }
+  },
+  "chat": {
+    "headerHint": "Ask any question about this lesson",
+    "clear": {
+      "tooltip": "Clear conversation",
+      "aria": "Clear conversation"
+    },
+    "empty": {
+      "title": "Start a conversation with {teacher}",
+      "hint": "Ask any question about this lesson — explained in your teacher's style."
+    },
+    "input": {
+      "waitForLesson": "Wait for the lesson to finish preparing…",
+      "defaultPlaceholder": "Ask your teacher…",
+      "placeholder": "Ask {teacher}…"
+    },
+    "voice": {
+      "stopRecording": "Stop recording",
+      "recordQuestion": "Record a voice question"
+    },
+    "send": {
+      "aria": "Send"
+    },
+    "sources": "Sources"
+  },
+  "course": {
+    "locked": {
+      "withTeacher": "With {teacher}",
+      "title": "This subject is currently locked",
+      "subscribePrompt": "Subscribe to unlock {count} {countLabel} with {teacher}",
+      "subscribeCta": "Subscribe to unlock subject and quizzes"
+    },
+    "backToCourses": "Back to my courses",
+    "tabs": {
+      "lessons": "Lessons",
+      "quizzes": "Quizzes"
+    },
+    "errors": {
+      "openChat": "Could not open chat",
+      "loadTeacherProfile": "Could not load teacher profile",
+      "loadCourse": "Could not load course"
+    },
+    "hero": {
+      "withTeacher": "With {teacher}",
+      "welcome": "Glad to guide you through this subject. We will go step by step until you master the concepts.",
+      "includeParent": "Include parent",
+      "messageTeacher": "Message teacher",
+      "viewProfile": "Teacher profile",
+      "progress": {
+        "lessonsWaiting": "{count} lessons waiting for you",
+        "lessonsCompleted": "{done} of {total} lessons completed",
+        "lessonWaiting": "1 lesson waiting for you",
+        "allCompleted": "You completed all lessons in this subject",
+        "percentOfSubject": "{pct}% of subject"
+      }
+    },
+    "current": {
+      "withTeacher": "With {teacher}",
+      "eyebrow": {
+        "allDone": "Subject completed",
+        "current": "Your current lesson",
+        "continue": "Continue from here"
+      },
+      "cta": {
+        "review": "Review lesson",
+        "start": "Start lesson",
+        "continue": "Continue learning"
+      },
+      "position": "Lesson {n} of {total}",
+      "empty": {
+        "title": "No lessons added yet",
+        "subtitle": "Your current lesson will appear here when the teacher prepares content"
+      },
+      "progress": {
+        "lessonsCompleted": "{done} of {total} lessons completed"
+      }
+    },
+    "journey": {
+      "ariaLabel": "Lesson journey",
+      "title": "Rest of the path",
+      "emptyTitle": "No lessons added yet",
+      "lessonNumber": "Lesson {n}",
+      "state": {
+        "completed": "Completed",
+        "current": "Current lesson",
+        "upcoming": "Upcoming",
+        "locked": "Locked"
+      },
+      "emptySubtitle": "Lessons will appear here when your teacher prepares them"
+    },
+    "card": {
+      "lockReason": "Subscribe to unlock this subject",
+      "grade": "Grade {grade}",
+      "lessonCount": "{n} lessons",
+      "progress": "Progress",
+      "expiringSoon": "Expires in {n} days",
+      "subscribe": "Subscribe to unlock",
+      "renew": "Renew subscription",
+      "continue": "Continue learning"
+    },
+    "quizzes": {
+      "title": "Teacher quizzes",
+      "subtitle": "Manual tests from your teacher",
+      "meta": "{n} questions · {points} pts · Pass {pass}% · {duration} min · Submitted {date}",
+      "yourScore": "Your score:",
+      "cta": {
+        "continue": "Continue",
+        "start": "Start",
+        "viewResult": "View result",
+        "continueQuiz": "Continue quiz",
+        "startQuiz": "Start quiz"
+      },
+      "pendingGrading": "Awaiting teacher grading",
+      "subtitleFull": "Manual tests from your teacher — separate from AI quizzes inside lessons",
+      "metaLine": "{n} questions · {points} pts · Pass {pass}%{duration}{due}",
+      "duration": " · {n} min",
+      "due": " · Due {date}",
+      "status": {
+        "passed": "Passed {pct}%",
+        "graded": "Graded",
+        "submitted": "Submitted",
+        "inProgress": "In progress",
+        "available": "Available"
+      },
+      "empty": {
+        "title": "No quizzes published yet",
+        "subtitle": "Any quiz your teacher publishes for this course will appear here"
+      },
+      "errors": {
+        "load": "Could not load quizzes"
+      }
+    }
+  },
+  "subscriptions": {
+    "header": {
+      "eyebrow": "Subscribe and unlock your subjects",
+      "title": "Subscriptions",
+      "subtitleWithGrade": "Grade {grade} — all subjects from your teachers",
+      "subtitleNoGrade": "Set your grade during registration"
+    },
+    "kpi": {
+      "unlocked": "Active subjects",
+      "available": "Available for your grade"
+    },
+    "teacherProfileAria": "Teacher profile {name}",
+    "status": {
+      "unlocked": "Active",
+      "locked": "Locked"
+    },
+    "teacherProfile": "Teacher profile",
+    "chips": {
+      "video": "Video {n}",
+      "pdf": "PDF {n}",
+      "homework": "Homework {n}",
+      "ai": "AI {n}",
+      "lessons": "{n} lessons"
+    },
+    "cta": {
+      "continue": "Continue learning",
+      "subscribe": "Subscribe now"
+    },
+    "empty": "No subjects published for your grade yet — content appears when teachers upload lessons.",
+    "errors": {
+      "load": "Could not load subscriptions",
+      "subscribe": "Could not complete subscription",
+      "loadTeacherProfile": "Could not load teacher profile"
+    },
+    "success": {
+      "activated": "{subject} activated — you can open lessons now"
+    }
+  },
+  "achievements": {
+    "header": {
+      "eyebrow": "Progress & achievements",
+      "title": "🏆 My achievements",
+      "subtitle": "Track your level, XP, streak, and badges"
+    },
+    "level": "Level {n}",
+    "totalXp": "{xp} total XP",
+    "levelProgress": "Level progress",
+    "xpToNext": "{xp} XP to level {n}",
+    "maxLevel": "Max level!",
+    "streakDaysShort": "🔥 {n} days",
+    "longestStreak": "Longest streak: {n} days",
+    "badgeCount": "{earned} / {total} badges",
+    "sections": {
+      "recentXp": "Recent XP activity",
+      "recentXpSubtitle": "Latest achievements and XP sources",
+      "streak": "Study streak",
+      "streakSubtitle": "Daily commitment builds a stronger streak",
+      "streakDays": "consecutive days",
+      "streakGoal": "Next goal: 30 days for the gold badge",
+      "badges": "Badges",
+      "badgesSubtitle": "Unlock badges by learning — locked ones are greyed out",
+      "xpRules": "XP earning rules",
+      "xpRulesSubtitle": "Current values from the gamification system — updated automatically from the server",
+      "futureRewards": "Future rewards",
+      "futureRewardsSubtitle": "Coming soon — informational only at this stage"
+    },
+    "widgets": {
+      "currentLevel": "Current level",
+      "level": "Level",
+      "streak": "Streak",
+      "achievement": "Achievement",
+      "achievementsTitle": "Achievements",
+      "latestAchievements": "Latest achievements",
+      "noAchievementsYet": "No achievements yet — keep learning!",
+      "achievementBadge": "Achievement",
+      "noXpActivity": "No XP activity yet — start a lesson or complete a planner task!"
+    },
+    "xpCategories": {
+      "lessons": "Lessons & courses",
+      "quizzes": "Quizzes",
+      "planner": "Smart planner",
+      "streaks": "Streaks & commitment",
+      "other": "Other"
+    },
+    "futureRewardsIntro": "XP you earn today will soon unlock extra platform perks — this stage is informational only.",
+    "futureRewardItems": {
+      "specialTitles": {
+        "title": "Special titles",
+        "description": "Distinct titles that reflect your level and achievements with classmates."
+      },
+      "leaderboards": {
+        "title": "Leaderboards",
+        "description": "Compare your progress with classmates in learning and commitment."
+      },
+      "competitions": {
+        "title": "Competitions",
+        "description": "Periodic challenges with recognition and learning perks."
+      },
+      "rewards": {
+        "title": "Rewards",
+        "description": "Redeem XP for learning rewards when the store launches."
+      },
+      "platformPerks": {
+        "title": "Platform perks",
+        "description": "Early access to new features and exclusive content for top learners."
+      }
+    }
+  },
+  "attendance": {
+    "consecutiveDays": "Consecutive days",
+    "attendancePercent": "{n}% attendance",
+    "weeklyCalendar": "Weekly calendar",
+    "minutesShort": "{n}m",
+    "monthlyOverview": "Monthly overview",
+    "present": "Present",
+    "partial": "Partial",
+    "absent": "Absent",
+    "recentWeeksCommitment": "Recent weeks commitment"
+  },
+  "planner": {
+    "header": {
+      "eyebrow": "Smart study planner",
+      "title": "Smart planner",
+      "subtitle": "Weekly plan based on your performance — weak subjects, upcoming exams, and learning streak"
+    },
+    "generateCta": "Generate plan",
+    "banner": {
+      "default": "The planner is generated automatically from your grades and progress — or chat with the assistant to customize the schedule",
+      "reordered": "Schedule reordered based on your current performance"
+    },
+    "sections": {
+      "weeklyPlan": "Weekly plan",
+      "weeklyPlanSubtitle": "Tasks distributed across the week by priority",
+      "subjectAnalysis": "Subject analysis",
+      "subjectAnalysisSubtitle": "Strong · average · weak — based on scores and completion",
+      "recommendations": "Smart recommendations",
+      "recommendationsSubtitle": "🔥 High · ⚠️ Medium · ✅ Low"
+    }
+  },
+  "lesson": {
+    "card": {
+      "status": {
+        "completed": "Completed",
+        "new": "New"
+      },
+      "progress": "Progress",
+      "pages": "{n} pp",
+      "start": "Start learning",
+      "pdf": "Lesson PDF"
+    },
+    "pdf": {
+      "loading": "Loading PDF…",
+      "page": "Page {page} / {total}",
+      "percentRead": "{n}% read",
+      "errors": {
+        "load": "Could not load PDF file"
+      }
+    },
+    "quiz": {
+      "results": {
+        "summary": "{correct} of {total} correct answers",
+        "correct": "Correct",
+        "wrong": "Wrong",
+        "retry": "Retake quiz",
+        "back": "Back to my courses",
+        "excellent": "Excellent performance!",
+        "good": "Good — keep going!",
+        "review": "Review the lesson and try again",
+        "excellentEmoji": "Excellent performance! 🎉",
+        "goodPractice": "Good — keep practicing"
+      },
+      "optionLetters": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "title": "Quick quiz",
+      "regenerateTooltip": "Generate new questions from the lesson",
+      "regenerateAria": "Generate new questions",
+      "reviewMistakes": "Review your mistakes",
+      "yourAnswer": "Your answer:",
+      "correctAnswer": "Correct:",
+      "remedial": {
+        "eyebrow": "Practice by mistake",
+        "title": "Remedial questions"
+      },
+      "noMistakes": "Great — no mistakes in this quiz.",
+      "generating": "Generating quiz from lesson content…",
+      "generateFailed": "Could not generate quiz — try later or ask the teacher",
+      "pendingProcessing": "Quiz will appear automatically after processing completes",
+      "noAiSource": "Focus on chatting with the teacher",
+      "generateCta": "Generate quiz from lesson",
+      "noAnswer": "No answer"
+    },
+    "helper": {
+      "prompt": "Do you have a question about this lesson?",
+      "cta": "Ask teacher"
+    },
+    "assistant": {
+      "subtitle": "With you in this lesson"
+    },
+    "header": {
+      "pdf": "Lesson PDF",
+      "sessionProgress": "Session progress",
+      "nextStep": "Next step"
+    },
+    "steps": {
+      "ariaLabel": "Lesson session steps",
+      "completed": "{label} — completed",
+      "current": "{label} — current step",
+      "upcoming": "{label} — upcoming"
+    },
+    "concepts": {
+      "framing": "These are the key ideas from this lesson",
+      "explain": "Explain this concept",
+      "example": "Give me an example",
+      "quiz": "Quiz me",
+      "ask": "Ask teacher",
+      "explainPrompt": "Explain the concept «{concept}» in this lesson",
+      "examplePrompt": "Give me an example of «{concept}» from this lesson",
+      "quizPrompt": "Quiz me on «{concept}» from this lesson",
+      "askPrompt": "I have a question about «{concept}»: "
+    },
+    "learn": {
+      "ariaLabel": "Learning path",
+      "videoTitle": "Lesson video",
+      "step": "Step {n}",
+      "pdfHeadline": "Read {teacher}'s explanation",
+      "continueReading": "Continue reading the teacher's explanation",
+      "chatDisabled": "Wait for the lesson to finish preparing",
+      "eyebrow": "Learning step",
+      "titleWithTeacher": "Learn with {teacher}",
+      "stepLabel": "Step {n}",
+      "startWatching": "Start by watching {teacher}'s explanation",
+      "videoUnavailable": "Lesson video is not available right now",
+      "reviewWithTeacher": "Review with teacher",
+      "understoodIdeas": "Did you understand these ideas?",
+      "consolidateConcepts": "Consolidate concepts",
+      "coreConcepts": "Core concepts",
+      "emptyContent": "No reading or video content is available for this lesson — your teacher can still help and you can take a quiz.",
+      "prompts": {
+        "watch": "Watch the explanation",
+        "read": "Read the lesson",
+        "review": "Review ideas",
+        "interact": "Interact with concepts",
+        "empty": "Continue the lesson session step by step with your teacher.",
+        "joined": "{parts} — in one connected flow without switching tools."
+      }
+    },
+    "completion": {
+      "title": "Complete lesson",
+      "verified": "Verified",
+      "instructions": "Complete all lesson requirements, then tap «Finish lesson» to record verified completion.",
+      "completedAtLabel": "Completed on",
+      "overallProgress": "Overall progress",
+      "requirements": {
+        "video": "Watch 90% of video",
+        "pdf": "Read lesson PDF",
+        "quizSubmit": "Submit quiz",
+        "quizScore": "Quiz score ≥ 70%",
+        "engage": "Engage with lesson content",
+        "videoFull": "Watch the full video (90%)",
+        "pdfFull": "Read PDF through the last page",
+        "quizAll": "Complete all quizzes",
+        "quizPerfect": "Score 100% on the quiz"
+      },
+      "quizSubmitted": {
+        "yes": "Submitted",
+        "no": "Not submitted yet"
+      },
+      "done": "✓ Lesson completed",
+      "completedAt": "Completed on {date}",
+      "finishCta": "Finish lesson",
+      "retryCta": "Try again"
+    },
+    "nav": {
+      "backToLessons": "Back to lessons",
+      "previous": "Previous lesson",
+      "next": "Next lesson",
+      "position": "Lesson {n} of {total}",
+      "goToNext": "Go to next lesson"
+    },
+    "tabs": {
+      "askTeacher": "Ask teacher",
+      "quiz": "Test yourself"
+    },
+    "progress": {
+      "eyebrow": "Your progress",
+      "sessionTitle": "Learning session",
+      "nextStep": "Next step",
+      "stats": {
+        "questions": "Questions",
+        "quiz": "Quiz",
+        "mistakes": "Mistakes"
+      }
+    },
+    "feedback": {
+      "title": "Feedback",
+      "empty": "Answer questions to get instant feedback"
+    },
+    "plan": {
+      "title": "Mini learning plan",
+      "chip": {
+        "review": "Review",
+        "consolidate": "Consolidate"
+      }
+    },
+    "ai": {
+      "preparingTitle": "Preparing lesson",
+      "preparingHint": "The teacher is preparing lesson content and quiz — usually takes about a minute.",
+      "processingFailed": "Could not complete AI processing for this lesson.",
+      "chatDisabledHint": "The teacher is preparing the lesson — try again in a moment",
+      "assistantFailed": "Could not prepare assistant",
+      "waitForContent": "Wait for lesson content to finish preparing"
+    },
+    "fallback": {
+      "label": "Fallback content access",
+      "tabs": {
+        "video": "Video",
+        "pdf": "File"
+      },
+      "videoHint": "Video is available in the learning path above — one connected flow with the rest of the lesson.",
+      "goToVideo": "Go to video in learning path",
+      "pdfHint": "The lesson file is part of the learning path — read it in the full lesson sequence.",
+      "goToPdf": "Go to file in learning path"
+    },
+    "chat": {
+      "clear": {
+        "title": "Clear conversation",
+        "subtitle": "Only your messages for this lesson will be cleared.",
+        "confirm": "Start a new conversation with the teacher?",
+        "confirmCta": "Clear",
+        "cancel": "Cancel"
+      }
+    },
+    "verify": {
+      "blockedTitle": "Cannot complete this lesson yet",
+      "requirements": "Required:",
+      "success": "Lesson completed successfully!",
+      "incomplete": "Complete the missing requirements first."
+    },
+    "errors": {
+      "verify": "Could not verify lesson completion",
+      "loadTitle": "Could not load lesson",
+      "load": "Could not load this lesson from the server"
+    },
+    "flow": {
+      "position": "Lesson {n} of {total}",
+      "generateQuiz": {
+        "text": "Generate a quiz from the lesson to test your understanding.",
+        "cta": "Generate quiz"
+      },
+      "mistakes": {
+        "one": "One mistake left. Review it, then try a new quiz to reach 100%.",
+        "many": "{n} mistakes left. Review them, then try a new quiz to reach 100%.",
+        "cta": "New quiz"
+      },
+      "askTeacher": {
+        "text": "Ask your teacher one question about the lesson to complete the session.",
+        "cta": "Ask me"
+      },
+      "complete": {
+        "text": "Complete. You finished the quiz with no mistakes and engaged with your teacher.",
+        "cta": "New challenge"
+      },
+      "plan": {
+        "reviewLabel": "Focused review plan",
+        "consolidateLabel": "Quick consolidation plan",
+        "reviewMistake": {
+          "title": "Review the mistake",
+          "withAnswer": "Focus on the correct answer: {answer}.",
+          "generic": "Review the questions where you made mistakes."
+        },
+        "askTeacher": {
+          "title": "Ask your teacher",
+          "description": "Have your teacher explain the mistake in a simple sentence from the lesson.",
+          "cta": "Explain the mistake"
+        },
+        "remedial": {
+          "title": "Remedial questions",
+          "description": "Practice with two questions on the same idea before retaking the quiz.",
+          "regenerate": "Regenerate",
+          "start": "Start"
+        },
+        "followUp": {
+          "title": "Follow-up quiz",
+          "description": "After reviewing, try a new quiz to improve your score."
+        },
+        "mastery": {
+          "title": "Core understanding complete",
+          "description": "Full score — move from memorizing to consolidating the idea."
+        },
+        "challenge": {
+          "title": "Challenge question",
+          "withKeywords": "Ask a deeper question about: {keywords}.",
+          "generic": "Ask a deeper question from the lesson.",
+          "cta": "Challenge"
+        },
+        "newQuiz": {
+          "title": "Different quiz",
+          "description": "Generate a new quiz to confirm your understanding holds."
+        }
+      },
+      "quiz": {
+        "remaining": {
+          "done": "Quiz complete.",
+          "one": "One question left to finish the quiz.",
+          "two": "Two questions left to finish the quiz.",
+          "many": "{n} questions left to finish the quiz."
+        }
+      }
+    }
+  },
+  "teacherProfile": {
+    "subtitle": "{subject} — Grade {grade}",
+    "studentCount": "{n} students",
+    "bio": "Bio",
+    "courses": "Courses"
+  },
+  "teacherContact": {
+    "label": "Subject teacher",
+    "status": "Active",
+    "includeParent": "Allow parent to participate",
+    "subscribeTooltip": "You must subscribe to the subject to message the teacher",
+    "message": "Message teacher",
+    "viewProfile": "View teacher profile"
+  },
+  "parents": {
+    "title": "Linked parents",
+    "subtitle": "Accounts that can follow your progress — view only, you cannot remove links here",
+    "empty": "No linked parents on this account",
+    "summary": {
+      "total": "Total linked",
+      "recent": "Recently active"
+    },
+    "status": {
+      "active": "Active"
+    },
+    "linkedAt": "Linked {date}",
+    "lastSeen": "Last seen {date}",
+    "noActivity": "No activity recorded yet",
+    "defaultInitial": "P",
+    "errors": {
+      "load": "Could not load linked parents"
+    }
+  },
+  "languages": {
+    "errors": {
+      "submitAnswers": "Could not submit answers",
+      "submitMessage": "Could not send message",
+      "saveReview": "Could not save review status",
+      "submitTest": "Could not submit test",
+      "emptyRecording": "Recording is empty — try again",
+      "submitWriting": "Could not submit writing",
+      "load": "Could not load"
+    },
+    "hub": {
+      "header": {
+        "eyebrow": "Language learning",
+        "title": "Your English journey",
+        "subtitle": "Start from today's mission — one step at a time"
+      },
+      "placementCta": "Start placement test",
+      "placement": {
+        "eyebrow": "First step",
+        "title": "Find your level to start your journey",
+        "body": "A short test shows where you are and your next mission — lessons cannot start before it.",
+        "cta": "Start placement test"
+      },
+      "subscription": {
+        "expires": "Your subscription {status} — expires {date}",
+        "status": "Your subscription {status}"
+      },
+      "footer": {
+        "fullPath": "Full path",
+        "insights": "Insights",
+        "placementResults": "Placement results",
+        "retakeAfter": "Retake after {date}"
+      },
+      "status": {
+        "expiringSoon": "Expiring soon",
+        "expired": "Expired",
+        "pending": "Not activated",
+        "active": "Active"
+      },
+      "journeyProgress": "{pct}% toward {next}"
+    },
+    "skills": {
+      "reading": "Reading",
+      "listening": "Listening",
+      "writing": "Writing",
+      "speaking": "Speaking",
+      "vocabulary": "Vocabulary"
+    },
+    "common": {
+      "back": "Back",
+      "retry": "Try again",
+      "submit": "Submit",
+      "empty": "Nothing here yet",
+      "lessons": "Lessons",
+      "questions": "Questions",
+      "selectLesson": "Choose a lesson from the list.",
+      "emptyLessons": "No lessons published for your level right now.",
+      "submitAnswers": "Submit answers",
+      "inProgress": "In progress",
+      "passedLesson": "You passed the lesson",
+      "levelLine": "Your {skill} level: {student} — available content at level {lesson}.",
+      "levelLineShort": "Your {skill} level: {student} — available content at level {lesson}.",
+      "higherContentSoon": "(Higher content coming soon.)"
+    },
+    "writing": {
+      "subtitle": "Writing exercises without AI scoring",
+      "emptyPrompts": "No writing exercises are available for your level right now.",
+      "selectPrompt": "Choose an exercise from the list.",
+      "minimum": "Minimum: {words} words · {sentences} sentences",
+      "counters": "Words: {words} · Sentences: {sentences}",
+      "resultLine": "Result: {score}% — {status}",
+      "errors": {
+        "loadPrompt": "Could not load exercise",
+        "submit": "Could not submit writing"
+      }
+    },
+    "vocabulary": {
+      "title": "Vocabulary",
+      "subtitle": "Vocabulary cards — Known or Review Later",
+      "levelAlert": "Your reading level: {student} — available cards currently at level {lesson}.",
+      "spacedRepetition": "Spaced repetition",
+      "dueToday": "{count} due today",
+      "hideMeaning": "Hide meaning",
+      "showMeaning": "Show meaning",
+      "memoryPrompt": "How well do you remember this word?",
+      "rating": {
+        "again": "Again",
+        "hard": "Hard",
+        "good": "Good",
+        "easy": "Easy"
+      },
+      "noneDue": "No words are due right now 🎉",
+      "emptyCards": "No vocabulary cards are available for your level right now.",
+      "revealHint": "Tap “Show meaning” to see the translation.",
+      "errors": {
+        "load": "Could not load vocabulary",
+        "saveReview": "Could not save review"
+      }
+    },
+    "speaking": {
+      "subtitle": "Record your voice — speaking coach reviews your performance",
+      "emptyPrompts": "No speaking exercises are available for your level right now.",
+      "selectPrompt": "Choose an exercise from the list.",
+      "minimumSeconds": "Minimum: {seconds} seconds",
+      "startRecording": "Start recording",
+      "stopRecording": "Stop",
+      "errors": {
+        "loadPrompt": "Could not load exercise",
+        "microphone": "Could not access microphone",
+        "submit": "Could not submit speaking practice"
+      }
+    },
+    "reading": {
+      "subtitle": "Reading lessons for your current level",
+      "errors": {
+        "loadList": "Could not load reading lessons",
+        "loadLesson": "Could not load lesson"
+      },
+      "resultLine": "Score: {score}% — {status}"
+    },
+    "listening": {
+      "subtitle": "Listen and answer questions",
+      "audioUnavailableTitle": "Audio file unavailable",
+      "audioUnavailableBody": "You can answer questions when audio becomes available later. The app will not break.",
+      "errors": {
+        "loadList": "Could not load listening lessons"
+      },
+      "resultLine": "Score: {score}%"
+    },
+    "placement": {
+      "title": "Placement test",
+      "subtitle": "Answer questions across four skills to find your level",
+      "progress": "{step} — question {current} / {total}",
+      "answered": "{answered} / {total} answered",
+      "speaking": {
+        "hint": "Record your answer by voice. It will be saved automatically.",
+        "minimum": "Minimum: {seconds} seconds",
+        "elapsed": "{elapsed} / {total} seconds",
+        "lastRecording": "Last saved recording",
+        "savedDuration": "Saved duration: {seconds} seconds"
+      },
+      "finishCta": "Finish and show results",
+      "results": {
+        "title": "Placement result",
+        "method": "Method: {method}",
+        "overallLevel": "Overall level: {level}",
+        "strength": "Strength:",
+        "focus": "Focus area:",
+        "duration": "Estimated path duration:",
+        "durationNote": "(Initial estimate — will improve in the learning dashboard)"
+      },
+      "startJourney": "Start learning journey",
+      "errors": {
+        "save": "Could not save answer",
+        "submit": "Could not finish placement test",
+        "start": "Could not start placement test",
+        "recording": "Could not start recording",
+        "upload": "Could not upload recording",
+        "speakingComplete": "Complete the speaking question: {prompt}",
+        "speakingAll": "Complete all speaking questions before finishing the test"
+      },
+      "leaveConfirm": "You have unsaved answers. Leave anyway?",
+      "prev": "Previous",
+      "next": "Next",
+      "startRecording": "Start recording",
+      "stopRecording": "Stop",
+      "emptyRecording": "Recording is empty — try again",
+      "duration": {
+        "oneWeek": "About one week",
+        "twoWeeks": "About two weeks",
+        "weeks": "About {n} weeks"
+      }
+    },
+    "progress": {
+      "title": "Analytics & progress",
+      "subtitle": "Your level, achievements, and learning stats",
+      "trend": "Improvement trend",
+      "trendWeeks": "Last week: {recent}% · Prior: {prior}%",
+      "statsTitle": "Learning statistics",
+      "stats": {
+        "conversations": "Conversations",
+        "speaking": "Speaking exercises",
+        "writing": "Writing exercises",
+        "studyMinutes": "Study time (min)",
+        "objectives": "Objectives completed",
+        "scenarios": "Scenarios"
+      },
+      "achievements": "Achievements",
+      "scenarioProgress": "Scenario progress",
+      "scenarioLine": "{mastery} · Best score {score} · {count} times",
+      "recentActivity": "Recent activity",
+      "noActivity": "No activity yet.",
+      "errors": {
+        "load": "Could not load analytics"
+      }
+    },
+    "curriculum": {
+      "title": "Your learning path",
+      "subtitle": "Where you are today — and your next step in the journey",
+      "rules": "Rules",
+      "examples": "Examples",
+      "goPractice": "Go to practice",
+      "errors": {
+        "promotion": "Could not load promotion test",
+        "submitTest": "Could not submit test",
+        "loadLesson": "Could not load lesson",
+        "loadPath": "Could not load learning path"
+      }
+    },
+    "certificates": {
+      "title": "Certificates",
+      "subtitle": "CEFR certificates when you master all skills for a level",
+      "eligibility": "Certificate eligibility",
+      "yours": "Your certificates",
+      "empty": "No certificates yet. Complete all skills for the required level to earn your first certificate.",
+      "table": {
+        "level": "Level",
+        "number": "Certificate number",
+        "issued": "Issue date",
+        "verify": "Verification code",
+        "actions": "Actions"
+      },
+      "verify": "Verify",
+      "status": {
+        "issued": "Issued",
+        "eligible": "Eligible",
+        "notYet": "Not eligible yet"
+      },
+      "requirement": "Reading, listening, writing, and speaking ≥ {level}",
+      "errors": {
+        "load": "Could not load certificates"
+      }
+    },
+    "lessonsPage": {
+      "title": "Grammar & vocabulary lessons",
+      "subtitle": "Short lessons explaining grammar and vocabulary — with examples and quick practice",
+      "levelBanner": "Lessons for your current level: {level}",
+      "empty": "No lessons available for your level right now.",
+      "practice": "Practice",
+      "examples": "Examples",
+      "type": {
+        "grammar": "Grammar",
+        "vocabulary": "Vocabulary"
+      },
+      "showAnswer": "Show answer",
+      "errors": {
+        "load": "Could not load lessons"
+      }
+    },
+    "scenarios": {
+      "eyebrow": "Scenarios",
+      "library": {
+        "title": "Conversation scenarios",
+        "subtitle": "Practice English in guided real-life situations"
+      },
+      "all": "All",
+      "recommended": "Recommended",
+      "empty": "No scenarios found",
+      "errors": {
+        "load": "Could not load scenarios"
+      },
+      "detail": {
+        "back": "All scenarios",
+        "defaultTitle": "Scenario",
+        "level": "Level {level}+",
+        "adaptive": "Adaptive: {level}",
+        "studentRole": "You will play the role of",
+        "aiRole": "AI character",
+        "targetSkills": "Target skills",
+        "opening": "Opening message",
+        "locked": "Locked — requires {level}",
+        "start": "Start scenario",
+        "errors": {
+          "load": "Could not load scenario",
+          "start": "Could not start scenario"
+        }
+      },
+      "conversation": {
+        "defaultTitle": "Conversation",
+        "back": "Scenarios",
+        "level": "Level {level}",
+        "stop": "Stop",
+        "finish": "Finish and get feedback",
+        "thinking": "Thinking…",
+        "speak": "Speak",
+        "recording": "Recording…",
+        "placeholder": "Or type your reply in English…",
+        "errors": {
+          "load": "Could not load session",
+          "message": "Could not send message",
+          "voice": "Could not process voice",
+          "end": "Could not end session"
+        }
+      },
+      "completion": {
+        "title": "Scenario complete",
+        "subtitle": "Performance summary",
+        "defaultTitle": "Scenario finished",
+        "wentWell": "What went well",
+        "toImprove": "What to improve",
+        "corrections": "Corrections",
+        "vocabulary": "Suggested vocabulary",
+        "nextRecommended": "Recommended next scenario",
+        "start": "Start",
+        "browse": "Browse scenarios",
+        "noFeedback": "No feedback available for this session."
+      },
+      "scores": {
+        "communication": "Communication",
+        "grammar": "Grammar",
+        "vocabulary": "Vocabulary",
+        "fluency": "Fluency"
+      }
+    },
+    "subscribe": {
+      "eyebrow": "Premium subscription",
+      "title": "Learn English",
+      "subtitle": "Activate your subscription to access placement test and personalized path",
+      "errors": {
+        "load": "Could not load product",
+        "subscribe": "Subscription failed"
+      },
+      "success": "Subscription activated — you will be redirected to start the placement test shortly."
+    },
+    "practice": {
+      "title": "Practice",
+      "subtitle": "Pick a skill — all practice in one place",
+      "skills": {
+        "speaking": {
+          "label": "Speaking",
+          "description": "Conversation and pronunciation"
+        },
+        "reading": {
+          "label": "Reading",
+          "description": "Texts and comprehension"
+        },
+        "listening": {
+          "label": "Listening",
+          "description": "Audio clips and questions"
+        },
+        "writing": {
+          "label": "Writing",
+          "description": "Topics and written responses"
+        },
+        "vocabulary": {
+          "label": "Vocabulary",
+          "description": "Cards and spaced repetition"
+        },
+        "grammar": {
+          "label": "Grammar",
+          "description": "Structured grammar lessons"
+        }
+      }
+    }
+  },
+  "manualQuiz": {
+    "header": {
+      "eyebrow": "Quiz"
+    },
+    "defaultTitle": "Quiz",
+    "backToCourse": "Back to course",
+    "startCta": "Start quiz",
+    "submitCta": "Submit quiz",
+    "previous": "Previous",
+    "next": "Next",
+    "true": "True",
+    "false": "False",
+    "pendingGrading": "Awaiting grading",
+    "timer": {
+      "remaining": "Time remaining",
+      "expired": "Time expired",
+      "remainingLine": "Time remaining: {time}"
+    },
+    "subtitle": {
+      "result": "Attempt result",
+      "default": "Manual quiz from your teacher"
+    },
+    "passed": "Passed —",
+    "failed": "Pass requirement not met —",
+    "pendingEssays": "Essay questions awaiting grading —",
+    "passingScore": "Passing score: {pct}%",
+    "questionsCount": "{n} questions",
+    "totalPoints": "Total points: {n}",
+    "duration": "Duration: {n} minutes",
+    "questionProgress": "Question {current} of {total}",
+    "points": "{n} pts",
+    "yourAnswer": "Your answer",
+    "essayAnswer": "Your essay answer",
+    "essayGradingNote": "This question will be graded by your teacher",
+    "errors": {
+      "timeExpired": "Quiz time expired",
+      "start": "Could not start quiz",
+      "submit": "Could not submit",
+      "load": "Could not load quiz"
+    }
+  },
+  "profile": {
+    "header": {
+      "eyebrow": "My profile",
+      "title": "Who am I?",
+      "subtitle": "Your learning identity helps us personalize your experience"
+    },
+    "saveCta": "Save my profile",
+    "saveSuccess": "Profile saved successfully",
+    "errors": {
+      "save": "Could not save profile"
+    },
+    "hero": {
+      "joinedSince": "With us since {date}",
+      "activeLearner": "Active learner",
+      "enrolledCourses": "Enrolled courses",
+      "activeSubjects": "Active subjects",
+      "defaultInitial": "S"
+    },
+    "sections": {
+      "goal": {
+        "title": "My goal",
+        "subtitle": "What do you dream of achieving from your learning?"
+      },
+      "learn": {
+        "title": "How I learn",
+        "explanationLength": "Explanation length",
+        "challengeLevel": "Challenge level",
+        "understandingStyle": "Understanding style",
+        "teacherStyle": "Teacher style with you"
+      },
+      "adaptation": {
+        "title": "How I will help you",
+        "subtitle": "Based on your choices above, this is how I adapt to you:",
+        "empty": "Choose your learning preferences to see how I will support you."
+      },
+      "interests": {
+        "title": "My interests",
+        "subtitle": "Subjects and hobbies you enjoy — we use them in examples and explanations."
+      },
+      "age": {
+        "title": "Age group",
+        "placeholder": "Choose your age group",
+        "help": "Used to simplify explanations and examples."
+      },
+      "family": {
+        "title": "Family & follow-up"
+      }
+    }
+  },
+  "routine": {
+    "title": "Planner & commitment",
+    "subtitle": "AI builds your full schedule — from wake-up to sleep",
+    "onboarding": {
+      "hero": {
+        "title": "Let me get to know you first",
+        "subtitle": "A few simple details and we will build your ideal schedule together",
+        "subtitleEmoji": "A few simple details and we will build your ideal schedule together 🚀"
+      },
+      "grade": {
+        "title": "What grade are you in?",
+        "subtitle": "This helps us tailor your schedule to your age"
+      },
+      "school": {
+        "title": "School hours",
+        "subtitle": "From what time to what time is your school day?"
+      },
+      "sleep": {
+        "title": "Wake-up and sleep",
+        "subtitle": "A sleep routine is the foundation of a successful day"
+      },
+      "wakeTime": "Wake-up time",
+      "sleepTime": "Sleep time",
+      "schoolDays": {
+        "title": "School days",
+        "subtitle": "Choose the days you have school"
+      },
+      "activities": {
+        "title": "Extra activities",
+        "heading": "Do you have extra activities?",
+        "subtitle": "Sports, tutoring, or anything that takes your time weekly",
+        "when": "{name} — when and which days?",
+        "days": "Days",
+        "subject": "Subject",
+        "subjectPlaceholder": "Math, chemistry…"
+      },
+      "nextCta": "Next — chat with assistant"
+    },
+    "settings": {
+      "title": "Settings",
+      "subtitle": "Edit your details without clearing the schedule",
+      "grade": "Grade",
+      "schoolTime": "School time",
+      "sleepSection": "Wake-up and sleep",
+      "wakeShort": "Wake-up",
+      "sleepShort": "Sleep",
+      "schoolDays": "School days",
+      "deleteSchedule": "Delete schedule and start fresh",
+      "saveChanges": "Save changes"
+    },
+    "chat": {
+      "inputPlaceholder": "Type here…",
+      "assistantLabel": "Your smart assistant",
+      "typing": "{name} is typing…",
+      "pinnedLabel": "Question for assistant",
+      "uploadExams": "Upload exam schedule",
+      "uploadPdfFormats": "PDF only — up to 500 MB",
+      "manualExams": "Enter manually",
+      "upcomingExams": "Your upcoming exams:",
+      "addExam": "+ Add",
+      "typingWithName": "{name} is typing…",
+      "submitToAi": "Submit to AI",
+      "examTable": {
+        "title": "Your upcoming exam schedule",
+        "subject": "Subject",
+        "date": "Date",
+        "time": "Time",
+        "unknownSubject": "Unspecified subject",
+        "unknownTime": "Unspecified"
+      },
+      "scheduleReady": "Your weekly schedule is ready — here is how it will look",
+      "emptyDay": "Empty day"
+    },
+    "common": {
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "save": "Save",
+      "delete": "Delete",
+      "from": "From",
+      "to": "To"
+    },
+    "preview": {
+      "title": "Schedule preview",
+      "confirmSave": "Confirm and save",
+      "reviewTitle": "Review your info before we build your schedule",
+      "reviewHint": "Make sure it is correct, or edit any day by tapping the pencil ✏️",
+      "gradeChip": "Grade {grade}",
+      "schoolChip": "School {start} – {end}",
+      "wakeChip": "Wake {time}",
+      "sleepChip": "Sleep {time}",
+      "editSettings": "Edit settings",
+      "sevenDays": "Your seven days",
+      "confirmBuild": "Confirm info and build my schedule",
+      "building": "Building your schedule…",
+      "buildingHint": "As we talk about each day, it will appear here 👇",
+      "editDay": "Edit this day"
+    },
+    "gradeInfo": {
+      "sleep": "Sleep: {time}",
+      "study": "Study: {hours}",
+      "notes": {
+        "79": "Balance study and activity",
+        "1011": "Rest before studying",
+        "12bac": "Do not sleep less than 7 hours"
+      },
+      "studyHours": {
+        "79": "1-2 h",
+        "1011": "2-3 h",
+        "12bac": "4-6 h"
+      }
+    },
+    "review": {
+      "aiTitle": "AI review",
+      "subtitle": "Suggestions to improve your schedule",
+      "loading": "AI is reviewing your schedule…",
+      "suggestions": "Suggestions:",
+      "priority": {
+        "high": "Important",
+        "medium": "Medium",
+        "low": "Optional"
+      },
+      "editSchedule": "Edit schedule",
+      "finish": "Done — view my schedule",
+      "savedPreview": "Saved schedule preview"
+    },
+    "view": {
+      "weeklyTitle": "Your weekly schedule",
+      "renewWeek": "Renew week"
+    },
+    "delete": {
+      "title": "Delete schedule?",
+      "body": "This will clear your weekly schedule and chat history. Settings will remain.",
+      "confirm": "Yes, delete"
+    },
+    "exams": {
+      "confirmTitle": "Confirm exams",
+      "confirmSubtitle": "Review extracted data and edit if needed",
+      "noneDetected": "No exams were detected in the file",
+      "add": "Add exam",
+      "save": "Save exams",
+      "unknownDate": "Date not specified"
+    },
+    "progress": {
+      "notStarted": "We have not started yet — let us talk about the first day of your week",
+      "allDone": "All days are ready — your schedule is being built now",
+      "partial": "Collected {done} of {total} days — keep going and we will finish"
+    },
+    "messages": {
+      "welcome": "Hello! I am ready to build your full daily schedule.\nTell me: what do you have on Monday? From what hour to what hour?",
+      "buildError": "An error occurred while building the schedule.",
+      "genericError": "An error occurred",
+      "saveError": "An error occurred while saving the schedule.",
+      "uploadError": "An error occurred while uploading the image.",
+      "pdfTooLarge": "PDF file exceeds {size}",
+      "examsSaved": "Saved {count} exam(s) ✅",
+      "examLine": "Exam {subject} on {date} at {time}",
+      "editDay": "I want to edit {day} 📝",
+      "scheduleReady": "Your schedule is ready! You can view it now."
+    },
+    "dayType": {
+      "school": "School",
+      "weekend": "Weekend"
+    },
+    "grades": {
+      "g7": "Grade 7",
+      "g8": "Grade 8",
+      "g9": "Grade 9",
+      "g10": "Grade 10",
+      "g11": "Grade 11",
+      "g12": "Grade 12",
+      "bac": "Baccalaureate"
+    },
+    "days": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday",
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "activities": {
+      "sport": "Sports",
+      "tutoring": "Private tutoring",
+      "religious": "Religious activity",
+      "music": "Music",
+      "languages": "Languages"
+    }
+  }
+}

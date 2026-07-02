@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Parent Notes — Visual Verification</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --em-text: #e8ecf4;
+      --em-text-muted: rgba(232, 236, 244, 0.62);
+      --em-bg: #080c18;
+    }
+    body {
+      font-family: Cairo, sans-serif;
+      background: var(--em-bg);
+      color: var(--em-text);
+      margin: 0;
+      padding: 2rem;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 0.95rem; color: var(--em-text-muted); margin: 2rem 0 0.75rem; }
+    .grid { display: grid; gap: 1rem; max-width: 520px; }
+    .parent-note-card {
+      background: rgba(18, 26, 50, 0.96);
+      border: 1px solid rgba(124, 108, 240, 0.22);
+      border-radius: 14px;
+      padding: 1rem 1.125rem;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .parent-note-card--unread {
+      border-inline-start: 3px solid #f87171;
+    }
+    .parent-note-card__title {
+      margin: 0 0 0.5rem;
+      font-size: 1.0625rem;
+      font-weight: 700;
+      color: #f0f3fa;
+      line-height: 1.45;
+    }
+    .parent-note-card__title--placeholder {
+      color: var(--em-text-muted);
+      font-style: italic;
+      font-weight: 600;
+    }
+    .parent-note-card__body {
+      margin: 0;
+      font-size: 0.9375rem;
+      line-height: 1.65;
+      color: rgba(232, 236, 244, 0.92);
+      white-space: pre-wrap;
+    }
+    .parent-note-card__body--placeholder {
+      color: var(--em-text-muted);
+      font-style: italic;
+    }
+    .chip {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 8px;
+      margin-left: 4px;
+      background: rgba(124, 108, 240, 0.2);
+      color: #c4b5fd;
+    }
+    .chip--warning { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+    .chip--success { background: rgba(52, 211, 153, 0.2); color: #34d399; }
+    .chip--error { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+    .meta { font-size: 0.75rem; color: var(--em-text-muted); margin-top: 0.75rem; }
+  </style>
+</head>
+<body>
+  <h1>ملاحظات أولياء الأمور — تحقق بصري</h1>
+  <p style="color: var(--em-text-muted); font-size: 0.875rem;">
+    افتح هذا الملف في المتصفح والتقط لقطات للحالات الأربع (أو استخدم لوحة ولي الأمر بعد التحديث).
+  </p>
+
+  <h2>1. ملاحظة قصيرة — أكاديمي</h2>
+  <div class="grid">
+    <article class="parent-note-card parent-note-card--unread">
+      <h4 class="parent-note-card__title">تقدّم جيد في الرياضيات</h4>
+      <span class="chip">أكاديمي</span><span class="chip chip--error">جديد</span>
+      <p class="parent-note-card__body">أداء الطالب ممتاز في الاختبار الأخير. ننصح بمتابعة الواجبات اليومية.</p>
+      <div class="meta">أ. محمد · ٢ حزيران ٢٠٢٦، ١٠:٣٠ ص</div>
+    </article>
+  </div>
+
+  <h2>2. ملاحظة طويلة — تنبيه</h2>
+  <div class="grid">
+    <article class="parent-note-card">
+      <h4 class="parent-note-card__title">تنبيه بخصوص الحضور</h4>
+      <span class="chip chip--warning">تنبيه</span>
+      <p class="parent-note-card__body">لاحظنا غياب الطالب ثلاث مرات خلال الأسبوع الماضي دون عذر مسبق.
+يُرجى التواصل معنا لمعرفة السبب وترتيب خطة متابعة.
+نؤكد أهمية الانتظام للحفاظ على مستوى التحصيل.
+شكراً لتعاونكم.</p>
+      <div class="meta">أ. سارة · ١ حزيران ٢٠٢٦، ٣:١٥ م</div>
+    </article>
+  </div>
+
+  <h2>3. ملاحظة فارغة (عنوان/نص مفقود)</h2>
+  <div class="grid">
+    <article class="parent-note-card">
+      <h4 class="parent-note-card__title parent-note-card__title--placeholder">بدون عنوان</h4>
+      <span class="chip chip--success">إنجاز</span>
+      <p class="parent-note-card__body parent-note-card__body--placeholder">لا يوجد نص في هذه الملاحظة.</p>
+      <div class="meta">أ. محمد · ٣٠ أيار ٢٠٢٦، ٩:٠٠ ص</div>
+    </article>
+  </div>
+
+  <h2>4. تصنيفات مختلفة</h2>
+  <div class="grid">
+    <article class="parent-note-card">
+      <h4 class="parent-note-card__title">واجب منزلي غير مُسلّم</h4>
+      <span class="chip">واجبات</span>
+      <p class="parent-note-card__body">لم يُسلّم واجب العلوم المطلوب أمس.</p>
+      <div class="meta">أ. محمد · اليوم</div>
+    </article>
+    <article class="parent-note-card">
+      <h4 class="parent-note-card__title">سلوك إيجابي في الصف</h4>
+      <span class="chip">سلوك</span>
+      <p class="parent-note-card__body">تعاون ممتاز مع الزملاء اليوم.</p>
+      <div class="meta">أ. سارة · أمس</div>
+    </article>
+  </div>
+</body>
+</html>

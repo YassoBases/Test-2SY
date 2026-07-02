@@ -1,0 +1,214 @@
+/**
+ * UI-4.2 — Lesson Session Shell & Header
+ */
+
+.lesson-session-shell {
+  animation: lesson-session-in var(--em-duration-slow) var(--em-ease-spring) both;
+}
+
+.lesson-session-header {
+  border: 1px solid var(--em-border-bright, rgba(34, 211, 238, 0.22));
+  box-shadow: var(--em-glow-cyan, 0 0 24px rgba(34, 211, 238, 0.08));
+  margin-bottom: 1rem;
+}
+
+.lesson-session-header__avatar {
+  animation: lesson-avatar-in var(--em-duration-slow) var(--em-ease-spring) 60ms both;
+  flex-shrink: 0;
+}
+
+.lesson-session-header__teacher {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  line-height: 1.3;
+}
+
+.lesson-session-header__title {
+  line-height: 1.35;
+}
+
+.lesson-session-header__next {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lesson-session-header__next-label {
+  display: block;
+  font-size: var(--em-text-caption, 0.75rem);
+  color: var(--em-text-muted, rgba(255, 255, 255, 0.55));
+  margin-bottom: 0.15rem;
+}
+
+.lesson-session-header__next-text {
+  display: block;
+  font-size: var(--em-text-sm, 0.875rem);
+  line-height: 1.4;
+}
+
+.lesson-session-header__percent {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+}
+
+.lesson-step-strip {
+  margin-bottom: 1.25rem;
+}
+
+.lesson-step-strip__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lesson-step-strip__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.lesson-step-strip__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.12);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease,
+    transform 0.25s var(--em-ease-spring);
+}
+
+.lesson-step-strip__btn:hover {
+  border-color: rgba(34, 211, 238, 0.25);
+  background: rgba(34, 211, 238, 0.06);
+}
+
+.lesson-step-strip__item--current .lesson-step-strip__btn {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.1);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.08);
+}
+
+.lesson-step-strip__item--completed .lesson-step-strip__btn {
+  opacity: 0.88;
+}
+
+.lesson-step-strip__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+  transition: background 0.35s ease, transform 0.35s var(--em-ease-spring);
+}
+
+.lesson-step-strip__item--current .lesson-step-strip__marker {
+  background: rgba(34, 211, 238, 0.2);
+  transform: scale(1.05);
+}
+
+.lesson-step-strip__item--completed .lesson-step-strip__marker {
+  background: rgba(74, 222, 128, 0.18);
+  color: var(--em-success, #4ade80);
+}
+
+.lesson-step-strip__label {
+  font-size: var(--em-text-sm, 0.875rem);
+  font-weight: 600;
+}
+
+.lesson-step-strip__item--current .lesson-step-strip__label {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+}
+
+.lesson-step-strip__connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.35rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.28);
+  transition: color 0.35s ease;
+}
+
+.lesson-step-strip__connector--filled {
+  color: rgba(74, 222, 128, 0.55);
+}
+
+.lesson-tabs-card--session {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lesson-tabs-card__access-label {
+  display: block;
+  padding: 0.75rem 1rem 0;
+  font-size: var(--em-text-caption, 0.75rem);
+  color: var(--em-text-muted, rgba(255, 255, 255, 0.5));
+  letter-spacing: 0.02em;
+}
+
+@media (min-width: 960px) {
+  .lesson-step-strip__list {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .lesson-step-strip__item {
+    flex: 1;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .lesson-step-strip__connector {
+    flex: 0 0 auto;
+    width: 1.25rem;
+    height: auto;
+    transform: rotate(-90deg);
+  }
+}
+
+@keyframes lesson-session-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lesson-avatar-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-session-shell,
+  .lesson-session-header__avatar {
+    animation: none;
+  }
+
+  .lesson-step-strip__marker {
+    transition: none;
+  }
+}

@@ -1,0 +1,154 @@
+/**
+ * UI-4.5 — Chat Experience Polish
+ */
+
+.chat-panel {
+  min-height: min(480px, calc(100vh - 220px));
+  max-height: calc(100vh - 160px);
+  background: rgba(8, 12, 24, 0.35);
+  border-radius: 0;
+}
+
+.chat-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-panel__header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-panel__name {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-panel__hint {
+  margin: 0.1rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--em-text-muted, rgba(255, 255, 255, 0.55));
+}
+
+.chat-panel__notice {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--em-text-muted, rgba(255, 255, 255, 0.65));
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.chat-panel__notice--muted {
+  opacity: 0.85;
+}
+
+.chat-panel__messages {
+  flex: 1;
+  min-height: 240px;
+  overflow-y: auto;
+  padding: 0.5rem 0.65rem;
+}
+
+.chat-panel__footer {
+  flex-shrink: 0;
+  padding: 0.5rem 0.65rem 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tab-panel--chat {
+  min-height: min(520px, calc(100vh - 260px));
+}
+
+.lesson-session-tools-card .chat-panel {
+  border: none;
+  background: transparent;
+  max-height: calc(100vh - 200px);
+}
+
+.chat-row {
+  margin-bottom: 0.65rem;
+}
+
+.chat-bubble {
+  max-width: min(88%, 480px);
+  border-radius: 14px;
+  padding: 0.55rem 0.75rem;
+}
+
+.chat-bubble--ai {
+  background: rgba(17, 25, 52, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+  border-top-right-radius: 4px;
+}
+
+.chat-bubble--ai:hover {
+  transform: none;
+}
+
+.chat-bubble--student {
+  background: linear-gradient(135deg, rgba(124, 108, 240, 0.92) 0%, rgba(91, 79, 207, 0.95) 100%);
+  border-top-left-radius: 4px;
+  box-shadow: 0 2px 12px rgba(124, 108, 240, 0.2);
+}
+
+.chat-bubble__meta {
+  font-size: 0.65rem;
+  opacity: 0.55;
+  margin-top: 0.25rem;
+}
+
+.chat-bubble__sources {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-bubble__sources-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.68rem;
+  color: var(--em-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.chat-bubble__audio {
+  display: block;
+  width: min(100%, 260px);
+  height: 28px;
+  margin-top: 0.35rem;
+  opacity: 0.9;
+}
+
+.typing-bubble {
+  background: rgba(17, 25, 52, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+  padding: 0.5rem 0.75rem;
+  border-top-right-radius: 4px;
+}
+
+.chat-input-bar {
+  width: 100%;
+}

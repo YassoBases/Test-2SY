@@ -1,0 +1,1142 @@
+/**
+ * UI-6.0 + UI-6.1 — Morning Mode Experience
+ * Premium educational light theme — distinct from night/AI aesthetic.
+ */
+
+/* ——— Global surfaces & typography ——— */
+[data-theme='morning'] body {
+  background: var(--em-surface-base);
+  color: var(--em-text);
+  line-height: 1.65;
+}
+
+[data-theme='morning'] .page-content {
+  animation: day-page-in 220ms var(--em-ease-out) both;
+}
+
+@keyframes day-page-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-theme='morning'] .section-block {
+  margin-bottom: 2.25rem;
+}
+
+[data-theme='morning'] .section-block__head {
+  margin-bottom: 1.15rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .section-block__title {
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+[data-theme='morning'] .section-block__subtitle {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+[data-theme='morning'] .section-eyebrow {
+  color: var(--em-primary);
+}
+
+[data-theme='morning'] .eduspark-gradient-text {
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ——— Cards ——— */
+[data-theme='morning'] .glass-card,
+[data-theme='morning'] .eduspark-card,
+[data-theme='morning'] .content-card {
+  background: var(--em-surface-elevated) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--em-border) !important;
+  box-shadow: var(--em-shadow-card) !important;
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out);
+  animation: day-card-reveal 220ms var(--em-ease-out) both;
+}
+
+@keyframes day-card-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-theme='morning'] .glass-card--elevated {
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .glass-card--solid,
+[data-theme='morning'] .glass-card.glass-card--solid {
+  background: var(--em-surface-elevated) !important;
+  backdrop-filter: none !important;
+}
+
+[data-theme='morning'] .surface-panel,
+[data-theme='morning'] .page-header--panel {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-card);
+}
+
+[data-theme='morning'] .page-header--panel {
+  background: linear-gradient(180deg, #ffffff 0%, var(--em-surface-secondary) 100%);
+}
+
+[data-theme='morning'] .kpi-card::before {
+  opacity: 0.75;
+  height: 2px;
+}
+
+[data-theme='morning'] .kpi-card:hover,
+[data-theme='morning'] .insight-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .eduspark-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.2) !important;
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .content-card--interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.18) !important;
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .message-card {
+  background: var(--em-surface-elevated);
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .message-card:hover {
+  border-color: rgba(99, 102, 241, 0.16);
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .message-card--active {
+  border-color: rgba(99, 102, 241, 0.22);
+  background: rgba(99, 102, 241, 0.06);
+}
+
+/* ——— Buttons ——— */
+[data-theme='morning'] .btn-glow,
+[data-theme='morning'] .em-btn--primary {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 45%, #06b6d4 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.22) !important;
+}
+
+[data-theme='morning'] .btn-glow:hover:not(:disabled),
+[data-theme='morning'] .em-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.28) !important;
+}
+
+[data-theme='morning'] .btn-glow-outline,
+[data-theme='morning'] .em-btn--secondary {
+  border: 1px solid var(--em-border) !important;
+  color: var(--em-primary-deep) !important;
+  background: var(--em-surface-elevated) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .btn-glow-outline:hover:not(:disabled),
+[data-theme='morning'] .em-btn--secondary:hover:not(:disabled) {
+  background: var(--em-surface-secondary) !important;
+  border-color: rgba(99, 102, 241, 0.2) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .em-btn--ghost:hover:not(:disabled) {
+  background: var(--em-surface-secondary) !important;
+  color: var(--em-text) !important;
+}
+
+[data-theme='morning'] .eduspark-gradient-soft {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(6, 182, 212, 0.04) 100%) !important;
+  border: 1px solid rgba(99, 102, 241, 0.1) !important;
+}
+
+/* ——— Motion ——— */
+[data-theme='morning'] .em-hover-lift:hover {
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .page-enter-active,
+[data-theme='morning'] .slide-up-enter-active {
+  animation-duration: 220ms;
+}
+
+[data-theme='morning'] .fade-enter-active,
+[data-theme='morning'] .fade-leave-active {
+  transition-duration: 200ms;
+}
+
+/* ——— Chat ——— */
+[data-theme='morning'] .chat-panel {
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .chat-panel__header,
+[data-theme='morning'] .chat-panel__footer {
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .chat-panel__notice {
+  background: var(--em-surface-elevated);
+  border-color: var(--em-border);
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .chat-bubble--ai {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-sm);
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .chat-bubble--student {
+  background: var(--em-student-bubble-bg);
+  color: var(--em-student-bubble-text);
+  border: 1px solid var(--em-student-bubble-border);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .chat-bubble__meta {
+  color: var(--em-text-subtle);
+  opacity: 1;
+}
+
+[data-theme='morning'] .chat-bubble__sources {
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .chat-bubble__sources-toggle {
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .typing-bubble {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-sm);
+}
+
+/* ——— Lesson experience ——— */
+[data-theme='morning'] .lesson-learn-flow {
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-card);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .lesson-learn-flow__divider {
+  color: var(--em-text-subtle);
+}
+
+[data-theme='morning'] .lesson-learn-flow__video-wrap {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .lesson-learn-flow__summary-list li {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+  padding: 0.75rem 0.9rem 0.75rem 2.1rem;
+  margin-bottom: 0.6rem;
+}
+
+[data-theme='morning'] .lesson-learn-flow__continue {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .lesson-session-header {
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-card);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .lesson-session-header__next {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .lesson-session-tools-card {
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .lesson-fallback-card {
+  border: 1px solid var(--em-border);
+  opacity: 1;
+}
+
+[data-theme='morning'] .lesson-recap-ideas__card {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .lesson-recap-ideas__card:hover {
+  border-color: rgba(99, 102, 241, 0.18);
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .lesson-recap-ideas__text {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .lesson-concept-recap__teacher {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .lesson-concept-recap__framing {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .lesson-concept-recap__chip {
+  border: 1px solid var(--em-chip-border);
+  background: var(--em-chip-bg);
+  color: var(--em-text);
+  font-weight: 600;
+  transition:
+    background var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out),
+    transform var(--em-duration-fast) var(--em-ease-out);
+}
+
+[data-theme='morning'] .lesson-concept-recap__chip:hover:not(:disabled) {
+  background: var(--em-card-l2);
+  border-color: var(--em-border-bright);
+}
+
+[data-theme='morning'] .lesson-concept-recap__chip[aria-expanded='true'],
+[data-theme='morning'] .lesson-concept-recap__chip--active {
+  border-color: var(--em-chip-selected-border);
+  background: var(--em-chip-selected-bg);
+  color: var(--em-chip-selected-text);
+}
+
+[data-theme='morning'] .lesson-step-strip__btn {
+  border: 1px solid var(--em-border);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .lesson-step-strip__btn:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .lesson-step-strip__item--current .lesson-step-strip__btn {
+  border-color: rgba(99, 102, 241, 0.24);
+  background: rgba(99, 102, 241, 0.06);
+  box-shadow: none;
+}
+
+[data-theme='morning'] .lesson-step-strip__marker {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+}
+
+/* ——— Course experience ——— */
+[data-theme='morning'] .course-hero {
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-card);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .course-hero__welcome {
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .course-hero__secondary {
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .course-journey__head {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .course-journey__empty {
+  border-color: var(--em-border);
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .course-journey__dot {
+  background: var(--em-surface-elevated);
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .course-journey__item--current .course-journey__dot {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.28);
+  box-shadow: none;
+}
+
+[data-theme='morning'] .course-journey__item--completed .course-journey__dot {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+[data-theme='morning'] .course-journey__dot-empty {
+  background: var(--em-text-subtle);
+}
+
+[data-theme='morning'] .course-journey__line {
+  background: var(--em-border);
+}
+
+[data-theme='morning'] .course-journey__line--filled {
+  background: rgba(16, 185, 129, 0.35);
+}
+
+[data-theme='morning'] .course-journey__card {
+  border: 1px solid var(--em-border);
+  background: var(--em-surface-elevated);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .course-journey__card:hover:not(:disabled) {
+  border-color: rgba(99, 102, 241, 0.16);
+  box-shadow: var(--em-shadow-md);
+}
+
+[data-theme='morning'] .course-journey__item--current .course-journey__card {
+  border-color: rgba(99, 102, 241, 0.22);
+  background: rgba(99, 102, 241, 0.05);
+  box-shadow: none;
+}
+
+[data-theme='morning'] .course-journey__item--completed .course-journey__card {
+  border-color: rgba(16, 185, 129, 0.18);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+[data-theme='morning'] .course-journey__item--locked .course-journey__card {
+  background: var(--em-surface-secondary);
+  opacity: 0.72;
+}
+
+[data-theme='morning'] .course-journey__item--current .course-journey__title {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .course-card--unlocked:hover {
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .chat-input-field .v-field {
+  background: var(--em-input-bg) !important;
+  border: var(--em-input-border-width) solid var(--em-input-border) !important;
+  box-shadow: var(--em-input-inset-shadow) !important;
+}
+
+[data-theme='morning'] .chat-input-field .v-field--focused {
+  border-color: var(--em-input-border-focus) !important;
+}
+
+[data-theme='morning'] .send-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%) !important;
+}
+
+/* ——— App chrome ——— */
+[data-theme='morning'] .app-header {
+  border-bottom: 1px solid var(--em-border) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .sidebar-brand {
+  padding: var(--em-space-xl) var(--em-space-md);
+}
+
+[data-theme='morning'] .sidebar-promo {
+  border-color: var(--em-border);
+  background: var(--em-surface-secondary);
+}
+
+/* ——— Student identity profile ——— */
+[data-theme='morning'] .student-identity__hero {
+  border: 1px solid var(--em-border);
+  background: linear-gradient(180deg, #ffffff 0%, var(--em-surface-secondary) 100%);
+  padding: 1.75rem 1.5rem;
+}
+
+[data-theme='morning'] .student-identity__avatar {
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.12);
+}
+
+[data-theme='morning'] .student-identity__role {
+  color: var(--em-primary-deep);
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.14);
+}
+
+[data-theme='morning'] .student-identity__stat {
+  background: var(--em-surface-elevated);
+  border: 1px solid var(--em-border);
+}
+
+[data-theme='morning'] .student-identity__section {
+  margin-bottom: 1.75rem;
+}
+
+[data-theme='morning'] .student-identity__section-body {
+  border: 1px solid var(--em-border);
+  background: var(--em-surface-elevated);
+  padding: 1.15rem;
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .student-identity__goal-card {
+  border: 1px solid var(--em-border);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .student-identity__goal-card:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .student-identity__goal-card--active {
+  border-color: var(--em-chip-selected-border);
+  background: var(--em-chip-selected-bg);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .student-identity__chip {
+  border: 1px solid var(--em-border);
+  background: var(--em-surface-elevated);
+}
+
+[data-theme='morning'] .student-identity__chip:hover {
+  border-color: rgba(99, 102, 241, 0.18);
+  background: var(--em-surface-secondary);
+}
+
+[data-theme='morning'] .student-identity__chip--active {
+  border-color: var(--em-chip-selected-border);
+  background: var(--em-chip-selected-bg);
+  color: var(--em-chip-selected-text);
+  font-weight: 600;
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .student-identity__adaptation {
+  background: var(--em-surface-secondary);
+  border-color: var(--em-border);
+}
+
+[data-theme='morning'] .lesson-card__glow,
+[data-theme='morning'] .course-card__glow {
+  opacity: 0.45;
+}
+
+[data-theme='morning'] .student-home__section {
+  animation-duration: 240ms;
+}
+
+/* ——— Vuetify form surfaces — see eduspark-input-surface.css ——— */
+
+[data-theme='morning'] .v-chip.v-chip--variant-tonal {
+  background: var(--em-surface-secondary) !important;
+}
+
+/* ——— Reduced motion ——— */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='morning'] .page-content,
+  [data-theme='morning'] .glass-card,
+  [data-theme='morning'] .eduspark-card {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   UI-6.1 — Morning Mode Enhancement
+   ═══════════════════════════════════════════ */
+
+/* ——— Page hierarchy ——— */
+[data-theme='morning'] .page-container {
+  position: relative;
+}
+
+[data-theme='morning'] .student-home {
+  gap: 0.25rem;
+}
+
+[data-theme='morning'] .text-medium-emphasis {
+  color: var(--em-text-muted) !important;
+  opacity: 1 !important;
+}
+
+[data-theme='morning'] .text-disabled,
+[data-theme='morning'] .text-caption {
+  color: var(--em-text-helper) !important;
+  opacity: 1 !important;
+}
+
+/* ——— Card levels ——— */
+[data-theme='morning'] .glass-card,
+[data-theme='morning'] .eduspark-card,
+[data-theme='morning'] .content-card {
+  background: var(--em-card-l1) !important;
+}
+
+[data-theme='morning'] .em-card--l2,
+[data-theme='morning'] .glass-card--tint-blue {
+  background: var(--em-card-l2) !important;
+}
+
+[data-theme='morning'] .em-card--l3,
+[data-theme='morning'] .glass-card--tint-indigo {
+  background: var(--em-card-l3) !important;
+}
+
+[data-theme='morning'] .course-hero {
+  background: var(--em-card-l3) !important;
+}
+
+[data-theme='morning'] .student-identity__section-body {
+  background: var(--em-card-l2) !important;
+}
+
+[data-theme='morning'] .student-identity__adaptation {
+  background: var(--em-card-l3) !important;
+}
+
+[data-theme='morning'] .lesson-learn-flow__summary-list li {
+  background: var(--em-card-l2);
+}
+
+[data-theme='morning'] .lesson-recap-ideas__card {
+  background: var(--em-card-l2);
+}
+
+[data-theme='morning'] .chat-panel {
+  background: var(--em-surface-secondary);
+  border: 1px solid var(--em-border);
+  border-radius: var(--em-radius-md);
+  box-shadow: var(--em-shadow-sm);
+}
+
+/* ——— Tabs ——— */
+[data-theme='morning'] .v-tabs .v-tab {
+  color: var(--em-text-muted);
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: color var(--em-duration-fast) var(--em-ease-out);
+}
+
+[data-theme='morning'] .v-tabs .v-tab--selected {
+  color: var(--em-chip-selected-text);
+  font-weight: 700;
+}
+
+[data-theme='morning'] .v-tabs .v-tab__slider {
+  background: linear-gradient(90deg, var(--em-primary), var(--em-blue-soft));
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+}
+
+[data-theme='morning'] .lesson-tabs,
+[data-theme='morning'] .course-tabs,
+[data-theme='morning'] .lesson-fallback-tabs {
+  border-bottom: 1px solid var(--em-border);
+}
+
+/* ——— Chips & selectors ——— */
+[data-theme='morning'] .v-chip {
+  color: var(--em-text);
+  border: 1px solid var(--em-chip-border);
+  transition:
+    background var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out);
+}
+
+[data-theme='morning'] .v-chip.v-chip--variant-tonal {
+  background: var(--em-card-l2) !important;
+  color: var(--em-text) !important;
+}
+
+[data-theme='morning'] .v-chip.v-chip--selected,
+[data-theme='morning'] .v-chip--selected {
+  background: var(--em-chip-selected-bg) !important;
+  color: var(--em-chip-selected-text) !important;
+  border-color: var(--em-chip-selected-border) !important;
+  font-weight: 600;
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .student-identity__chip {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .student-identity__chip--active {
+  transform: translateY(-1px);
+}
+
+/* ——— Forms & inputs — see eduspark-input-surface.css ——— */
+
+[data-theme='morning'] .v-label,
+[data-theme='morning'] .v-field-label {
+  color: var(--em-text-muted) !important;
+  opacity: 1 !important;
+}
+
+[data-theme='morning'] .v-input__details {
+  color: var(--em-text-helper) !important;
+  opacity: 1 !important;
+}
+
+/* ——— Menus & dropdowns ——— */
+[data-theme='morning'] .v-menu > .v-overlay__content > .v-list,
+[data-theme='morning'] .v-select__content,
+[data-theme='morning'] .v-autocomplete__content {
+  background: var(--em-surface-elevated) !important;
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .v-list-item {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .v-list-item:hover {
+  background: var(--em-surface-secondary) !important;
+}
+
+[data-theme='morning'] .v-list-item--active {
+  background: var(--em-chip-selected-bg) !important;
+  color: var(--em-chip-selected-text) !important;
+}
+
+/* ——— Chat polish ——— */
+[data-theme='morning'] .chat-bubble--ai {
+  background: var(--em-card-l1);
+  border: 1px solid var(--em-border);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .chat-bubble__audio {
+  filter: none;
+  border-radius: 8px;
+}
+
+[data-theme='morning'] .typing-bubble {
+  background: var(--em-card-l2);
+}
+
+[data-theme='morning'] .typing-dot {
+  background: var(--em-primary);
+  opacity: 0.85;
+}
+
+[data-theme='morning'] .avatar-student {
+  background: linear-gradient(135deg, var(--em-primary) 0%, var(--em-blue-soft) 100%) !important;
+}
+
+[data-theme='morning'] .chat-panel__hint,
+[data-theme='morning'] .chat-panel__name {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .chat-panel__hint {
+  color: var(--em-text-muted);
+}
+
+/* ——— Messages app (student inbox) ——— */
+[data-theme='morning'] .wa-messages-app {
+  --wa-bg: var(--em-surface-base);
+  --wa-pane-bg: var(--em-surface-elevated);
+  --wa-list-bg: var(--em-surface-secondary);
+  --wa-thread-bg: var(--em-card-l1);
+  --wa-border: var(--em-border);
+  --wa-incoming: var(--em-card-l1);
+  --wa-incoming-border: var(--em-border);
+  --wa-outgoing: var(--em-student-bubble-bg);
+  --wa-outgoing-solid: #0891b2;
+  --wa-accent: var(--em-primary);
+  --wa-text: var(--em-text);
+  --wa-muted: var(--em-text-muted);
+}
+
+[data-theme='morning'] .wa-shell {
+  box-shadow: var(--em-shadow-card);
+}
+
+[data-theme='morning'] .wa-compose-field .v-field {
+  background: var(--em-input-bg) !important;
+  border: var(--em-input-border-width) solid var(--em-input-border) !important;
+  box-shadow: var(--em-input-inset-shadow) !important;
+}
+
+/* ——— Selection transitions ——— */
+[data-theme='morning'] .student-identity__chip,
+[data-theme='morning'] .student-identity__goal-card,
+[data-theme='morning'] .grade-card,
+[data-theme='morning'] .lesson-concept-recap__chip,
+[data-theme='morning'] .course-journey__card {
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out),
+    background var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out);
+}
+
+[data-theme='morning'] .course-journey__item--current .course-journey__card {
+  background: var(--em-chip-selected-bg);
+  border-color: var(--em-chip-selected-border);
+}
+
+/* ——— Educational personality accents ——— */
+[data-theme='morning'] .student-identity__hero {
+  background: linear-gradient(145deg, var(--em-card-l1) 0%, var(--em-card-l3) 55%, var(--em-card-l2) 100%);
+}
+
+[data-theme='morning'] .page-header--panel {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%);
+}
+
+[data-theme='morning'] .section-block__subtitle,
+[data-theme='morning'] .student-identity__learn-label,
+[data-theme='morning'] .student-identity__adaptation-intro {
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .lesson-session-header__teacher {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .course-hero__teacher {
+  color: var(--em-primary-deep);
+}
+
+/* ═══════════════════════════════════════════
+   UI-6.2 — Morning Mode Polish (Part 1)
+   Sidebar · Navigation · Course Cards · Surfaces
+   ═══════════════════════════════════════════ */
+
+/* ——— Surface ladder: Page → Section → Card → Control ——— */
+[data-theme='morning'] body {
+  background: var(--em-surface-page);
+}
+
+[data-theme='morning'] .page-container {
+  position: relative;
+}
+
+[data-theme='morning'] .app-section,
+[data-theme='morning'] .section-block {
+  margin-bottom: 2.5rem;
+}
+
+[data-theme='morning'] .app-section__head {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.9rem;
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .app-section__title {
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+[data-theme='morning'] .glass-card,
+[data-theme='morning'] .eduspark-card,
+[data-theme='morning'] .content-card,
+[data-theme='morning'] .app-card {
+  background: var(--em-card-l1) !important;
+  box-shadow:
+    0 1px 2px rgba(12, 25, 48, 0.03),
+    0 6px 18px rgba(12, 25, 48, 0.045),
+    0 0 0 1px var(--em-border-subtle) !important;
+}
+
+[data-theme='morning'] .glass-card--elevated,
+[data-theme='morning'] .em-card--l2 {
+  background: var(--em-card-l2) !important;
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .em-card--l3,
+[data-theme='morning'] .glass-card--tint-indigo {
+  background: var(--em-card-l3) !important;
+}
+
+[data-theme='morning'] .app-card--interactive:hover,
+[data-theme='morning'] .content-card--interactive:hover {
+  box-shadow:
+    0 4px 8px rgba(12, 25, 48, 0.04),
+    0 12px 28px rgba(12, 25, 48, 0.07),
+    0 0 0 1px rgba(99, 102, 241, 0.12) !important;
+}
+
+[data-theme='morning'] .v-btn.v-btn--variant-tonal,
+[data-theme='morning'] .v-btn.v-btn--variant-outlined {
+  background: var(--em-surface-control);
+}
+
+/* ——— Learning catalog cards (student home) ——— */
+[data-theme='morning'] .catalog-card {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow:
+    0 1px 2px rgba(12, 25, 48, 0.03),
+    0 8px 22px rgba(12, 25, 48, 0.05) !important;
+}
+
+[data-theme='morning'] .catalog-card:hover {
+  border-color: rgba(99, 102, 241, 0.16) !important;
+  box-shadow:
+    0 6px 10px rgba(12, 25, 48, 0.04),
+    0 16px 34px rgba(99, 102, 241, 0.08) !important;
+  transform: translateY(-3px);
+}
+
+[data-theme='morning'] .catalog-card__subject {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .catalog-card__teacher-name {
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .catalog-card__cta--active,
+[data-theme='morning'] .catalog-card__cta--ready {
+  background: var(--em-surface-elevated);
+  border-color: rgba(99, 102, 241, 0.14);
+  color: var(--em-primary-deep);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .catalog-card:hover .catalog-card__cta--active,
+[data-theme='morning'] .catalog-card:hover .catalog-card__cta--ready {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+[data-theme='morning'] .catalog-card__cta--done {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.16);
+  color: var(--em-success-deep);
+}
+
+[data-theme='morning'] .catalog-card__cta--locked {
+  background: var(--em-surface-control);
+  border-color: rgba(245, 158, 11, 0.18);
+  color: #b45309;
+}
+
+[data-theme='morning'] .catalog-card__progress {
+  color: var(--em-text-helper);
+}
+
+/* ——— Course cards (detail / subscriptions) ——— */
+[data-theme='morning'] .course-card {
+  background: linear-gradient(180deg, var(--em-card-l1) 0%, var(--em-card-l2) 100%) !important;
+}
+
+[data-theme='morning'] .course-card--unlocked:hover {
+  box-shadow:
+    0 8px 24px rgba(99, 102, 241, 0.1),
+    0 0 0 1px rgba(99, 102, 241, 0.1) !important;
+  transform: translateY(-3px);
+}
+
+[data-theme='morning'] .course-card__glow {
+  height: 4px;
+  opacity: 0.7;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(99, 102, 241, 0.5),
+    rgba(6, 182, 212, 0.45),
+    transparent
+  );
+}
+
+[data-theme='morning'] .course-card .text-subtitle-1 {
+  color: var(--em-text);
+  letter-spacing: -0.02em;
+}
+
+[data-theme='morning'] .locked-overlay {
+  background: rgba(255, 251, 235, 0.85);
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+/* ——— Sidebar chrome ——— */
+[data-theme='morning'] .glass-sidebar {
+  position: relative;
+}
+
+[data-theme='morning'] .sidebar-brand .brand-mark__title,
+[data-theme='morning'] .sidebar-brand .brand-mark__tagline {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .sidebar-brand .brand-mark__tagline {
+  color: var(--em-text-muted);
+}
+
+/* ═══════════════════════════════════════════
+   UI-6.2.2 — Student Home Hierarchy
+   Subjects · Continue · Report
+   ═══════════════════════════════════════════ */
+
+/* ——— Subjects: primary navigation ——— */
+[data-theme='morning'] .home-hub-section--subjects :deep(.app-section__title) {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--em-text);
+  letter-spacing: -0.03em;
+}
+
+[data-theme='morning'] .home-hub-section--subjects :deep(.app-section__eyebrow) {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .home-hub-section--subjects :deep(.app-section__subtitle) {
+  color: var(--em-text-muted);
+  font-size: 0.9375rem;
+}
+
+/* ——— Hero primary surface (UI-6.2.1) ——— */
+[data-theme='morning'] .journey-hero--primary {
+  background: var(--em-card-l3) !important;
+  border-color: rgba(99, 102, 241, 0.18) !important;
+  box-shadow:
+    0 1px 2px rgba(12, 25, 48, 0.04),
+    0 8px 24px rgba(99, 102, 241, 0.07),
+    0 0 0 1px rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme='morning'] .journey-hero__avatar {
+  background: var(--em-card-l1);
+  border-color: rgba(99, 102, 241, 0.14);
+}
+
+[data-theme='morning'] .journey-hero__mission-kicker {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .journey-hero__mission-text {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .journey-hero__progress {
+  color: var(--em-text-muted);
+}
+
+/* ——— Mission supporting card ——— */
+[data-theme='morning'] .next-mission {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .next-mission__context {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ——— Continue learning (supporting) ——— */
+[data-theme='morning'] .home-hub-section--continue :deep(.app-section__title) {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .home-hub-section--continue :deep(.app-section__subtitle) {
+  font-size: var(--em-text-caption);
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .continue-card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: none !important;
+}
+
+[data-theme='morning'] .continue-card:hover {
+  border-color: rgba(99, 102, 241, 0.18) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .continue-card__icon {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+/* ——— Achievements (compact) ——— */
+[data-theme='morning'] .home-hub-section--achievements :deep(.app-section__title) {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--em-text-muted);
+}
+
+[data-theme='morning'] .home-hub-section--achievements :deep(.app-section__subtitle) {
+  font-size: var(--em-text-caption);
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .achievement-card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: none !important;
+}
+
+/* ═══════════════════════════════════════════
+   UI-6.3 — Morning consistency (global polish)
+   ═══════════════════════════════════════════ */
+
+[data-theme='morning'] .section-eyebrow {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .section-subtitle {
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .v-btn--variant-tonal {
+  background: var(--em-surface-control) !important;
+  color: var(--em-primary-deep) !important;
+}
+
+[data-theme='morning'] .v-btn--variant-outlined {
+  border-color: var(--em-border) !important;
+  color: var(--em-text) !important;
+}
+
+[data-theme='morning'] .chat-experience .chat-panel__header,
+[data-theme='morning'] .chat-experience .chat-panel__footer {
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .slide-up-enter-active {
+  animation-duration: 0.35s;
+  animation-timing-function: var(--em-ease-out);
+}

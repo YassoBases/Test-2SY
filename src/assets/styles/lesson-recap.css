@@ -1,0 +1,226 @@
+/**
+
+ * UI-4.5.1 — Interactive Lesson Recap
+
+ */
+
+
+
+.lesson-recap-ideas {
+
+  display: grid;
+
+  grid-template-columns: 1fr;
+
+  gap: 0.5rem;
+
+}
+
+
+
+@media (min-width: 600px) {
+
+  .lesson-recap-ideas {
+
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  }
+
+}
+
+
+
+@media (min-width: 960px) {
+
+  .lesson-recap-ideas {
+
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+
+  }
+
+}
+
+
+
+.lesson-recap-ideas__card {
+
+  display: flex;
+
+  align-items: flex-start;
+
+  gap: 0.6rem;
+
+  padding: 0.65rem 0.75rem;
+
+  border-radius: 12px;
+
+  background: rgba(0, 0, 0, 0.14);
+
+  border: 1px solid rgba(255, 255, 255, 0.07);
+
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+}
+
+
+
+.lesson-recap-ideas__card:hover {
+
+  border-color: rgba(34, 211, 238, 0.22);
+
+  background: rgba(34, 211, 238, 0.05);
+
+}
+
+
+
+.lesson-recap-ideas__icon {
+
+  flex-shrink: 0;
+
+  margin-top: 0.1rem;
+
+}
+
+
+
+.lesson-recap-ideas__text {
+
+  font-size: 0.875rem;
+
+  line-height: 1.45;
+
+  color: rgba(255, 255, 255, 0.9);
+
+}
+
+
+
+.lesson-concept-recap__teacher {
+
+  padding: 0.55rem 0.65rem;
+
+  border-radius: 12px;
+
+  background: rgba(34, 211, 238, 0.06);
+
+  border: 1px solid rgba(34, 211, 238, 0.14);
+
+}
+
+
+
+.lesson-concept-recap__framing {
+
+  line-height: 1.45;
+
+  color: rgba(255, 255, 255, 0.88);
+
+}
+
+
+
+.lesson-concept-recap__chip {
+
+  display: inline-flex;
+
+  align-items: center;
+
+  gap: 0.25rem;
+
+  padding: 0.4rem 0.75rem;
+
+  border-radius: 999px;
+
+  border: 1px solid rgba(34, 211, 238, 0.28);
+
+  background: rgba(34, 211, 238, 0.1);
+
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+
+  font-size: 0.8125rem;
+
+  font-weight: 500;
+
+  font-family: inherit;
+
+  cursor: pointer;
+
+  transition:
+
+    background 0.2s ease,
+
+    border-color 0.2s ease,
+
+    transform 0.15s ease;
+
+}
+
+
+
+.lesson-concept-recap__chip:hover:not(:disabled) {
+
+  background: rgba(34, 211, 238, 0.16);
+
+  border-color: rgba(34, 211, 238, 0.42);
+
+}
+
+
+
+.lesson-concept-recap__chip:active:not(:disabled) {
+
+  transform: scale(0.98);
+
+}
+
+
+
+.lesson-concept-recap__chip:disabled {
+
+  opacity: 0.55;
+
+  cursor: not-allowed;
+
+}
+
+
+
+.lesson-concept-recap__chip-icon {
+
+  opacity: 0.7;
+
+}
+
+
+
+.lesson-concept-recap__menu {
+
+  min-width: 210px;
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+}
+
+
+
+.lesson-learn-flow__section--recap-keywords .lesson-learn-flow__section-head {
+
+  margin-bottom: 0.75rem;
+
+}
+
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .lesson-recap-ideas__card,
+
+  .lesson-concept-recap__chip {
+
+    transition: none;
+
+  }
+
+}
+

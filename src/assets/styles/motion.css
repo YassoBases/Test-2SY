@@ -1,0 +1,93 @@
+/**
+ * EduMind motion system — subtle, purposeful (UI-1)
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Page enter */
+.page-enter-active,
+.slide-up-enter-active {
+  animation: em-page-enter var(--em-duration-slow) var(--em-ease-spring);
+}
+
+@keyframes em-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Card hover */
+.em-hover-lift {
+  transition:
+    transform var(--em-duration-standard) var(--em-ease-out),
+    box-shadow var(--em-duration-standard) var(--em-ease-out),
+    border-color var(--em-duration-standard) var(--em-ease-out);
+}
+
+.em-hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--em-shadow-lg), var(--em-glow-purple);
+}
+
+/* Button press */
+.em-press:active:not(:disabled) {
+  transform: scale(0.98);
+  transition: transform var(--em-duration-fast) var(--em-ease-out);
+}
+
+/* Modal */
+.em-modal-enter-active {
+  animation: em-modal-in var(--em-duration-standard) var(--em-ease-out);
+}
+
+@keyframes em-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Sidebar drawer */
+.v-navigation-drawer {
+  transition: transform var(--em-duration-standard) var(--em-ease-in-out) !important;
+}
+
+/* Route fade (layouts) */
+.fade-enter-active {
+  transition:
+    opacity var(--em-duration-standard) var(--em-ease-out),
+    transform var(--em-duration-standard) var(--em-ease-spring);
+}
+
+.fade-leave-active {
+  transition:
+    opacity var(--em-duration-fast) var(--em-ease-out),
+    transform var(--em-duration-fast) var(--em-ease-out);
+}
+
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}

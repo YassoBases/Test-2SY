@@ -1,0 +1,439 @@
+/**
+ * LANDING-3.0 — Conversion & visual hierarchy
+ * LANDING-3.1 — Centered composition & grid recovery
+ * Premium educational homepage; shared night + morning.
+ */
+
+/* ——— Centered shell ——— */
+.welcome-shell {
+  position: relative;
+  width: 100%;
+  max-width: min(1140px, 94vw);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  gap: clamp(0.7rem, 1.9vh, 1.15rem);
+  padding: clamp(0.85rem, 2.2vh, 1.5rem) clamp(1rem, 3vw, 1.5rem);
+  box-sizing: border-box;
+}
+
+.welcome-hero {
+  gap: clamp(0.5rem, 1.35vh, 0.8rem);
+  width: 100%;
+  max-width: min(640px, 100%);
+}
+
+.welcome-headline {
+  max-width: min(520px, 100%);
+}
+
+.hero-desc {
+  max-width: min(480px, 100%);
+}
+
+.welcome-page .edumind-logo--landing {
+  width: min(248px, 70vw);
+  max-height: clamp(56px, 10.5vh, 80px);
+}
+
+/* ——— Benefit chips ——— */
+.welcome-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 8px;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+  max-width: min(520px, 96vw);
+}
+
+.welcome-benefits__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--em-text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
+.welcome-benefits__icon {
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+/* ——— Role cards ——— */
+.role-paths {
+  width: 100%;
+}
+
+.role-paths--centered {
+  text-align: center;
+}
+
+.role-paths__label {
+  margin-bottom: 0.6rem;
+}
+
+.role-paths__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  width: 100%;
+  gap: clamp(0.55rem, 1.8vw, 0.85rem);
+}
+
+.role-path {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  gap: 0.35rem;
+  padding: 12px 10px 11px;
+  min-height: 128px;
+  border-radius: var(--em-radius-md);
+  border: 1px solid var(--em-border-subtle);
+  background: rgba(10, 16, 32, 0.42);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out),
+    background var(--em-duration-fast) var(--em-ease-out),
+    opacity var(--em-duration-standard) ease;
+}
+
+.role-path__icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 2px;
+  border-radius: var(--em-radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.role-path__icon-wrap--student {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.18);
+}
+
+.role-path__icon-wrap--parent {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
+.role-path__icon-wrap--teacher {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.role-path__title {
+  font-size: clamp(0.92rem, 1.5vh, 1rem);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--em-text);
+}
+
+.role-path__tagline {
+  font-size: clamp(0.68rem, 1.1vh, 0.74rem);
+  font-weight: 700;
+  line-height: 1.35;
+  color: rgba(232, 236, 255, 0.82);
+}
+
+.role-path__detail {
+  font-size: clamp(0.6rem, 1vh, 0.66rem);
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(232, 236, 255, 0.48);
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.role-path--student {
+  border-color: rgba(34, 211, 238, 0.14);
+}
+
+.role-path:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(34, 211, 238, 0.28);
+  background: rgba(14, 22, 42, 0.55);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.role-path:hover:not(:disabled) .role-path__icon-wrap {
+  transform: scale(1.03);
+}
+
+.role-path__icon-wrap {
+  transition: transform var(--em-duration-fast) var(--em-ease-out);
+}
+
+.role-path--active {
+  border-color: rgba(34, 211, 238, 0.42);
+  background: rgba(34, 211, 238, 0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.role-path--navigating {
+  transform: translateY(-1px) scale(1.01);
+  animation: none;
+  border-color: rgba(34, 211, 238, 0.5);
+}
+
+.role-path--dimmed {
+  opacity: 0.48;
+  transform: scale(0.98);
+}
+
+/* ——— Trust section ——— */
+.welcome-trust {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(0.65rem, 1.6vh, 0.85rem);
+}
+
+.welcome-trust__points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  width: 100%;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome-trust__point {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px 8px;
+  border-radius: var(--em-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(8, 12, 24, 0.28);
+  text-align: center;
+}
+
+.welcome-trust__point-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.welcome-trust__point-text {
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgba(232, 236, 255, 0.62);
+}
+
+/* ——— Instagram card variant (footer-style secondary) ——— */
+.welcome-trust .instagram-link--card {
+  width: 100%;
+  max-width: min(420px, 72%);
+  margin-top: clamp(0.25rem, 0.8vh, 0.5rem);
+}
+
+.instagram-link--card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--em-radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 12, 24, 0.32);
+  text-decoration: none;
+  direction: rtl;
+  transition:
+    border-color var(--em-duration-fast) ease,
+    background var(--em-duration-fast) ease,
+    transform var(--em-duration-fast) var(--em-ease-out);
+}
+
+.instagram-link--card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(12, 18, 36, 0.45);
+  transform: translateY(-1px);
+}
+
+.welcome-trust .instagram-link__card-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.instagram-link__card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--em-radius-sm);
+  background: linear-gradient(135deg, rgba(225, 48, 108, 0.15), rgba(131, 58, 180, 0.12));
+  border: 1px solid rgba(225, 48, 108, 0.2);
+  color: #f472b6;
+  flex-shrink: 0;
+}
+
+.instagram-link__card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+}
+
+.instagram-link--card .instagram-link__handle {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--em-text);
+}
+
+.instagram-link--card .instagram-link__hint {
+  font-size: 0.72rem;
+  color: var(--em-text-muted);
+}
+
+.instagram-link--card .instagram-link__arrow {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+/* ——— Inline Instagram (legacy) ——— */
+.instagram-link:not(.instagram-link--card) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--em-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 12, 24, 0.25);
+  color: var(--em-text-muted);
+  text-decoration: none;
+  direction: rtl;
+  font-size: 0.72rem;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.instagram-link:not(.instagram-link--card):hover {
+  color: var(--em-text);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.instagram-link:not(.instagram-link--card) .instagram-link__icon {
+  opacity: 0.65;
+}
+
+.instagram-link:not(.instagram-link--card) .instagram-link__handle {
+  font-weight: 600;
+  color: rgba(232, 236, 255, 0.72);
+}
+
+.instagram-link:not(.instagram-link--card) .instagram-link__hint {
+  color: rgba(232, 236, 255, 0.42);
+}
+
+.instagram-link:not(.instagram-link--card) .instagram-link__arrow {
+  opacity: 0.45;
+}
+
+.instagram-link--compact:not(.instagram-link--card) .instagram-link__hint {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .instagram-link:not(.instagram-link--card) .instagram-link__hint {
+    display: none;
+  }
+}
+
+.welcome-cards,
+.welcome-footer {
+  width: 100%;
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .role-paths__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .welcome-trust__points {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .welcome-trust__point {
+    flex-direction: row;
+    text-align: right;
+    padding: 8px 10px;
+  }
+
+  .welcome-trust__point-text {
+    font-size: 0.7rem;
+  }
+
+  .role-path {
+    min-height: 118px;
+    padding: 10px 8px;
+  }
+
+  .welcome-benefits__chip {
+    font-size: 0.68rem;
+    padding: 4px 8px;
+  }
+}
+
+@media (max-height: 720px) {
+  .welcome-shell {
+    gap: clamp(0.55rem, 1.5vh, 0.85rem);
+    padding-block: clamp(0.65rem, 1.6vh, 1rem);
+  }
+
+  .welcome-page .edumind-logo--landing {
+    max-height: clamp(48px, 9vh, 68px);
+  }
+
+  .role-path {
+    min-height: 108px;
+    padding: 9px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-path:hover:not(:disabled),
+  .instagram-link--card:hover {
+    transform: none;
+  }
+}
