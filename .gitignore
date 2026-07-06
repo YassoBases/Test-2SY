@@ -38,6 +38,7 @@ backend/venv/
 backend/venv.*/
 backend/.venv/
 tts_worker/.venv/
+eduspark-venv310/
 
 # --- Python test / type / lint caches ---
 .pytest_cache/
