@@ -87,10 +87,11 @@ class FinalAcademicReportSchema(BaseModel):
 
 
 class MultiSkillReportSchema(BaseModel):
-    """Final 4-skill placement report. Per-skill CEFR levels + an AI-written narrative.
+    """Final placement report. Per-skill CEFR levels + an AI-written narrative.
 
     Skill levels/scores are computed by the backend (reading/listening from % correct, speaking
-    from the audio engine, writing from the grader); the AI fills only the narrative fields.
+    from the audio engine, writing from the grader). Grammar/vocab is a diagnostic anchor, not a
+    persisted learner skill. The AI fills only the narrative fields.
     """
 
     overall_level: CEFRLevel
@@ -103,6 +104,8 @@ class MultiSkillReportSchema(BaseModel):
     listening_score_percent: float = Field(ge=0.0, le=100.0, default=0.0)
     writing_score: float = Field(ge=0.0, le=10.0, default=0.0)
     speaking_score: float = Field(ge=0.0, le=10.0, default=0.0)
+    grammar_vocab_level: CEFRLevel | None = None
+    grammar_vocab_score_percent: float = Field(ge=0.0, le=100.0, default=0.0)
 
     summary: str = ""
     strengths: list[str] = Field(default_factory=list)
@@ -209,6 +212,7 @@ class McqPromptOut(BaseModel):
     instructions: str
     passage: str | None = None
     audio_url: str | None = None
+    audio_text: str | None = None
     situation: str | None = None
     question: str
     options: list[str]
@@ -226,6 +230,14 @@ class SpeakingTurnFeedbackOut(BaseModel):
     grammar_vocab_feedback: str | None = None
     pronunciation_feedback: str | None = None
     fluency_note: str | None = None
+
+
+class SpeakingTranscriptionOut(BaseModel):
+    """Speech-to-text preview returned before a spoken answer is submitted."""
+
+    transcription: str
+    engine: str
+    model: str
 
 
 class SpeakingTurnDetailOut(BaseModel):

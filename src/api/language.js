@@ -442,10 +442,21 @@ export async function fetchExamState(sessionId) {
   return data
 }
 
-export async function submitSpeakingTurn(sessionId, blob, durationSeconds) {
+export async function transcribeExamSpeaking(sessionId, blob) {
+  const form = new FormData()
+  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/transcribe`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 2 * 60 * 1000,
+  })
+  return data
+}
+
+export async function submitSpeakingTurn(sessionId, blob, durationSeconds, transcription = '') {
   const form = new FormData()
   form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
   if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
+  if (transcription) form.append('transcription', transcription)
   const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/turn`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 2 * 60 * 1000,

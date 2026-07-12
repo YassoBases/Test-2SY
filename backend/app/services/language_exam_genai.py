@@ -11,7 +11,7 @@ import logging
 
 from app.core.config import get_settings
 from app.schemas.language_exam import SpeakingTurnAssessment
-from app.services.claude_service import assess_audio_with_claude_json, is_claude_configured
+from app.services.claude_service import generate_claude_json_model, is_claude_configured
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -41,26 +41,30 @@ def _suffix_for(mime: str) -> str:
 
 
 async def assess_speaking_turn(
-    *, audio_bytes: bytes, mime: str, system: str, prompt: str
+    *, transcript: str, system: str, prompt: str
 ) -> SpeakingTurnAssessment:
-    """Assess one spoken answer from the raw audio. Raises ExamLlmUnavailable on hard failure."""
-    if not audio_bytes:
-        raise ExamLlmUnavailable("Empty audio payload")
+    """Assess one verified STT transcript and preserve it verbatim in the result."""
+    transcript = (transcript or "").strip()
+    if not transcript:
+        raise ExamLlmUnavailable("Empty speech transcript")
     if not is_claude_configured():
         raise ExamLlmUnavailable("ANTHROPIC_API_KEY is not configured")
 
-    result = await assess_audio_with_claude_json(
-        audio_bytes=audio_bytes,
-        mime=mime or _suffix_for(mime),
+    enriched_prompt = (
+        f'{prompt}\n\nVerified GPT-4o speech-to-text transcript:\n"""\n{transcript}\n"""\n'
+        "Use this exact transcript for the transcription field. Evaluate delivery conservatively "
+        "from the wording and visible disfluencies."
+    )
+    result = await generate_claude_json_model(
+        enriched_prompt,
         system=system,
-        prompt=prompt,
         model_type=SpeakingTurnAssessment,
         temperature=0.3,
         max_output_tokens=2048,
     )
     if result is None:
         raise ExamLlmUnavailable("Claude speaking assessment returned no result")
-    return result
+    return result.model_copy(update={"transcription": transcript})
 
 
 # Backward-compatible alias for existing imports.

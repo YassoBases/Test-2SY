@@ -46,6 +46,7 @@ from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageLevel, LanguageOnboardingStep, LanguageSkill
 from app.models.language.exam import LanguageExamSession
 from app.models.language.profile import LanguageStudentProfile
+from app.models.profile import StudentProfile
 from app.models.user import User
 from app.schemas.language_exam import (
     CEFRLevel,
@@ -56,6 +57,7 @@ from app.schemas.language_exam import (
     McqPromptOut,
     MultiSkillReportSchema,
     SpeakingPromptOut,
+    SpeakingTranscriptionOut,
     SpeakingTurnFeedbackOut,
     WritingAnswerIn,
     WritingPromptOut,
@@ -72,19 +74,27 @@ from app.services.language_exam_service import (
     overall_level,
 )
 from app.services.language_level_utils import primary_focus_and_strength
+from app.services.language_placement_question_bank_service import (
+    bank_item_to_exam_item,
+    record_bank_item_answer,
+    select_placement_bank_items,
+)
 from app.services.language_subscription_service import get_default_language
-from app.services.language_tts_service import get_lesson_audio, synthesize_exam_audio
+from app.services.language_transcription_service import transcribe_english_audio
+from app.services.language_tts_service import synthesize_exam_audio
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/student/languages/exam", tags=["Language Exam"])
 
-SECTIONS = ["speaking", "listening", "reading", "writing", "interview"]
+SECTIONS = ["speaking", "listening", "reading", "grammar_vocab", "writing", "interview"]
 # Sections that work like the audio speaking flow (record -> assess -> next question).
 SPEAKING_LIKE = {"speaking", "interview"}
+MCQ_SECTIONS = {"listening", "reading", "grammar_vocab"}
+PREPARED_SECTIONS = {"listening", "reading", "grammar_vocab", "writing"}
 SPEAKING_TURNS = 3
 INTERVIEW_TURNS = 2  # Phase 2 — guided follow-up seeded by Phase 1 evidence.
-ADAPTIVE_MAX_STEPS = 5  # reading/listening: max adaptive questions before settling on a level.
+ADAPTIVE_MAX_STEPS = 5  # MCQ sections: max adaptive questions before settling on a level.
 WRITING_MIN_WORDS = 40
 
 
@@ -97,6 +107,12 @@ async def _effective_level(db: AsyncSession, *, student_id: int, language_id: in
     if analytics and analytics.speaking_level:
         return analytics.speaking_level.value
     return "A2"
+
+
+async def _student_grade(db: AsyncSession, *, student_id: int) -> int | None:
+    return (
+        await db.execute(select(StudentProfile.grade).where(StudentProfile.user_id == student_id).limit(1))
+    ).scalar_one_or_none()
 
 
 def _new_adaptive_section(pool: dict[str, dict], start_level: str) -> dict:
@@ -114,6 +130,27 @@ def _new_adaptive_section(pool: dict[str, dict], start_level: str) -> dict:
         "ready": True,
         "done": not pool,
     }
+
+
+def _is_usable_audio_url(url: str | None) -> bool:
+    value = str(url or "").strip()
+    if not value:
+        return False
+    if value.startswith("/uploads/"):
+        return True
+    if value.startswith("http://") or value.startswith("https://"):
+        return True
+    return value.startswith("/language-assets/en/placement/listening/")
+
+
+def _listening_text_from_body(body: dict | None) -> str:
+    text = (
+        (body or {}).get("audio_transcript")
+        or (body or {}).get("text")
+        or (body or {}).get("passage")
+        or ""
+    )
+    return str(text).strip()
 
 
 def _first_question(body: dict | None) -> dict | None:
@@ -150,7 +187,11 @@ async def _seeded_pool(
             if not question:
                 continue
             body = row.body_json or {}
-            pool[lvl] = {
+            audio_url = body.get("audio_url") if _is_usable_audio_url(body.get("audio_url")) else None
+            audio_text = _listening_text_from_body(body)
+            if skill == LanguageSkill.listening and not audio_url and not audio_text:
+                continue
+            item = {
                 "content_id": row.id,
                 "level": lvl,
                 "passage": (body.get("passage") or body.get("text") or ""),
@@ -159,6 +200,56 @@ async def _seeded_pool(
                 "options": list(question.get("choices") or []),
                 "correct_index": int(question.get("correct_index")),
             }
+            if audio_url:
+                item["audio_url"] = str(audio_url)
+            if audio_text:
+                item["audio_text"] = audio_text
+            pool[lvl] = item
+            break
+    return pool
+
+
+def _is_valid_mcq_item(item: dict) -> bool:
+    options = item.get("options")
+    ci = item.get("correct_index")
+    return isinstance(options, list) and len(options) >= 2 and isinstance(ci, int) and 0 <= ci < len(options)
+
+
+async def _question_bank_pool(
+    db: AsyncSession, *, language_id: int, skill: str, levels: list[str]
+) -> dict[str, dict]:
+    """Reviewed question-bank items: one internal MCQ item per requested CEFR level."""
+    pool: dict[str, dict] = {}
+    for lvl in levels:
+        for row in await select_placement_bank_items(
+            db,
+            language_id=language_id,
+            skill=skill,
+            level=lvl,
+            count=4 if skill == "listening" else 1,
+        ):
+            item = bank_item_to_exam_item(row)
+            if not _is_valid_mcq_item(item):
+                continue
+            if skill == "listening":
+                if not _is_usable_audio_url(item.get("audio_url")):
+                    item["audio_url"] = None
+                body = item.get("body") or {}
+                audio_text = _listening_text_from_body(body)
+                if item.get("content_id"):
+                    content = await db.get(LanguageContentItem, item["content_id"])
+                    body = content.body_json if content else body
+                    if not audio_text:
+                        audio_text = _listening_text_from_body(body)
+                audio_url = (body or {}).get("audio_url")
+                if not item.get("audio_url") and audio_text and _is_usable_audio_url(audio_url):
+                    item["audio_url"] = str(audio_url)
+                if audio_text:
+                    item["audio_text"] = audio_text
+                if not item.get("audio_url") and not item.get("audio_text"):
+                    continue
+            item["source"] = "placement_qbank"
+            pool[lvl] = item
             break
     return pool
 
@@ -223,12 +314,15 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
         # merge the three sections into the LATEST state at the end ΓÇö never write back a stale
         # snapshot, which would clobber the speaking progress made meanwhile.
 
-        # --- Reading: AI passages, one per CEFR level (fallback: seeded bank) ---
+        # --- Reading: reviewed bank first, then AI/legacy fallbacks for missing levels. ---
+        r_pool = await _question_bank_pool(
+            db, language_id=language_id, skill="reading", levels=ALL_CEFR_LEVELS
+        )
+        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
         try:
-            gen = await ai_engine.generate_comprehension_set(skill="reading", levels=ALL_CEFR_LEVELS)
+            gen = await ai_engine.generate_comprehension_set(skill="reading", levels=missing) if missing else None
         except Exception:  # pragma: no cover
             gen = None
-        r_pool: dict[str, dict] = {}
         for it in (gen or {}).get("items", []):
             r_pool[it["level"]] = {
                 "passage": it["text"], "situation": "", "question": it["question"],
@@ -245,38 +339,45 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 r_pool[lv] = item
         reading_section = _new_adaptive_section(r_pool, start_level)
 
-        # --- Listening: AI scripts -> edge-tts audio, one per CEFR level (fallback: seeded) ---
+        # --- Grammar/vocabulary: reviewed bank only; it is diagnostic, not generated live. ---
+        g_pool = await _question_bank_pool(
+            db, language_id=language_id, skill="grammar_vocab", levels=ALL_CEFR_LEVELS
+        )
+        grammar_vocab_section = _new_adaptive_section(g_pool, start_level)
+
+        # --- Listening: reviewed bank first, then AI/legacy fallbacks for missing levels. ---
+        l_pool = await _question_bank_pool(
+            db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS
+        )
+        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
         try:
-            gen = await ai_engine.generate_comprehension_set(skill="listening", levels=ALL_CEFR_LEVELS)
+            gen = await ai_engine.generate_comprehension_set(skill="listening", levels=missing) if missing else None
         except Exception:  # pragma: no cover
             gen = None
-        l_pool: dict[str, dict] = {}
         for it in (gen or {}).get("items", []):
             audio_url = await synthesize_exam_audio(it["text"])
             l_pool[it["level"]] = {
-                "audio_url": audio_url, "situation": it["situation"], "question": it["question"],
+                "audio_url": audio_url, "audio_text": it["text"], "situation": it["situation"], "question": it["question"],
                 "options": it["options"], "correct_index": it["correct_index"], "level": it["level"],
             }
         missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
         if missing:
             for lv, item in (await _seeded_pool(db, language_id=language_id, skill=LanguageSkill.listening, levels=missing)).items():
-                # Pre-warm the seeded clip's audio so it doesn't synthesize during the request.
-                if item.get("content_id"):
-                    try:
-                        tts = await get_lesson_audio(db, content_item_id=item["content_id"])
-                        item["audio_url"] = (tts or {}).get("public_url")
-                    except Exception:  # pragma: no cover
-                        pass
                 l_pool[lv] = item
         listening_section = _new_adaptive_section(l_pool, start_level)
+        current_listening = listening_section.get("pool", {}).get(listening_section.get("current_level"))
+        if current_listening:
+            await _materialize_listening_audio(db, current_listening)
 
-        # --- Writing: AI prompt (fallback: seeded bank) ---
-        try:
-            wp = await ai_engine.generate_writing_prompt(level=level)
-        except Exception:  # pragma: no cover
-            wp = None
+        # --- Writing: reviewed bank first, AI next, legacy/generic final fallback. ---
+        wp = await _writing_prompt(db, language_id=language_id, level_str=level, include_generic=False)
         if not wp:
-            wp = await _writing_prompt(db, language_id=language_id, level_str=level)
+            try:
+                wp = await ai_engine.generate_writing_prompt(level=level)
+            except Exception:  # pragma: no cover
+                wp = None
+        if not wp:
+            wp = await _writing_prompt(db, language_id=language_id, level_str=level, include_generic=True)
         writing_section = {
             "prompt": wp, "min_words": WRITING_MIN_WORDS, "response": None, "ready": True, "done": False,
         }
@@ -286,18 +387,32 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
         state = dict(sess.exam_state or {})
         state["reading"] = reading_section
         state["listening"] = listening_section
+        state["grammar_vocab"] = grammar_vocab_section
         state["writing"] = writing_section
         sess.exam_state = state
         flag_modified(sess, "exam_state")
         await db.commit()
 
 
-async def _writing_prompt(db: AsyncSession, *, language_id: int, level_str: str) -> str:
-    """Pull a seeded writing prompt near the level; fall back to a generic one."""
+async def _writing_prompt(
+    db: AsyncSession, *, language_id: int, level_str: str, include_generic: bool = True
+) -> str | None:
+    """Pull a reviewed/seeded writing prompt near the level; optionally fall back to generic."""
     try:
         lvl = LanguageLevel(level_str)
     except ValueError:
         lvl = LanguageLevel.A2
+    for row in await select_placement_bank_items(
+        db,
+        language_id=language_id,
+        skill="writing_prompt",
+        level=lvl,
+        count=1,
+    ):
+        item = bank_item_to_exam_item(row)
+        prompt = str(item.get("question") or "").strip()
+        if prompt:
+            return prompt
     q = (
         select(LanguageContentItem)
         .where(
@@ -316,6 +431,8 @@ async def _writing_prompt(db: AsyncSession, *, language_id: int, level_str: str)
         prompt = body.get("prompt") or body.get("text") or row.title
         if prompt:
             return str(prompt)
+    if not include_generic:
+        return None
     return (
         "Write a short message (at least 40 words) describing a memorable day you had recently. "
         "Explain what happened, who you were with, and how you felt."
@@ -357,7 +474,7 @@ async def _build_state_out(
 
     # Reading/listening/writing content is generated in the background; until it's ready, tell the
     # frontend to show a loader and poll. (Older sessions without the flag are treated as ready.)
-    if section in ("listening", "reading", "writing") and not state.get(section, {}).get("ready", True):
+    if section in PREPARED_SECTIONS and not state.get(section, {}).get("ready", True):
         return ExamStateOut(
             session_id=sess.id, phase="preparing", section_index=cursor,
             section_total=len(sections), sections=sections, resumed=resumed,
@@ -379,27 +496,33 @@ async def _build_state_out(
             turn=sp.get("turn", 1),
             total_turns=sp.get("total_turns", INTERVIEW_TURNS if section == "interview" else SPEAKING_TURNS),
         )
-    elif section in ("listening", "reading"):
+    elif section in MCQ_SECTIONS:
         sec = state[section]
         item = sec.get("pool", {}).get(sec.get("current_level"))
         if item and not sec.get("done"):
             audio_url = None
+            audio_text = None
+            passage = item.get("passage") or None if section == "reading" else None
+            situation = item.get("situation") or None if section == "listening" else None
+            instructions = "Choose the best answer."
             if section == "listening":
-                # AI-generated items carry their own edge-tts URL; seeded items resolve via the cache.
-                audio_url = item.get("audio_url")
-                if not audio_url and item.get("content_id"):
-                    try:
-                        tts = await get_lesson_audio(db, content_item_id=item["content_id"])
-                        audio_url = (tts or {}).get("public_url")
-                    except Exception as exc:  # pragma: no cover - TTS variance
-                        logger.warning("Listening audio generation failed for %s: %s", item["content_id"], exc)
+                instructions = "Listen to the clip, then answer."
+                audio_url, audio_text, audio_created = await _materialize_listening_audio(db, item)
+                if audio_created:
+                    sess.exam_state = state
+                    flag_modified(sess, "exam_state")
+                    await db.commit()
+                audio_text = None if audio_url else audio_text
+            elif section == "reading":
+                instructions = "Read the passage, then answer."
+            elif section == "grammar_vocab":
+                instructions = "Choose the most accurate English option."
             out.mcq = McqPromptOut(
-                instructions=(
-                    "Listen to the clip, then answer." if section == "listening" else "Read the passage, then answer."
-                ),
-                passage=item.get("passage") or None if section == "reading" else None,
+                instructions=instructions,
+                passage=passage,
                 audio_url=audio_url,
-                situation=item.get("situation") or None if section == "listening" else None,
+                audio_text=audio_text,
+                situation=situation,
                 question=item.get("question", ""),
                 options=item.get("options", []),
                 item_index=len(sec.get("asked", [])),
@@ -410,6 +533,68 @@ async def _build_state_out(
         out.writing = WritingPromptOut(prompt=wr.get("prompt", ""), min_words=wr.get("min_words", WRITING_MIN_WORDS))
 
     return out
+
+
+async def _resolve_listening_audio(db: AsyncSession, item: dict) -> str | None:
+    """Return only audio that is tied to the same transcript as the question.
+
+    Placement listening is transcript-led: if we cannot prove the audio belongs to this item, the
+    frontend will read `audio_text` with browser speech instead of playing a mismatched lesson clip.
+    """
+
+    audio_url = item.get("audio_url")
+    if _is_usable_audio_url(audio_url):
+        return str(audio_url)
+
+    content_item_id = item.get("content_id")
+    if not content_item_id:
+        return None
+
+    content = await db.get(LanguageContentItem, content_item_id)
+    body = content.body_json if content else {}
+    body_audio_url = (body or {}).get("audio_url")
+    if _listening_text_from_body(body) and _is_usable_audio_url(body_audio_url):
+        return str(body_audio_url)
+    return None
+
+
+async def _resolve_listening_audio_text(db: AsyncSession, item: dict) -> str | None:
+    text = str(item.get("audio_text") or "").strip()
+    if text:
+        return text
+
+    content_item_id = item.get("content_id")
+    if not content_item_id:
+        return None
+    content = await db.get(LanguageContentItem, content_item_id)
+    body = content.body_json if content else {}
+    text = _listening_text_from_body(body)
+    return text or None
+
+
+async def _materialize_listening_audio(db: AsyncSession, item: dict) -> tuple[str | None, str | None, bool]:
+    """Ensure a listening item has a real audio URL generated from its own transcript."""
+
+    audio_url = await _resolve_listening_audio(db, item)
+    audio_text = await _resolve_listening_audio_text(db, item)
+    if audio_url:
+        return audio_url, audio_text, False
+    if not audio_text:
+        return None, None, False
+
+    generated_url = None
+    try:
+        generated_url = await synthesize_exam_audio(audio_text)
+    except Exception as exc:  # pragma: no cover - model/runtime variance
+        logger.warning("Placement listening TTS failed: %s", exc)
+
+    if _is_usable_audio_url(generated_url):
+        item["audio_url"] = str(generated_url)
+        item["audio_text"] = audio_text
+        return str(generated_url), audio_text, True
+
+    item["audio_text"] = audio_text
+    return None, audio_text, False
 
 
 def _advance_if_section_done(state: dict) -> None:
@@ -444,7 +629,8 @@ def _provisional_from_phase1(state: dict) -> tuple[CEFRLevel, str]:
 
     reading_level = _comp_level("reading")
     listening_level = _comp_level("listening")
-    for lv in (speaking_level, reading_level, listening_level):
+    grammar_vocab_level = _comp_level("grammar_vocab")
+    for lv in (speaking_level, reading_level, listening_level, grammar_vocab_level):
         if lv is not None:
             levels.append(lv)
     provisional = overall_level(levels) if levels else CEFRLevel.A2
@@ -454,6 +640,7 @@ def _provisional_from_phase1(state: dict) -> tuple[CEFRLevel, str]:
         ("speaking", speaking_level),
         ("reading", reading_level),
         ("listening", listening_level),
+        ("grammar/vocabulary", grammar_vocab_level),
     ]
     present = [(n, lv) for n, lv in named if lv is not None]
     weak = min(present, key=lambda x: cefr_rank(x[1]))[0] if present else "speaking"
@@ -478,7 +665,9 @@ async def _ensure_interview_ready(state: dict) -> None:
     iv["turn"] = iv.get("turn", 1)
     iv.setdefault("results", [])
     iv["pending_question"] = await ai_engine.interview_opening(
-        priming=priming, scenario=state.get("speaking", {}).get("scenario", {})
+        priming=priming,
+        scenario=state.get("speaking", {}).get("scenario", {}),
+        learner_grade=state.get("learner_grade"),
     )
 
 
@@ -538,10 +727,13 @@ async def _run_evaluation(session_id: str) -> None:
             # --- Reading / Listening: adaptive (staircase) result.
             r_asked = state.get("reading", {}).get("asked", [])
             l_asked = state.get("listening", {}).get("asked", [])
+            g_asked = state.get("grammar_vocab", {}).get("asked", [])
             reading_level, reading_pct = adaptive_result(r_asked)
             listening_level, listening_pct = adaptive_result(l_asked)
+            grammar_vocab_level, grammar_vocab_pct = adaptive_result(g_asked)
             r_correct, r_total = sum(1 for a in r_asked if a.get("correct")), len(r_asked)
             l_correct, l_total = sum(1 for a in l_asked if a.get("correct")), len(l_asked)
+            g_correct, g_total = sum(1 for a in g_asked if a.get("correct")), len(g_asked)
 
             # --- Writing: AI grade.
             wr = state.get("writing", {})
@@ -553,9 +745,12 @@ async def _run_evaluation(session_id: str) -> None:
             overall = overall_level([reading_level, listening_level, writing_level, speaking_level])
 
             # --- Cross-phase triangulation: do the spoken and written signals agree?
-            #     Spoken = speaking interview; written-anchor = reading/listening/writing.
+            #     Spoken = speaking interview; written-anchor = reading/listening/writing plus grammar/vocab.
             spoken_rank = cefr_rank(speaking_level)
-            written_rank = cefr_rank(overall_level([reading_level, listening_level, writing_level]))
+            written_anchor_levels = [reading_level, listening_level, writing_level]
+            if g_asked:
+                written_anchor_levels.append(grammar_vocab_level)
+            written_rank = cefr_rank(overall_level(written_anchor_levels))
             gap = spoken_rank - written_rank
             if not live_available:
                 consistency = "live_phase_unavailable"
@@ -572,6 +767,11 @@ async def _run_evaluation(session_id: str) -> None:
 
             # --- Narrative from all evidence (weight spoken for fluency/pronunciation,
             #     written for grammar/vocab).
+            grammar_evidence = (
+                f"GRAMMAR/VOCAB: {g_correct}/{g_total} correct -> {grammar_vocab_level.value}\n\n"
+                if g_asked
+                else "GRAMMAR/VOCAB: not measured\n\n"
+            )
             evidence = (
                 "Weighting: spoken speech is the stronger signal for fluency & pronunciation; "
                 "written items anchor grammar & vocabulary.\n\n"
@@ -579,6 +779,7 @@ async def _run_evaluation(session_id: str) -> None:
                 f"PHASE 2 ΓÇö GUIDED INTERVIEW:\n{_block(ph2_results)}\n\n"
                 f"LISTENING: {l_correct}/{l_total} correct -> {listening_level.value}\n"
                 f"READING: {r_correct}/{r_total} correct -> {reading_level.value}\n\n"
+                f"{grammar_evidence}"
                 f"WRITING (level {writing_level.value}, score {writing_score}):\n"
                 f"Task: {wr.get('prompt','')}\nAnswer: {wr.get('response','')}\n"
                 f"Grader feedback: {grade.feedback}\n\n"
@@ -622,6 +823,8 @@ async def _run_evaluation(session_id: str) -> None:
                 listening_score_percent=listening_pct,
                 writing_score=writing_score,
                 speaking_score=speaking_score,
+                grammar_vocab_level=grammar_vocab_level if g_asked else None,
+                grammar_vocab_score_percent=grammar_vocab_pct if g_asked else 0.0,
                 summary=narrative.summary,
                 strengths=narrative.strengths,
                 weaknesses=narrative.weaknesses,
@@ -769,7 +972,7 @@ def _cleanup_exam_audio(state: dict) -> None:
     base = Path(get_settings().UPLOAD_DIR)
     for item in (state.get("listening", {}).get("pool") or {}).values():
         url = item.get("audio_url") or ""
-        if not url.startswith("/uploads/exam_audio/"):
+        if not (url.startswith("/uploads/language_exam_audio/") or url.startswith("/uploads/exam_audio/")):
             continue
         try:
             (base / url[len("/uploads/") :]).unlink(missing_ok=True)
@@ -777,15 +980,15 @@ def _cleanup_exam_audio(state: dict) -> None:
             pass
 
 
-_PREP_RETRY_AFTER_S = 90
+_PREP_RETRY_AFTER_S = 20
 
 
 def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, background_tasks: BackgroundTasks) -> None:
     """Self-heal: if the current section's content never got generated (background task died /
-    server restarted), re-launch _prepare_content ΓÇö but not more often than every 90s."""
+    server restarted), re-launch _prepare_content ΓÇö but not more often than every 20s."""
     state = sess.exam_state or {}
     section = _current_section(state)
-    if section not in ("listening", "reading", "writing"):
+    if section not in PREPARED_SECTIONS:
         return
     if state.get(section, {}).get("ready", True):
         return
@@ -832,13 +1035,15 @@ async def initiate_exam(
         return await _build_state_out(db, existing, resumed=True)
 
     level = await _effective_level(db, student_id=student.id, language_id=language.id)
-    scenario = await ai_engine.generate_scenario_and_opening(effective_level=level)
+    learner_grade = await _student_grade(db, student_id=student.id)
+    scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
 
     state = {
         "version": 2,
         "sections": list(SECTIONS),
         "cursor": 0,
         "start_level_hint": level,
+        "learner_grade": learner_grade,
         "content_prep_at": datetime.now(timezone.utc).isoformat(),
         "speaking": {
             "scenario": {
@@ -856,6 +1061,7 @@ async def initiate_exam(
         # Filled in by the background _prepare_content task (until then: not ready).
         "listening": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
         "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
+        "grammar_vocab": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
         "writing": {"prompt": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False},
         "interview": {
             "priming": "",
@@ -914,22 +1120,8 @@ def _maybe_finalize(sess: LanguageExamSession, state: dict, background_tasks: Ba
     return False
 
 
-@router.post("/{session_id}/speaking/turn", response_model=ExamStateOut)
-async def speaking_turn(
-    session_id: str,
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    duration_seconds: float | None = Form(None),
-    student: User = Depends(require_active_language_subscription()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Assess one spoken answer from the audio; advances the speaking OR interview section."""
-    sess = await _load_session(db, session_id, student)
-    state = sess.exam_state or {}
-    section = _current_section(state)
-    if sess.status != "in_progress" or section not in SPEAKING_LIKE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a speaking section")
-
+async def _read_speaking_audio(file: UploadFile) -> tuple[bytes, str, str]:
+    """Validate one browser/uploaded audio answer and return bytes, MIME and suffix."""
     mime = (file.content_type or "").split(";")[0].strip().lower()
     if mime not in ACCEPTED_AUDIO_MIME:
         raise HTTPException(
@@ -942,6 +1134,61 @@ async def speaking_turn(
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Audio file too large")
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty audio file")
+    return data, mime, ACCEPTED_AUDIO_MIME[mime]
+
+
+async def _gpt4o_transcript(data: bytes, suffix: str) -> SpeakingTranscriptionOut:
+    stt = await transcribe_english_audio(data, suffix=suffix)
+    transcript = (stt.text or "").strip()
+    if not transcript:
+        logger.warning("Placement speaking STT returned no text: engine=%s meta=%s", stt.engine, stt.meta)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="We could not hear a clear answer. Please check your microphone and record again.",
+        )
+    return SpeakingTranscriptionOut(
+        transcription=transcript,
+        engine=stt.engine,
+        model=stt.model,
+    )
+
+
+@router.post("/{session_id}/speaking/transcribe", response_model=SpeakingTranscriptionOut)
+async def transcribe_speaking_answer(
+    session_id: str,
+    file: UploadFile = File(...),
+    student: User = Depends(require_active_language_subscription()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Transcribe an answer for preview without advancing or scoring the exam."""
+    sess = await _load_session(db, session_id, student)
+    if sess.status != "in_progress" or _current_section(sess.exam_state or {}) not in SPEAKING_LIKE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a speaking section")
+    data, _mime, suffix = await _read_speaking_audio(file)
+    return await _gpt4o_transcript(data, suffix)
+
+
+@router.post("/{session_id}/speaking/turn", response_model=ExamStateOut)
+async def speaking_turn(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    duration_seconds: float | None = Form(None),
+    transcription: str | None = Form(None),
+    student: User = Depends(require_active_language_subscription()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assess one spoken answer from the audio; advances the speaking OR interview section."""
+    sess = await _load_session(db, session_id, student)
+    state = sess.exam_state or {}
+    section = _current_section(state)
+    if sess.status != "in_progress" or section not in SPEAKING_LIKE:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a speaking section")
+
+    data, _mime, suffix = await _read_speaking_audio(file)
+    transcript = (transcription or "").strip()
+    if not transcript:
+        transcript = (await _gpt4o_transcript(data, suffix)).transcription
 
     sp = state[section]
     turn = sp.get("turn", 1)
@@ -951,8 +1198,9 @@ async def speaking_turn(
     guess = await _effective_level(db, student_id=sess.student_id, language_id=sess.language_id)
 
     assessment = await ai_engine.assess_speaking(
-        audio_bytes=data, mime=mime, scenario=scenario, question=question,
+        transcript=transcript, scenario=scenario, question=question,
         turn=turn, total_turns=total, effective_level=guess, priming=sp.get("priming", ""),
+        learner_grade=state.get("learner_grade"),
     )
     sp.setdefault("results", []).append(
         {
@@ -995,12 +1243,12 @@ async def answer_mcq(
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Record a listening/reading MCQ answer and advance to the next item/section."""
+    """Record an MCQ answer and advance to the next item/section."""
     sess = await _load_session(db, session_id, student)
     state = sess.exam_state or {}
     section = _current_section(state)
-    if sess.status != "in_progress" or section not in ("listening", "reading"):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a comprehension section")
+    if sess.status != "in_progress" or section not in MCQ_SECTIONS:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in an MCQ section")
 
     sec = state[section]
     cur = sec.get("current_level")
@@ -1011,6 +1259,9 @@ async def answer_mcq(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="choice_index out of range")
 
     correct = body.choice_index == item.get("correct_index")
+    bank_item_id = item.get("bank_item_id")
+    if bank_item_id:
+        await record_bank_item_answer(db, item_id=int(bank_item_id), correct=correct)
     sec.setdefault("asked", []).append({"level": cur, "correct": correct, "chosen_index": body.choice_index})
     asked_levels = {a["level"] for a in sec["asked"]}
 

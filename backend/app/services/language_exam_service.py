@@ -75,6 +75,134 @@ _PERSONAS = [
     ("a university advisor", "a student choosing courses", "an advising office"),
 ]
 
+_GRADE_SPEAKING_POLICIES: dict[str, dict] = {
+    "early_primary": {
+        "label": "grades 1-3",
+        "scenario": "Friendly warm-up",
+        "ai_persona": "a friendly English teacher",
+        "student_role": "a young student",
+        "setting": "a calm classroom",
+        "openings": [
+            "Hi! Tell me your name and one thing you like.",
+            "Hello! What is your name, and what color do you like?",
+            "Hi! Tell me about one thing in your school bag.",
+        ],
+        "followups": [
+            "Tell me one more thing about it.",
+            "What do you do at school?",
+            "Tell me about a food or game you like.",
+        ],
+        "guidance": (
+            "Use very simple, child-safe classroom topics. No complex role-play, no abstract opinions, "
+            "no travel/work scenarios. Ask for names, colors, school things, family, food, games, or simple routines."
+        ),
+    },
+    "upper_primary": {
+        "label": "grades 4-6",
+        "scenario": "School day chat",
+        "ai_persona": "a friendly English teacher",
+        "student_role": "a student",
+        "setting": "a classroom",
+        "openings": [
+            "Tell me about your school day. What do you like most?",
+            "Tell me about a friend or teacher you like at school.",
+            "What do you usually do after school?",
+        ],
+        "followups": [
+            "Why do you like that?",
+            "Tell me what happened yesterday at school.",
+            "Describe your favorite place at school.",
+        ],
+        "guidance": (
+            "Use familiar topics: school, home, friends, hobbies, simple routines. One clear question per turn. "
+            "Avoid adult responsibilities, workplace situations, or pressured role-play."
+        ),
+    },
+    "middle_school": {
+        "label": "grades 7-9",
+        "scenario": "Everyday student conversation",
+        "ai_persona": "a friendly English examiner",
+        "student_role": "a student",
+        "setting": "a school conversation",
+        "openings": [
+            "Tell me about a hobby or activity you enjoy, and why you like it.",
+            "Tell me about a school subject you like or dislike, and why.",
+            "Tell me about something you learned recently.",
+        ],
+        "followups": [
+            "Can you give me an example?",
+            "Tell me about the last time you did that.",
+            "What would make it better or easier for you?",
+        ],
+        "guidance": (
+            "Use familiar teenage topics. You may ask for simple reasons, examples, and short past events. "
+            "Do not start with complex social, travel, job, or negotiation role-play."
+        ),
+    },
+    "secondary": {
+        "label": "grades 10-12",
+        "scenario": "Student goals conversation",
+        "ai_persona": "a friendly English examiner",
+        "student_role": "a secondary-school student",
+        "setting": "a placement interview",
+        "openings": [
+            "Tell me about a subject or skill you want to improve this year, and why it matters to you.",
+            "Tell me about a goal you have for this school year.",
+            "Tell me about a challenge at school and how you usually deal with it.",
+        ],
+        "followups": [
+            "Can you explain why that matters to you?",
+            "Tell me about a time when this was difficult.",
+            "What would you do differently next time?",
+        ],
+        "guidance": (
+            "Start with a familiar school-life warm-up, then gradually move toward opinions, past events, "
+            "and light hypothetical questions. Role-play is allowed only after the warm-up and should stay clear."
+        ),
+    },
+    "mixed_school": {
+        "label": "school-age learner",
+        "scenario": "Friendly student warm-up",
+        "ai_persona": "a friendly English examiner",
+        "student_role": "a student",
+        "setting": "a simple placement conversation",
+        "openings": [
+            "Tell me a little about yourself and something you like learning.",
+            "Tell me about your school and one thing you like there.",
+            "Tell me about something you enjoy doing after school.",
+        ],
+        "followups": [
+            "Tell me a little more about that.",
+            "Why do you like it?",
+            "Can you give me a simple example?",
+        ],
+        "guidance": (
+            "Assume a school-age learner. Start simple and familiar. Increase difficulty slowly only after evidence."
+        ),
+    },
+}
+
+
+def _grade_band(learner_grade: int | None) -> str:
+    if learner_grade is None:
+        return "mixed_school"
+    try:
+        grade = int(learner_grade)
+    except (TypeError, ValueError):
+        return "mixed_school"
+    if grade <= 3:
+        return "early_primary"
+    if grade <= 6:
+        return "upper_primary"
+    if grade <= 9:
+        return "middle_school"
+    return "secondary"
+
+
+def _speaking_policy(learner_grade: int | None) -> dict:
+    return _GRADE_SPEAKING_POLICIES[_grade_band(learner_grade)]
+
+
 _EXAM_SYSTEM = """You are a strict, unyielding senior IELTS/TOEFL oral examiner running a SHORT placement interview.
 You are role-playing a character to keep the candidate engaged, but you are secretly assessing their English.
 
@@ -156,8 +284,26 @@ class AIEngineService:
         self._mock = bool(settings.LANGUAGE_CONVERSATION_MOCK_AI) or not is_claude_configured()
 
     # ---- 1) scenario + opening question -------------------------------------------------
-    async def generate_scenario_and_opening(self, *, effective_level: str = "A2", theme: str | None = None) -> dict:
+    async def generate_scenario_and_opening(
+        self,
+        *,
+        effective_level: str = "A2",
+        theme: str | None = None,
+        learner_grade: int | None = None,
+    ) -> dict:
         """Invent a unique scenario/persona and the first in-character question (optionally themed)."""
+        policy = _speaking_policy(learner_grade)
+        if learner_grade is not None:
+            return {
+                "scenario": policy["scenario"],
+                "ai_persona": policy["ai_persona"],
+                "student_role": policy["student_role"],
+                "setting": policy["setting"],
+                "opening_question": random.choice(policy["openings"]),
+                "learner_grade": learner_grade,
+                "grade_band": _grade_band(learner_grade),
+            }
+
         seed = random.randint(1, 10_000_000)
         persona, student_role, setting = random.choice(_PERSONAS)
         if not self._mock:
@@ -165,6 +311,8 @@ class AIEngineService:
                 f"Random seed: {seed}. Invent a FRESH, specific role-play for an English exam — do not reuse common textbook setups.\n"
                 f"{_theme_clause(theme)}"
                 f"Candidate's approximate level: {effective_level}.\n"
+                f"Age/grade policy: {policy['label']}. {policy['guidance']}\n"
+                "The opening must be easy and familiar. Do NOT begin with a complex role-play.\n"
                 'Return ONLY JSON: {"scenario": short title, "ai_persona": who YOU are, '
                 '"student_role": who the CANDIDATE is, "setting": where it happens, '
                 '"opening_question": your first in-character line that makes them speak}.'
@@ -179,16 +327,20 @@ class AIEngineService:
                         "student_role": str(data.get("student_role") or student_role),
                         "setting": str(data.get("setting") or setting),
                         "opening_question": str(data["opening_question"]).strip(),
+                        "learner_grade": learner_grade,
+                        "grade_band": _grade_band(learner_grade),
                     }
             except Exception as exc:  # pragma: no cover - network/LLM variance
                 logger.warning("Exam scenario generation failed, using fallback: %s", exc)
         # Fallback — still randomised so students differ.
         return {
-            "scenario": f"At {setting}",
-            "ai_persona": persona,
-            "student_role": student_role,
-            "setting": setting,
-            "opening_question": f"Hi! I'm {persona}. {self._fallback_opening(setting)}",
+            "scenario": policy["scenario"],
+            "ai_persona": policy["ai_persona"],
+            "student_role": policy["student_role"],
+            "setting": policy["setting"],
+            "opening_question": random.choice(policy["openings"]),
+            "learner_grade": learner_grade,
+            "grade_band": _grade_band(learner_grade),
         }
 
     @staticmethod
@@ -201,13 +353,24 @@ class AIEngineService:
         ])
 
     # ---- 2) next contextual question ---------------------------------------------------
-    async def next_question(self, *, scenario: dict, history: list[dict], step: int, max_steps: int) -> str:
+    async def next_question(
+        self,
+        *,
+        scenario: dict,
+        history: list[dict],
+        step: int,
+        max_steps: int,
+        learner_grade: int | None = None,
+    ) -> str:
         """Ask the next in-character question grounded in the conversation so far."""
+        policy = _speaking_policy(learner_grade)
         if not self._mock:
             prompt = (
                 f"Scenario: {scenario.get('scenario')} — you are {scenario.get('ai_persona')}, "
                 f"the candidate is {scenario.get('student_role')} at {scenario.get('setting')}.\n"
-                f"This is question {step} of {max_steps}. Push for richer language than before.\n\n"
+                f"This is question {step} of {max_steps}. Learner grade policy: {policy['label']}. {policy['guidance']}\n"
+                "Ask one age-appropriate follow-up. Increase difficulty by only one small step. "
+                "Do not jump into complex role-play.\n\n"
                 f"Transcript so far:\n{_history_block(history)}\n\n"
                 'Return ONLY JSON: {"question": your next single in-character line}.'
             )
@@ -219,6 +382,7 @@ class AIEngineService:
                     return str(q).strip()
             except Exception as exc:  # pragma: no cover
                 logger.warning("Exam next-question generation failed, using fallback: %s", exc)
+        return random.choice(policy["followups"])
         return random.choice([
             "Interesting — can you explain why?",
             "Tell me more about that. What happened next?",
@@ -279,14 +443,14 @@ class AIEngineService:
     async def assess_speaking(
         self,
         *,
-        audio_bytes: bytes,
-        mime: str,
+        transcript: str,
         scenario: dict,
         question: str,
         turn: int,
         total_turns: int,
         effective_level: str = "A2",
         priming: str = "",
+        learner_grade: int | None = None,
     ) -> SpeakingTurnAssessment:
         """Assess one spoken answer from the *audio itself* via the google-genai engine.
 
@@ -296,6 +460,7 @@ class AIEngineService:
         Falls back to a neutral placeholder (so the exam keeps moving) if the audio engine is
         unavailable; the next_question fallback keeps the conversation going.
         """
+        policy = _speaking_policy(learner_grade)
         system = (
             "You are a strict but fair IELTS/TOEFL oral examiner running an audio placement test. "
             "Listen to the candidate's actual audio and assess BOTH content (grammar, vocabulary) "
@@ -310,13 +475,14 @@ class AIEngineService:
             f"This is spoken answer {turn} of {total_turns}. The candidate is replying to your "
             f"question: \"{question}\".\n"
             f"Pre-exam level guess: {effective_level}.\n"
+            f"Learner grade policy: {policy['label']}. {policy['guidance']}\n"
             "Assess this answer and propose ONE adaptive in-character follow-up question that pushes "
-            "for richer language (avoid yes/no questions)."
+            "for richer language (avoid yes/no questions), but increase difficulty by only one small step."
             + (" Aim the follow-up at the uncertain band noted above." if priming else "")
         )
         try:
             return await assess_speaking_turn(
-                audio_bytes=audio_bytes, mime=mime, system=system, prompt=prompt
+                transcript=transcript, system=system, prompt=prompt
             )
         except GenAIUnavailable as exc:
             logger.warning("Audio-native speaking assessment unavailable: %s", exc)
@@ -327,7 +493,7 @@ class AIEngineService:
         except ValueError:
             level = CEFRLevel.A2
         return SpeakingTurnAssessment(
-            transcription="",
+            transcription=transcript,
             grammar_vocab_feedback="(Automatic voice assessment was unavailable for this answer.)",
             pronunciation_feedback="",
             fluency_note="",
@@ -337,16 +503,20 @@ class AIEngineService:
                 history=[{"role": "examiner", "content": question}],
                 step=turn + 1,
                 max_steps=total_turns,
+                learner_grade=learner_grade,
             ),
         )
 
-    async def interview_opening(self, *, priming: str, scenario: dict) -> str:
+    async def interview_opening(self, *, priming: str, scenario: dict, learner_grade: int | None = None) -> str:
         """Phase-2 opening question: a fresh spoken-interview prompt aimed at the uncertain band."""
+        policy = _speaking_policy(learner_grade)
         if not self._mock:
             prompt = (
                 "You are starting a short follow-up spoken interview to pin down the candidate's level.\n"
                 f"Prior evidence to target: {priming}\n"
+                f"Learner grade policy: {policy['label']}. {policy['guidance']}\n"
                 f"Stay loosely in the world of: {scenario.get('scenario')} ({scenario.get('setting')}).\n"
+                "Keep the question age-appropriate and familiar; do not jump into adult role-play.\n"
                 "Ask ONE open question (not yes/no) that pressures the uncertain band — e.g. narrate a "
                 "past event, justify an opinion, or handle a hypothetical.\n"
                 'Return ONLY JSON: {"question": your single spoken-interview question}.'
@@ -360,6 +530,7 @@ class AIEngineService:
                     return str(q).strip()
             except Exception as exc:  # pragma: no cover
                 logger.warning("Interview opening generation failed, using fallback: %s", exc)
+        return random.choice(policy["followups"])
         return random.choice([
             "Tell me about a time something didn't go as planned — what happened and what did you do?",
             "What's an opinion you hold strongly, and why do you think you're right?",

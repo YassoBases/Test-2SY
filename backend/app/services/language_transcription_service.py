@@ -58,6 +58,10 @@ def _should_use_openai_stt() -> bool:
     return _language_stt_provider() == "openai" and bool(_openai_api_key())
 
 
+def _allow_whisper_fallback() -> bool:
+    return bool(settings.LANGUAGE_STT_ALLOW_WHISPER_FALLBACK)
+
+
 def _resolve_ffmpeg() -> str | None:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg:
@@ -247,7 +251,14 @@ def _transcribe_sync(source_path: Path) -> tuple[ConversationTranscription, floa
             elapsed = time.perf_counter() - started
             return result, elapsed
         except Exception as exc:
+            if not _allow_whisper_fallback():
+                raise RuntimeError(
+                    f"OpenAI language STT failed and Whisper fallback is disabled: {exc}"
+                ) from exc
             logger.warning("OpenAI language STT failed, falling back to faster-whisper: %s", exc)
+
+    if not _allow_whisper_fallback():
+        raise RuntimeError("Language STT unavailable: OpenAI is not configured and Whisper fallback is disabled")
 
     if not settings.ENABLE_WHISPER:
         raise RuntimeError("Language STT unavailable: OpenAI failed and Whisper is disabled")

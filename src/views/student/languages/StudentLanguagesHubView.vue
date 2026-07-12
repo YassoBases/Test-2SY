@@ -50,7 +50,14 @@
               <div class="font-weight-bold">One step before you begin</div>
               <div class="text-body-2">A quick 3-5 minute AI interview sets your starting level.</div>
             </div>
-            <v-btn color="secondary" variant="flat" rounded="lg" @click="goExam">Take the AI level exam</v-btn>
+            <v-btn
+              color="secondary"
+              variant="flat"
+              rounded="lg"
+              :to="ROUTES.STUDENT_LANGUAGES_EXAM"
+            >
+              Take the AI level exam
+            </v-btn>
           </div>
         </v-alert>
 
@@ -124,7 +131,7 @@
             </div>
             <div>
               <v-btn size="small" variant="text" color="secondary" @click="goPlacementResults">Results</v-btn>
-              <v-btn size="small" variant="text" :disabled="retakeBlocked" @click="goExam">Retake</v-btn>
+              <v-btn size="small" variant="text" :disabled="retakeBlocked" :to="ROUTES.STUDENT_LANGUAGES_EXAM">Retake</v-btn>
             </div>
           </div>
           <v-row>
@@ -288,9 +295,6 @@ function goSubscribe() {
 }
 function goPlacement() {
   router.push(ROUTES.STUDENT_LANGUAGES_PLACEMENT)
-}
-function goExam() {
-  router.push(ROUTES.STUDENT_LANGUAGES_EXAM)
 }
 function goPlacementResults() {
   router.push({ path: ROUTES.STUDENT_LANGUAGES_PLACEMENT, query: { results: '1' } })

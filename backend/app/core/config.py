@@ -146,6 +146,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     LANGUAGE_STT_PROVIDER: str = "openai"  # openai | whisper
     LANGUAGE_STT_MODEL: str = "gpt-4o-transcribe"
+    LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: bool = True
+    GENAI_EXAM_MAX_AUDIO_MB: int = 10
     LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
     LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
     LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0

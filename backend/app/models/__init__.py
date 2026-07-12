@@ -1,3 +1,4 @@
+from app.models.user import User, UserRole
 from app.models.conversation import (
     ConversationMessage,
     ConversationMessageRead,
@@ -100,6 +101,7 @@ from app.models.language import (
     LanguageListeningProgress,
     LanguagePlacementAttempt,
     LanguagePlacementQuestion,
+    LanguagePlacementQuestionBankItem,
     LanguagePlacementResponse,
     LanguagePlacementSection,
     LanguageProduct,
@@ -215,6 +217,7 @@ __all__ = [
     "LanguageStudentProfile",
     "LanguagePlacementSection",
     "LanguagePlacementQuestion",
+    "LanguagePlacementQuestionBankItem",
     "LanguagePlacementAttempt",
     "LanguagePlacementResponse",
     "LanguageAssessment",

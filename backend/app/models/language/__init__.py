@@ -29,6 +29,7 @@ from app.models.language.placement import (
     LanguagePlacementSection,
 )
 from app.models.language.profile import LanguageStudentProfile
+from app.models.language.question_bank import LanguagePlacementQuestionBankItem
 from app.models.language.progress import (
     LanguageCurriculumProgress,
     LanguageListeningProgress,
@@ -51,6 +52,7 @@ __all__ = [
     "LanguageStudentProfile",
     "LanguagePlacementSection",
     "LanguagePlacementQuestion",
+    "LanguagePlacementQuestionBankItem",
     "LanguagePlacementAttempt",
     "LanguagePlacementResponse",
     "LanguageAssessment",

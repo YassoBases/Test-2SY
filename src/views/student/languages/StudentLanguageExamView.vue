@@ -4,7 +4,7 @@
       eyebrow="Learn languages"
       eyebrow-icon="mdi-clipboard-text-clock"
       title="AI Placement Exam"
-      subtitle="Four skills — speaking, listening, reading and writing — then a full level report"
+      subtitle="Speaking, listening, reading, grammar/vocab and writing — then a full level report"
     />
     <LanguageModuleTabs />
 
@@ -13,13 +13,13 @@
     <!-- INTRO -->
     <v-card v-if="view === 'intro'" class="glass-card pa-6 exam-intro text-center" variant="flat">
       <v-icon size="52" color="secondary" class="mb-2">mdi-medal-outline</v-icon>
-      <h3 class="text-h6 font-weight-bold mb-1">Full level test — all four skills</h3>
+      <h3 class="text-h6 font-weight-bold mb-1">Full level test — skills plus language systems</h3>
       <p class="text-body-2 text-medium-emphasis mb-4">
-        ~10 minutes. You'll speak, listen, read and write. Each skill is graded separately, then
+        ~10 minutes. You'll speak, listen, read, answer grammar/vocab checks and write. Each skill is graded separately, then
         we map you to a CEFR level and unlock your learning path.
       </p>
       <v-row dense class="mb-2 text-start">
-        <v-col v-for="k in INTRO_SKILLS" :key="k" cols="6" sm="3">
+        <v-col v-for="k in INTRO_SKILLS" :key="k" cols="6" sm="4">
           <div class="skill-pill glass-card pa-3 h-100">
             <v-icon :icon="SECTION_META[k].icon" color="secondary" class="mb-1" />
             <div class="font-weight-bold text-body-2">{{ SECTION_META[k].label }}</div>
@@ -52,6 +52,16 @@
               {{ skillLabel(sec) }}
             </v-chip>
           </div>
+          <v-btn
+            size="small"
+            color="warning"
+            variant="tonal"
+            prepend-icon="mdi-restart"
+            :loading="busy"
+            @click="startFresh"
+          >
+            Start fresh
+          </v-btn>
         </div>
         <v-progress-linear
           :model-value="(100 * state.section_index) / state.section_total"
@@ -97,11 +107,13 @@
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
-            :disabled="busy" @click="recorder.toggleRecording()"
+            :disabled="busy || transcribing" @click="recorder.toggleRecording()"
           />
           <div class="text-caption text-medium-emphasis mt-2">
             <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
-            <span v-else-if="recorder.audioBlob.value">Answer ready ✓ — submit, or re-record</span>
+            <span v-else-if="transcribing">Turning your speech into text…</span>
+            <span v-else-if="spokenText">Transcript ready ✓ — review it, then submit</span>
+            <span v-else-if="recorder.audioBlob.value">Audio ready — waiting for transcript…</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
           <div class="text-caption text-medium-emphasis mt-3">— or —</div>
@@ -114,15 +126,29 @@
             prepend-icon="mdi-upload"
             label="Upload an audio file"
             class="mt-2 upload-input"
-            :disabled="busy || recorder.recording.value"
+            :disabled="busy || transcribing || recorder.recording.value"
             @update:model-value="onUpload"
           />
         </div>
 
+        <v-textarea
+          v-if="recorder.audioBlob.value || transcribing || spokenText"
+          v-model="spokenText"
+          class="mt-3"
+          variant="outlined"
+          rows="3"
+          dir="ltr"
+          label="Your answer (transcribed automatically)"
+          placeholder="Your spoken answer will appear here…"
+          :loading="transcribing"
+          readonly
+          hide-details="auto"
+        />
+
         <div class="d-flex justify-end mt-3">
           <v-btn
             color="secondary" variant="flat" :loading="busy"
-            :disabled="!recorder.audioBlob.value || recorder.recording.value"
+            :disabled="!recorder.audioBlob.value || !spokenText || recorder.recording.value || transcribing"
             prepend-icon="mdi-send" @click="sendSpeaking"
           >
             Submit answer
@@ -130,34 +156,55 @@
         </div>
       </v-card>
 
-      <!-- LISTENING / READING (MCQ) -->
-      <v-card v-else-if="(state.phase === 'listening' || state.phase === 'reading') && state.mcq" class="glass-card pa-4 mb-3" variant="flat">
+      <!-- LISTENING / READING / GRAMMAR-VOCAB (MCQ) -->
+      <v-card v-else-if="isMcqPhase && state.mcq" class="glass-card pa-4 mb-3" variant="flat">
         <div class="text-caption text-medium-emphasis mb-2">
           {{ skillLabel(state.phase) }} — question {{ state.mcq.item_index + 1 }}
         </div>
 
         <template v-if="state.phase === 'listening'">
           <p v-if="state.mcq.situation" class="text-body-2 text-medium-emphasis mb-2">{{ state.mcq.situation }}</p>
-          <template v-if="state.mcq.audio_url">
+          <template v-if="state.mcq.audio_url && !audioFailed">
             <audio
               :src="audioSrc(state.mcq.audio_url)"
               :controls="listenCount < MAX_LISTENS"
               class="w-100 mb-2"
               @play="onListenPlay"
+              @error="onAudioUnavailable"
+              @loadedmetadata="onAudioMetadata"
             />
             <div class="text-caption mb-3" :class="listensLeft ? 'text-medium-emphasis' : 'text-warning'">
               <template v-if="listenCount === 0">Press play to listen (max {{ MAX_LISTENS }} times)</template>
               <template v-else>Replays remaining: {{ listensLeft }}</template>
             </div>
           </template>
-          <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-3">Audio is unavailable for this clip — answer as best you can.</v-alert>
+          <template v-else-if="canListeningFallback">
+            <v-btn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-play"
+              class="mb-2"
+              :disabled="listenCount >= MAX_LISTENS"
+              @click="playListeningText"
+            >
+              Play clip
+            </v-btn>
+            <div class="text-caption mb-3" :class="listensLeft ? 'text-medium-emphasis' : 'text-warning'">
+              <template v-if="listenCount === 0">Press play to listen (max {{ MAX_LISTENS }} times)</template>
+              <template v-else>Replays remaining: {{ listensLeft }}</template>
+            </div>
+          </template>
+          <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-3">
+            Audio playback is unavailable for this clip.
+          </v-alert>
         </template>
-        <template v-else>
+        <template v-else-if="state.phase === 'reading'">
           <div class="passage-box pa-3 mb-3" dir="ltr">{{ state.mcq.passage }}</div>
         </template>
+        <p v-else class="text-body-2 text-medium-emphasis mb-3" dir="ltr">{{ state.mcq.instructions }}</p>
 
-        <!-- Questions are hidden for listening until the student has listened at least once. -->
-        <template v-if="state.phase !== 'listening' || listenCount > 0">
+        <!-- Listening questions are hidden only when there is something playable to listen to. -->
+        <template v-if="showMcqQuestion">
           <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
           <v-radio-group v-model="choice" hide-details class="mb-3">
             <v-radio v-for="(opt, i) in state.mcq.options" :key="i" :value="i" :label="opt" dir="ltr" />
@@ -169,7 +216,7 @@
             </v-btn>
           </div>
         </template>
-        <p v-else class="text-caption text-medium-emphasis mb-0">Listen first — the question appears after you play the clip.</p>
+        <p v-else-if="listeningRequiresPlayback" class="text-caption text-medium-emphasis mb-0">Listen first — the question appears after you play the clip.</p>
       </v-card>
 
       <!-- WRITING -->
@@ -361,7 +408,7 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
@@ -370,6 +417,7 @@ import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
 import {
   initiateExam,
   fetchExamState,
+  transcribeExamSpeaking,
   submitSpeakingTurn,
   answerExamMcq,
   submitExamWriting,
@@ -384,11 +432,12 @@ const SECTION_META = {
   speaking: { label: 'Speaking', icon: 'mdi-microphone', hint: 'Talk to the AI' },
   listening: { label: 'Listening', icon: 'mdi-headphones', hint: 'Listen & answer' },
   reading: { label: 'Reading', icon: 'mdi-book-open-page-variant', hint: 'Read & answer' },
+  grammar_vocab: { label: 'Grammar/Vocab', icon: 'mdi-format-letter-case', hint: 'Use English accurately' },
   writing: { label: 'Writing', icon: 'mdi-pencil', hint: 'Write a reply' },
   interview: { label: 'Interview', icon: 'mdi-account-voice', hint: 'Guided follow-up' },
 }
 // Core skills shown on the intro screen (the interview is a Phase-2 deep-dive).
-const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'writing']
+const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'grammar_vocab', 'writing']
 const CONSISTENCY_LABEL = {
   consistent: 'Spoken and written performance matched — high-confidence result',
   speaking_stronger: 'You performed noticeably stronger speaking than in writing',
@@ -416,12 +465,27 @@ const examCorrections = computed(() =>
 
 const recorder = useVoiceRecorder({ minSeconds: 1 })
 const uploadFile = ref(null)
+const spokenText = ref('')
+const transcribing = ref(false)
+let transcriptionRequest = 0
 const choice = ref(null)
 const writingText = ref('')
 
 // Listening integrity: questions hidden until first listen; max 2 replays.
 const MAX_LISTENS = 2
 const listenCount = ref(0)
+const audioFailed = ref(false)
+const canUseSpeech = computed(() =>
+  typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
+)
+const hasListeningAudio = computed(() => Boolean(state.value?.mcq?.audio_url) && !audioFailed.value)
+const canListeningFallback = computed(() => Boolean(state.value?.mcq?.audio_text) && canUseSpeech.value)
+const listeningRequiresPlayback = computed(() =>
+  state.value?.phase === 'listening'
+  && listenCount.value === 0
+  && (hasListeningAudio.value || canListeningFallback.value),
+)
+const showMcqQuestion = computed(() => state.value?.phase !== 'listening' || !listeningRequiresPlayback.value)
 let prepAttempts = 0
 
 const wordCount = computed(() => writingText.value.trim().split(/\s+/).filter(Boolean).length)
@@ -430,6 +494,7 @@ const LOADER_MESSAGES = [
   'Reviewing your spoken answers…',
   'Scoring listening comprehension…',
   'Scoring reading comprehension…',
+  'Checking grammar and vocabulary…',
   'Grading your writing…',
   'Mapping each skill to a CEFR level…',
   'Writing your placement report…',
@@ -440,6 +505,7 @@ let pollTimer = null
 let prepTimer = null
 
 const isSpeakingPhase = computed(() => state.value?.phase === 'speaking' || state.value?.phase === 'interview')
+const isMcqPhase = computed(() => ['listening', 'reading', 'grammar_vocab'].includes(state.value?.phase))
 
 // Running chat log for the spoken sections (examiner questions + your transcribed answers).
 // No scoring is shown during the exam — all evaluation comes at the end in the report.
@@ -469,12 +535,23 @@ function audioSrc(url) {
 const skillRows = computed(() => {
   const r = report.value
   if (!r) return []
-  return [
+  const rows = [
     { key: 'speaking', label: 'Speaking', icon: 'mdi-microphone', level: r.speaking_level, pct: (r.speaking_score || 0) * 10, detail: `${(r.speaking_score || 0).toFixed(1)}/10` },
     { key: 'listening', label: 'Listening', icon: 'mdi-headphones', level: r.listening_level, pct: r.listening_score_percent || 0, detail: `${Math.round(r.listening_score_percent || 0)}%` },
     { key: 'reading', label: 'Reading', icon: 'mdi-book-open-page-variant', level: r.reading_level, pct: r.reading_score_percent || 0, detail: `${Math.round(r.reading_score_percent || 0)}%` },
     { key: 'writing', label: 'Writing', icon: 'mdi-pencil', level: r.writing_level, pct: (r.writing_score || 0) * 10, detail: `${(r.writing_score || 0).toFixed(1)}/10` },
   ]
+  if (r.grammar_vocab_level) {
+    rows.splice(3, 0, {
+      key: 'grammar_vocab',
+      label: 'Grammar/Vocab',
+      icon: 'mdi-format-letter-case',
+      level: r.grammar_vocab_level,
+      pct: r.grammar_vocab_score_percent || 0,
+      detail: `${Math.round(r.grammar_vocab_score_percent || 0)}%`,
+    })
+  }
+  return rows
 })
 
 const confidenceColor = computed(() => {
@@ -522,10 +599,59 @@ function onUpload(file) {
 function onListenPlay() {
   listenCount.value += 1
 }
+
+watch(recorder.audioBlob, async (blob) => {
+  const requestId = ++transcriptionRequest
+  spokenText.value = ''
+  if (!blob || !sessionId.value || !isSpeakingPhase.value) {
+    transcribing.value = false
+    return
+  }
+
+  transcribing.value = true
+  loadError.value = ''
+  try {
+    const result = await transcribeExamSpeaking(sessionId.value, blob)
+    if (requestId === transcriptionRequest) spokenText.value = (result.transcription || '').trim()
+  } catch (e) {
+    if (requestId === transcriptionRequest) {
+      loadError.value = getErrorMessage(e, 'Could not understand the audio. Please record again.')
+    }
+  } finally {
+    if (requestId === transcriptionRequest) transcribing.value = false
+  }
+})
 const listensLeft = computed(() => Math.max(0, MAX_LISTENS - listenCount.value))
+
+function onAudioUnavailable() {
+  audioFailed.value = true
+}
+
+function onAudioMetadata(event) {
+  const duration = Number(event?.target?.duration || 0)
+  if (!Number.isFinite(duration) || duration <= 0.2) {
+    audioFailed.value = true
+  }
+}
+
+function stopListeningText() {
+  if (canUseSpeech.value) window.speechSynthesis.cancel()
+}
+
+function playListeningText() {
+  const text = (state.value?.mcq?.audio_text || '').trim()
+  if (!text || !canUseSpeech.value || listenCount.value >= MAX_LISTENS) return
+  stopListeningText()
+  const utterance = new window.SpeechSynthesisUtterance(text)
+  utterance.lang = 'en-US'
+  utterance.rate = 0.92
+  window.speechSynthesis.speak(utterance)
+  onListenPlay()
+}
 
 function applyState(data) {
   if (prepTimer) { clearTimeout(prepTimer); prepTimer = null }
+  stopListeningText()
   state.value = data
   if (data.last_feedback) lastFeedback.value = data.last_feedback
   // reset per-section inputs
@@ -533,6 +659,7 @@ function applyState(data) {
   recorder.reset()
   uploadFile.value = null
   listenCount.value = 0
+  audioFailed.value = false
   if (data.phase === 'evaluating') {
     startEvaluating()
   } else if (data.phase === 'completed') {
@@ -580,14 +707,46 @@ async function start() {
   }
 }
 
-async function sendSpeaking() {
-  if (!recorder.audioBlob.value || busy.value) return
+async function startFresh() {
+  if (busy.value) return
   busy.value = true
   loadError.value = ''
   try {
-    const data = await submitSpeakingTurn(sessionId.value, recorder.audioBlob.value)
+    if (sessionId.value) await abandonExam(sessionId.value)
+  } catch {
+    /* continue with a fresh initiate attempt */
+  } finally {
+    sessionId.value = null
+    report.value = null
+    state.value = null
+    lastFeedback.value = null
+    speakingChat.value = []
+    writingText.value = ''
+    choice.value = null
+    listenCount.value = 0
+    audioFailed.value = false
+    uploadFile.value = null
+    recorder.reset()
+    prepAttempts = 0
+    busy.value = false
+  }
+  await start()
+}
+
+async function sendSpeaking() {
+  if (!recorder.audioBlob.value || !spokenText.value || busy.value || transcribing.value) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    const submittedTranscript = spokenText.value.trim()
+    const data = await submitSpeakingTurn(
+      sessionId.value,
+      recorder.audioBlob.value,
+      recorder.elapsed.value,
+      submittedTranscript,
+    )
     // Show what the student said as a chat bubble (no scoring shown until the final report).
-    pushStudent(data.last_feedback?.transcription)
+    pushStudent(data.last_feedback?.transcription || submittedTranscript)
     applyState(data)
   } catch (e) {
     loadError.value = getErrorMessage(e, 'Could not submit your answer')
@@ -676,6 +835,7 @@ async function loadReport() {
 }
 
 function finishLoading() {
+  stopListeningText()
   if (loaderTimer) clearInterval(loaderTimer)
   if (pollTimer) clearInterval(pollTimer)
   if (prepTimer) clearTimeout(prepTimer)
@@ -696,6 +856,7 @@ async function restart() {
   speakingChat.value = []
   writingText.value = ''
   prepAttempts = 0
+  audioFailed.value = false
   loadError.value = ''
   view.value = 'intro'
 }
