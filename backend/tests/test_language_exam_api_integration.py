@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 from types import SimpleNamespace
 
@@ -130,7 +131,6 @@ def _writing_state() -> dict:
         "listening": {"ready": True, "pool": {"A2": {}}, "asked": [], "done": False},
         "grammar_vocab": {"ready": True, "pool": {"A2": {}}, "asked": [], "done": False},
         "speaking": {"total_turns": 1, "results": [], "done": False},
-        "interview": {"total_turns": 1, "results": [], "done": False},
     }
 
 
@@ -528,3 +528,98 @@ async def test_rate_limit_header_is_returned_by_actual_state_endpoint(
     assert second.status_code == 429
     assert int(second.headers["Retry-After"]) >= 1
     assert second.json()["detail"]["code"] == "rate_limit_exceeded"
+
+
+def _finalizing_writing_state() -> dict:
+    """A no-interview session (no "interview" in its own sections) with every other section
+    already complete — submitting writing here should finalize straight to evaluation, not
+    attempt to transition into an interview phase."""
+    done_objective = {
+        "ready": True,
+        "pool": {
+            "A2": {
+                "level": "A2",
+                "question": "Choose A.",
+                "options": ["A", "B"],
+                "correct_index": 0,
+                "question_token": "finalize-question-token-0001",
+            }
+        },
+        "current_level": "A2",
+        "asked": [{"level": "A2", "correct": True, "chosen_index": 0}],
+        "max_steps": 1,
+        "done": True,
+        "evidence_status": "completed",
+    }
+    return {
+        "version": 3,
+        "state_revision": 5,
+        "sections": ["speaking", "listening", "reading", "grammar_vocab", "writing"],
+        "cursor": 4,
+        "listening": copy.deepcopy(done_objective),
+        "reading": copy.deepcopy(done_objective),
+        "grammar_vocab": copy.deepcopy(done_objective),
+        "speaking": {
+            "total_turns": 1,
+            "results": [
+                {
+                    "question": "Tell me about your day.",
+                    "transcription": "A complete verified answer.",
+                    "audio_sha256": "a" * 64,
+                }
+            ],
+            "done": True,
+            "evidence_status": "completed",
+        },
+        "writing": {
+            "ready": True,
+            "prompt": "Write about your day.",
+            "prompt_token": "writing-prompt-token-finalize-0001",
+            "min_words": 40,
+            "response": None,
+            "done": False,
+            "evidence_status": "missing_student_response",
+        },
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.postgresql
+async def test_submit_writing_finalizes_directly_without_transitioning_into_interview(
+    api_client, asgi_app, postgres_session_factory
+):
+    """A no-interview session must finalize straight to evaluation when writing completes,
+    not attempt to transition into an interview phase (product decision: guided interview
+    removed; speaking stays mandatory and unaffected)."""
+    student_id, _language_id, session_id = await _seed_session(
+        postgres_session_factory, _finalizing_writing_state()
+    )
+    dependencies = _install_exam_overrides(
+        asgi_app, postgres_session_factory, student_id=student_id
+    )
+    try:
+        response = await api_client.post(
+            f"/api/student/languages/exam/{session_id}/writing",
+            json={
+                "text": " ".join(f"word{i}" for i in range(40)),
+                "request_id": "finalize-no-interview-0001",
+                "state_revision": 5,
+                "prompt_token": "writing-prompt-token-finalize-0001",
+            },
+        )
+    finally:
+        _clear_exam_overrides(asgi_app, dependencies)
+
+    assert response.status_code == 202
+    async with postgres_session_factory() as db:
+        session = await db.get(LanguageExamSession, session_id)
+        # _maybe_finalize triggered (not stuck "in_progress"/never-advancing on a phantom
+        # interview requirement). The background evaluation itself runs for real here (AI engine
+        # is not mocked in this HTTP-level test) and fails closed under this test environment's
+        # default mocked-AI-unavailable config (LANGUAGE_CONVERSATION_MOCK_AI=true) — that failure
+        # is expected and unrelated to interview removal; see
+        # test_no_interview_exam_completes_without_live_phase_unavailable_penalty in
+        # test_language_exam_postgresql_concurrency.py for the mocked-success evaluation path.
+        assert session.status != "in_progress"
+        assert "interview" not in session.exam_state
+        assert session.exam_state["writing"]["response"] is not None

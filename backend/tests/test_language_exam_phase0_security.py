@@ -9,6 +9,7 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException
 
 from app.api.language_exam import (
+    SECTIONS,
     _audio_hash_already_used,
     _ensure_exam_evidence_complete,
     _maybe_finalize,
@@ -68,12 +69,11 @@ def _complete_evidence_state() -> dict:
             "done": True,
             "evidence_status": "completed",
         },
-        "interview": {
-            "total_turns": 2,
-            "results": [_spoken_result(number) for number in range(4, 6)],
-            "done": True,
-            "evidence_status": "completed",
-        },
+        # No "interview" section — this represents the current no-interview session design
+        # (product decision: guided interview removed, kept only as dormant compatibility code
+        # for sessions whose own persisted "sections" still lists it — see
+        # test_evidence_statuses_is_sections_driven_for_speaking_and_interview in
+        # test_language_exam_state_protocol.py for that compatibility path).
     }
 
 
@@ -86,10 +86,9 @@ def test_prepared_but_empty_attempt_is_student_missing_response():
     state["writing"]["response"] = None
     state["writing"]["done"] = False
     state["writing"]["evidence_status"] = "missing_student_response"
-    for section in ("speaking", "interview"):
-        state[section]["results"] = []
-        state[section]["done"] = False
-        state[section]["evidence_status"] = "missing_student_response"
+    state["speaking"]["results"] = []
+    state["speaking"]["done"] = False
+    state["speaking"]["evidence_status"] = "missing_student_response"
 
     with pytest.raises(HTTPException) as exc_info:
         _ensure_exam_evidence_complete(state)
@@ -97,7 +96,7 @@ def test_prepared_but_empty_attempt_is_student_missing_response():
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["code"] == "incomplete_exam"
     assert set(exc_info.value.detail["missing_sections"]) == {
-        "listening", "reading", "grammar_vocab", "writing", "speaking", "interview"
+        "listening", "reading", "grammar_vocab", "writing", "speaking"
     }
 
 
@@ -147,7 +146,7 @@ def test_same_audio_hash_cannot_be_reused_for_another_spoken_question():
 
 def test_complete_evidence_transitions_once_to_pending_evaluation():
     state = _complete_evidence_state()
-    state["sections"] = ["speaking", "listening", "reading", "grammar_vocab", "writing", "interview"]
+    state["sections"] = list(SECTIONS)
     state["cursor"] = len(state["sections"])
     session = SimpleNamespace(id="exam-session-1", status="in_progress")
     background_tasks = BackgroundTasks()

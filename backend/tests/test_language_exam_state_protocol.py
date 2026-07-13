@@ -135,7 +135,6 @@ def test_evidence_status_separates_server_content_failure_from_student_omission(
         "grammar_vocab": {"ready": True, "pool": {"A2": {}}, "asked": [], "done": False},
         "writing": {"ready": True, "prompt": "Write", "response": None, "done": False},
         "speaking": {"total_turns": 1, "results": [], "done": False},
-        "interview": {"total_turns": 1, "results": [], "done": False},
     }
 
     statuses = exam_evidence_statuses(state)
@@ -143,3 +142,26 @@ def test_evidence_status_separates_server_content_failure_from_student_omission(
     assert statuses["reading"] == "content_unavailable"
     assert statuses["listening"] == "missing_student_response"
     assert statuses["writing"] == "missing_student_response"
+
+
+def test_evidence_statuses_is_sections_driven_for_speaking_and_interview():
+    """New no-interview sessions must not be blocked on evidence for a section they never have;
+    old persisted sessions that still list "interview" in their own sections must still require
+    it. This is the sections-driven fix that replaced a hardcoded (speaking, interview) tuple."""
+    no_interview = {
+        "sections": ["speaking", "writing"],
+        "speaking": {"total_turns": 3, "results": [], "done": False},
+        "writing": {"ready": True, "prompt": "Write", "response": None, "done": False},
+    }
+    statuses = exam_evidence_statuses(no_interview)
+    assert "interview" not in statuses
+    assert statuses["speaking"] == "missing_student_response"
+
+    with_interview = {
+        "sections": ["speaking", "writing", "interview"],
+        "speaking": {"total_turns": 3, "results": [], "done": False},
+        "writing": {"ready": True, "prompt": "Write", "response": None, "done": False},
+        "interview": {"total_turns": 2, "results": [], "done": False},
+    }
+    statuses = exam_evidence_statuses(with_interview)
+    assert statuses["interview"] == "missing_student_response"

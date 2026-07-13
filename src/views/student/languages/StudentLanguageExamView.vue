@@ -28,7 +28,7 @@
         </v-col>
       </v-row>
       <p class="text-caption text-medium-emphasis mb-0">
-        Ends with a short guided spoken interview that pinpoints your exact level.
+        Includes a short speaking task, then a full CEFR level report.
       </p>
       <v-btn color="secondary" variant="flat" size="large" :loading="busy" :disabled="rateLimitBlocked" prepend-icon="mdi-play" class="mt-3" @click="start">
         Start the exam
@@ -435,7 +435,7 @@ const CONSISTENCY_LABEL = {
   consistent: 'Spoken and written performance matched — high-confidence result',
   speaking_stronger: 'You performed noticeably stronger speaking than in writing',
   writing_stronger: 'You performed noticeably stronger in writing than speaking',
-  live_phase_unavailable: 'Based on the written phase only (spoken interview was skipped)',
+  live_phase_unavailable: 'Based on the written phase only',
 }
 
 const view = ref('intro') // intro | exam | evaluating | report | loading

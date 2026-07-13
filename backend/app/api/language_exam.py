@@ -99,8 +99,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/student/languages/exam", tags=["Language Exam"])
 
-SECTIONS = ["speaking", "listening", "reading", "grammar_vocab", "writing", "interview"]
+SECTIONS = ["speaking", "listening", "reading", "grammar_vocab", "writing"]
 # Sections that work like the audio speaking flow (record -> assess -> next question).
+# "interview" stays in this set (not in SECTIONS) so any already-persisted session that still
+# has "interview" in its own exam_state["sections"] continues to route those turns correctly.
 SPEAKING_LIKE = {"speaking", "interview"}
 MCQ_SECTIONS = {"listening", "reading", "grammar_vocab"}
 PREPARED_SECTIONS = {"listening", "reading", "grammar_vocab", "writing"}
@@ -1012,7 +1014,12 @@ def exam_evidence_statuses(state: dict) -> dict[str, str]:
     else:
         statuses["writing"] = "completed"
 
-    for section, default_turns in (("speaking", SPEAKING_TURNS), ("interview", INTERVIEW_TURNS)):
+    # Sections-driven: only require evidence for a spoken phase if this session's own persisted
+    # "sections" list actually includes it. New sessions have no "interview" entry and must not
+    # be blocked on it; old sessions that still have "interview" must keep requiring it.
+    session_sections = state.get("sections") or SECTIONS
+    spoken_defaults = [("speaking", SPEAKING_TURNS), ("interview", INTERVIEW_TURNS)]
+    for section, default_turns in [(s, t) for s, t in spoken_defaults if s in session_sections]:
         spoken = state.get(section, {})
         declared = str(spoken.get("evidence_status") or "")
         if declared in {"content_unavailable", "retry_required", "unassessed"}:
@@ -1332,7 +1339,15 @@ async def _run_claimed_evaluation(
             ph1_results = state.get("speaking", {}).get("results", [])
             ph2_results = state.get("interview", {}).get("results", [])
             sp_results = ph1_results + ph2_results
-            live_available = bool(ph2_results)
+            # "interview" was a deliberate, intentional Phase-2 addition for sessions that have it
+            # in their own persisted sections — for those, live_available still means "did the
+            # interview actually produce results" (unchanged). For sessions with no "interview"
+            # section at all (the new, no-interview design), there is no Phase 2 to be
+            # "unavailable" — Phase-1 speaking evidence being complete is what "available" means.
+            if "interview" in (state.get("sections") or SECTIONS):
+                live_available = bool(ph2_results)
+            else:
+                live_available = len(ph1_results) >= SPEAKING_TURNS
             sp_evidence = build_verified_speaking_evidence(ph1_results, ph2_results)
             sp_detected: list = []
             if sp_results:
@@ -1772,23 +1787,28 @@ async def initiate_exam(
 
     ensure_placement_retake_allowed(profile)
     check_or_raise("placement_start", student.id)
+    # Captured before commit: expire_on_commit would otherwise force a lazy reload of these
+    # attributes on next access, which crashes (MissingGreenlet) once a slow external await
+    # (the AI scenario call below) separates the commit from that access.
+    student_id = int(student.id)
+    language_id = int(language.id)
     await db.commit()
 
     # No row lock or database transaction remains open while the external examiner is called.
-    level = await _effective_level(db, student_id=student.id, language_id=language.id)
-    learner_grade = await _student_grade(db, student_id=student.id)
+    level = await _effective_level(db, student_id=student_id, language_id=language_id)
+    learner_grade = await _student_grade(db, student_id=student_id)
     await db.rollback()
     scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
 
     # Phase 2: recheck under the same per-user lock. A concurrent initiate may have won while AI
     # was running, in which case its session is returned and this generated scenario is discarded.
-    await db.execute(select(User.id).where(User.id == student.id).with_for_update())
+    await db.execute(select(User.id).where(User.id == student_id).with_for_update())
     existing = (await db.execute(active_stmt.with_for_update())).scalar_one_or_none()
     if existing:
         _schedule_evaluation_recovery(existing, background_tasks)
         await db.commit()
         return await _build_state_out(db, existing, resumed=True)
-    profile = await ensure_language_profile(db, student.id, language.id)
+    profile = await ensure_language_profile(db, student_id, language_id)
     ensure_placement_retake_allowed(profile)
 
     state = {
@@ -1821,25 +1841,19 @@ async def initiate_exam(
         "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
         "grammar_vocab": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
         "writing": {"prompt": "", "prompt_token": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False, "evidence_status": "retry_required"},
-        "interview": {
-            "priming": "",
-            "total_turns": INTERVIEW_TURNS,
-            "turn": 1,
-            "pending_question": "",
-            "turn_token": "",
-            "results": [],
-            "done": False,
-            "evidence_status": "missing_student_response",
-        },
+        # No "interview" section for new sessions (product decision: guided interview removed).
+        # _ensure_interview_ready/_provisional_from_phase1/interview_opening stay in place as
+        # dormant compatibility code for any already-persisted session whose own "sections" list
+        # still includes "interview".
         "request_receipts": [],
     }
     sess = LanguageExamSession(
-        student_id=student.id, language_id=language.id, current_step=1, max_steps=len(SECTIONS),
+        student_id=student_id, language_id=language_id, current_step=1, max_steps=len(SECTIONS),
         exam_state=state, status="in_progress",
     )
     db.add(sess)
     await db.commit()
-    background_tasks.add_task(_prepare_content, sess.id, language.id, level)
+    background_tasks.add_task(_prepare_content, sess.id, language_id, level)
     return await _build_state_out(db, sess)
 
 

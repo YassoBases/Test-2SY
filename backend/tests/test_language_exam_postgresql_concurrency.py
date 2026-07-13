@@ -723,6 +723,131 @@ async def test_two_concurrent_initiates_create_one_active_exam(
     assert active[0].id == responses[0].session_id
 
 
+async def test_new_exam_session_never_includes_interview_in_sections(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Product decision: new AI Exam sessions must never include "interview" in their persisted
+    sections. Speaking stays mandatory and unaffected (its own section is unchanged)."""
+    assert "interview" not in language_exam.SECTIONS
+    assert "speaking" in language_exam.SECTIONS
+    assert language_exam.SPEAKING_TURNS == 3
+
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        language_exam,
+        "get_default_language",
+        lambda _db: _async(SimpleNamespace(id=record.language_id)),
+    )
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    monkeypatch.setattr(language_exam, "_student_grade", lambda *_args, **_kwargs: _async(None))
+
+    async def generate_scenario(**_kwargs) -> dict:
+        return {
+            "scenario": "At a community event",
+            "ai_persona": "Host",
+            "student_role": "Guest",
+            "setting": "Community hall",
+            "opening_question": "What brought you to the event?",
+        }
+
+    monkeypatch.setattr(language_exam.ai_engine, "generate_scenario_and_opening", generate_scenario)
+
+    async with postgres_session_factory() as db:
+        student = await db.get(User, record.student_id)
+        response = await language_exam.initiate_exam(BackgroundTasks(), student=student, db=db)
+
+    stored = await _stored_exam(postgres_session_factory, response.session_id)
+    assert "interview" not in stored.exam_state["sections"]
+    assert "interview" not in stored.exam_state
+    assert stored.exam_state["speaking"]["total_turns"] == 3
+
+
+async def test_initiate_exam_does_not_touch_expired_student_attributes_after_ai_call(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Regression test for a live MissingGreenlet 500: initiate_exam must not read
+    student.id/language.id as bare ORM attributes after the mid-function commit that precedes
+    the external AI call. In production, expire_on_commit marks them stale and a slow-enough
+    network call lets the connection pool recycle the connection; the next bare attribute read
+    then tries an implicit lazy-reload outside any awaited call and raises MissingGreenlet.
+
+    That exact failure is connection-pool-timing dependent (confirmed empirically: a 50ms
+    asyncio.sleep between commit and the next access was not sufficient to reproduce it against
+    the test database, even against the unfixed code). To make this a reliable regression guard
+    rather than a flaky timing-dependent one, this test forces the same *condition* the
+    production bug depends on — student/language becoming unusable after the pre-AI-call commit —
+    by expiring and detaching them from the session at exactly that point. Real ORM objects are
+    used for both (unlike the concurrent-initiate test above, which passes a SimpleNamespace for
+    student and so never exercises this at all). Without the fix, this raises
+    sqlalchemy.orm.exc.DetachedInstanceError from the same lines the real MissingGreenlet did.
+    """
+
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    monkeypatch.setattr(language_exam, "_student_grade", lambda *_args, **_kwargs: _async(None))
+
+    async def generate_scenario(**_kwargs) -> dict:
+        return {
+            "scenario": "At a community event",
+            "ai_persona": "Host",
+            "student_role": "Guest",
+            "setting": "Community hall",
+            "opening_question": "What brought you to the event?",
+        }
+
+    monkeypatch.setattr(language_exam.ai_engine, "generate_scenario_and_opening", generate_scenario)
+
+    async with postgres_session_factory() as db:
+        student = await db.get(User, record.student_id)
+        language = await db.get(Language, record.language_id)
+        monkeypatch.setattr(language_exam, "get_default_language", lambda _db: _async(language))
+
+        real_commit = db.commit
+        expired_once = False
+
+        async def commit_then_expire_and_detach():
+            nonlocal expired_once
+            await real_commit()
+            if not expired_once:
+                expired_once = True
+                db.expire(student)
+                db.expire(language)
+                db.expunge(student)
+                db.expunge(language)
+
+        monkeypatch.setattr(db, "commit", commit_then_expire_and_detach)
+
+        response = await language_exam.initiate_exam(
+            BackgroundTasks(),
+            student=student,
+            db=db,
+        )
+
+    assert response.session_id is not None
+    async with postgres_session_factory() as db:
+        active = (
+            await db.execute(
+                select(LanguageExamSession).where(
+                    LanguageExamSession.student_id == record.student_id,
+                    LanguageExamSession.status.in_(("in_progress", "evaluating")),
+                )
+            )
+        ).scalar_one()
+    assert active.id == response.session_id
+
+
 def _completed_evidence_state() -> dict:
     objective = {
         "ready": True,
@@ -738,14 +863,6 @@ def _completed_evidence_state() -> dict:
             "audio_sha256": hashlib.sha256(f"speaking-{index}".encode()).hexdigest(),
         }
         for index in range(3)
-    ]
-    interview_results = [
-        {
-            "question": f"Interview question {index}",
-            "transcription": f"Verified interview response number {index}",
-            "audio_sha256": hashlib.sha256(f"interview-{index}".encode()).hexdigest(),
-        }
-        for index in range(2)
     ]
     return {
         "version": 3,
@@ -769,12 +886,9 @@ def _completed_evidence_state() -> dict:
             "done": True,
             "evidence_status": "completed",
         },
-        "interview": {
-            "total_turns": 2,
-            "results": interview_results,
-            "done": True,
-            "evidence_status": "completed",
-        },
+        # No "interview" section — matches a genuine no-interview session (product decision:
+        # guided interview removed; "sections" already derives from language_exam.SECTIONS above,
+        # which no longer includes it).
         "evaluation": {
             "evaluation_status": "pending",
             "evaluation_attempt": 0,
@@ -1093,6 +1207,77 @@ async def test_evaluation_heartbeat_prevents_a_second_live_worker(
         ).scalars().all()
     assert len(analytics_rows) == 1
     assert len(profile_rows) == 1
+
+
+async def test_no_interview_exam_completes_without_live_phase_unavailable_penalty(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """A fully-evidenced no-interview session (3 speaking turns + listening/reading/grammar_vocab
+    + writing, no "interview" section at all) must reach evaluation, complete normally, and set
+    placement_completed_at through the ordinary AI Exam completion flow. It must NOT be penalized
+    with cross_phase_consistency="live_phase_unavailable" (and the accompanying low confidence
+    cap) merely because interview was intentionally removed by design — that label previously
+    meant "the interview phase ran but produced no results", not "there was no interview phase to
+    begin with"."""
+
+    state = _completed_evidence_state()
+    assert "interview" not in state["sections"]
+    record = await exam_record_factory(state=state, status="evaluating")
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: True)
+
+    speaking_grade = SpeakingGradeSchema(
+        level=CEFRLevel.B1, fluency=5.0, lexical=5.0, grammar=5.0, pronunciation=0.0,
+        score=5.0, feedback="Pronunciation was unassessed.", detected_errors=[],
+    )
+    writing_grade = WritingGradeSchema(
+        level=CEFRLevel.B1, task_achievement=5.0, coherence=5.0, lexical=5.0, grammar=5.0,
+        score=5.0, feedback="A complete response.", detected_errors=[],
+    )
+    narrative = ExamNarrativeSchema(
+        summary="No-interview placement.",
+        strengths=["Communicates clearly."],
+        weaknesses=["Needs more grammatical range."],
+        recommendations=["Practise connected speech.", "Review verb forms.", "Read daily."],
+        detected_errors=[],
+        recommended_starting_lesson_topic="Past and present verb forms",
+    )
+
+    async def successful_speaking_grade(**_kwargs) -> SpeakingGradeSchema:
+        return speaking_grade
+
+    async def successful_writing_grade(**_kwargs) -> WritingGradeSchema:
+        return writing_grade
+
+    async def successful_narrative(**_kwargs) -> ExamNarrativeSchema:
+        return narrative
+
+    monkeypatch.setattr(language_exam.ai_engine, "grade_speaking", successful_speaking_grade)
+    monkeypatch.setattr(language_exam.ai_engine, "grade_writing", successful_writing_grade)
+    monkeypatch.setattr(language_exam.ai_engine, "build_final_narrative", successful_narrative)
+
+    await language_exam._run_evaluation(record.session_id)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    assert stored.status == "completed"
+    assert stored.is_completed is True
+    assert stored.assessment_report is not None
+    assert "interview" not in (stored.exam_state.get("sections") or [])
+    assert stored.assessment_report["cross_phase_consistency"] != "live_phase_unavailable"
+    assert stored.assessment_report["confidence"] > 0.5
+
+    async with postgres_session_factory() as db:
+        profile = (
+            await db.execute(
+                select(LanguageStudentProfile).where(
+                    LanguageStudentProfile.student_id == record.student_id,
+                    LanguageStudentProfile.language_id == record.language_id,
+                )
+            )
+        ).scalar_one()
+    assert profile.placement_completed_at is not None
 
 
 async def test_placement_completed_at_is_set_once_and_survives_a_retake(
