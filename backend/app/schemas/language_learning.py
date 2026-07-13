@@ -337,12 +337,28 @@ class WritingPromptOut(BaseModel):
     prompt_ar: str | None = None
     min_words: int = 20
     min_sentences: int = 2
+    target_component: str | None = None
+    target_focus: str | None = None
+    practice_hint: str | None = None
+    task_type: str | None = None
+    topic: str | None = None
+    exercise_type: str | None = None
+    word_bank: list[str] = Field(default_factory=list)
+    sentence_starters: list[str] = Field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
+    mini_lesson: dict | None = None
+    rewrite_instruction: str | None = None
+    recommended: bool = False
+    recommendation_reason: str = ""
     progress: dict = Field(default_factory=dict)
 
 
 class WritingListOut(BaseModel):
     student_level: str
     lesson_level: str | None = None
+    recommended_prompt_id: int | None = None
+    recommended_reason: str = ""
+    writing_profile: dict = Field(default_factory=dict)
     prompts: list[WritingPromptOut] = Field(default_factory=list)
 
 
@@ -358,6 +374,20 @@ class WritingSubmitOut(BaseModel):
     sentence_count: int
     completed_at: datetime | None = None
     status: str
+    criteria: dict = Field(default_factory=dict)
+    flags: dict = Field(default_factory=dict)
+    feedback: str = ""
+    next_focus: dict = Field(default_factory=dict)
+    target_component: str | None = None
+    target_focus: str | None = None
+    scoring_version: str = ""
+    meets_threshold: bool = False
+    attempt_number: int = 1
+    previous_score_percent: float | None = None
+    improvement_percent: float | None = None
+    rewrite_required: bool = False
+    rewrite_prompt: str = ""
+    mini_lesson: dict | None = None
 
 
 class SpeakingPromptOut(BaseModel):

@@ -46,17 +46,16 @@ class ChatInputSchema(BaseModel):
 # ---------- AI structured output ----------
 
 class SpeakingTurnAssessment(BaseModel):
-    """Audio-native assessment of ONE spoken answer (google-genai structured output).
+    """Transcript-based assessment of one server-verified spoken answer.
 
-    Gemini judges the actual audio: ``transcription`` is what it heard; the feedback fields cover
-    both content and delivery; ``next_question`` is its adaptive follow-up (the backend still owns
-    when the speaking section ends).
+    ``transcription`` comes only from server STT. Text feedback must not claim that pronunciation
+    was measured; ``next_question`` is the adaptive follow-up.
     """
 
     transcription: str = Field(description="Verbatim text of what the student said.")
     grammar_vocab_feedback: str = Field(description="Short correction of grammar/vocabulary/phrasing.")
-    pronunciation_feedback: str = Field(description="Note on pronunciation/clarity from the audio.")
-    fluency_note: str = Field(description="Note on fluency: pace, hesitation, coherence.")
+    pronunciation_feedback: str = Field(description="Explicit unassessed note; no acoustic scorer is used.")
+    fluency_note: str = Field(description="Text-visible coherence/disfluency note only.")
     estimated_level: "CEFRLevel" = Field(description="CEFR level estimated from this answer.")
     next_question: str = Field(description="The next adaptive in-character question to ask.")
 
@@ -120,7 +119,7 @@ class MultiSkillReportSchema(BaseModel):
     weeks_to_next_level: int = 0
     # Writing IELTS sub-scores: {task_achievement, coherence, lexical, grammar} (0-10).
     writing_breakdown: dict[str, float] = Field(default_factory=dict)
-    # Speaking IELTS sub-scores: {fluency, lexical, grammar, pronunciation} (0-10).
+    # Transcript-based sub-scores: {fluency, lexical, grammar}; pronunciation is unassessed.
     speaking_breakdown: dict[str, float] = Field(default_factory=dict)
     # Per-turn spoken detail (shown in the report, not during the exam).
     speaking_turns: list[SpeakingTurnDetailOut] = Field(default_factory=list)
@@ -129,6 +128,8 @@ class MultiSkillReportSchema(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=0.0)
     # consistent | speaking_stronger | writing_stronger | live_phase_unavailable
     cross_phase_consistency: str = "consistent"
+    # Components that were deliberately not scored because no authoritative signal exists.
+    unassessed_components: list[str] = Field(default_factory=list)
 
 
 class ExamNarrativeSchema(BaseModel):
@@ -143,14 +144,14 @@ class ExamNarrativeSchema(BaseModel):
 
 
 class SpeakingGradeSchema(BaseModel):
-    """Structured IELTS-style grade of the spoken answers (4 criteria, each 0-10)."""
+    """Structured transcript grade; pronunciation is 0/unassessed in this flow."""
 
     level: CEFRLevel
     fluency: float = Field(ge=0.0, le=10.0, default=0.0)
     lexical: float = Field(ge=0.0, le=10.0, default=0.0)
     grammar: float = Field(ge=0.0, le=10.0, default=0.0)
     pronunciation: float = Field(ge=0.0, le=10.0, default=0.0)
-    score: float = Field(ge=0.0, le=10.0)  # equal-weight average of the four
+    score: float = Field(ge=0.0, le=10.0)  # equal-weight average of assessed textual criteria
     feedback: str = ""
     detected_errors: list[GrammarErrorDetail] = Field(default_factory=list)
 
@@ -182,10 +183,16 @@ class WritingGradeSchema(BaseModel):
 
 class McqAnswerIn(BaseModel):
     choice_index: int = Field(ge=0)
+    request_id: str = Field(min_length=8, max_length=100)
+    state_revision: int = Field(ge=1)
+    question_token: str = Field(min_length=16, max_length=200)
 
 
 class WritingAnswerIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    request_id: str = Field(min_length=8, max_length=100)
+    state_revision: int = Field(ge=1)
+    prompt_token: str = Field(min_length=16, max_length=200)
 
     @field_validator("text")
     @classmethod
@@ -204,6 +211,7 @@ class SpeakingPromptOut(BaseModel):
     examiner_message: str
     turn: int
     total_turns: int
+    turn_token: str
 
 
 class McqPromptOut(BaseModel):
@@ -212,17 +220,18 @@ class McqPromptOut(BaseModel):
     instructions: str
     passage: str | None = None
     audio_url: str | None = None
-    audio_text: str | None = None
     situation: str | None = None
     question: str
     options: list[str]
     item_index: int
     item_total: int
+    question_token: str
 
 
 class WritingPromptOut(BaseModel):
     prompt: str
     min_words: int = 40
+    prompt_token: str
 
 
 class SpeakingTurnFeedbackOut(BaseModel):
@@ -230,14 +239,6 @@ class SpeakingTurnFeedbackOut(BaseModel):
     grammar_vocab_feedback: str | None = None
     pronunciation_feedback: str | None = None
     fluency_note: str | None = None
-
-
-class SpeakingTranscriptionOut(BaseModel):
-    """Speech-to-text preview returned before a spoken answer is submitted."""
-
-    transcription: str
-    engine: str
-    model: str
 
 
 class SpeakingTurnDetailOut(BaseModel):
@@ -256,6 +257,7 @@ class ExamStateOut(BaseModel):
     """One contract telling the frontend exactly what to render next."""
 
     session_id: str
+    state_revision: int = Field(ge=1)
     phase: str  # speaking | listening | reading | writing | evaluating | completed
     section_index: int  # 0-based index of the current section
     section_total: int
@@ -265,6 +267,12 @@ class ExamStateOut(BaseModel):
     writing: WritingPromptOut | None = None
     last_feedback: SpeakingTurnFeedbackOut | None = None
     resumed: bool = False
+    question_token: str | None = None
+    turn_token: str | None = None
+    prompt_token: str | None = None
+    evidence_status: str = "missing_student_response"
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 class ExamProcessingOut(BaseModel):
@@ -279,3 +287,5 @@ class ExamReportOut(BaseModel):
     is_completed: bool
     report: MultiSkillReportSchema | None = None
     completed_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None

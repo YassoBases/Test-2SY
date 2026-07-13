@@ -317,9 +317,13 @@ const routes = [
       },
       {
         path: 'languages/placement',
-        name: 'student-languages-placement',
+        redirect: { name: 'student-languages-exam' },
+      },
+      {
+        path: 'languages/placement-history',
+        name: 'student-languages-placement-history',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguagePlacementView.vue')),
-        meta: { title: 'Placement Test', languageModule: true },
+        meta: { title: 'Placement History', languageModule: true },
       },
       {
         path: 'languages/reading',
@@ -694,6 +698,12 @@ router.beforeEach(async (to) => {
     const placementDone = langAccess.placement_completed
     const routeName = to.name
 
+    // Placement history is an owned, read-only record and remains available independently of
+    // subscription/learning access. The backend never accepts a student id from this route.
+    if (routeName === 'student-languages-placement-history') {
+      return
+    }
+
     if (routeName === 'student-languages-subscribe') {
       if (subscribed) {
         return placementDone ? ROUTES.STUDENT_LANGUAGES : ROUTES.STUDENT_LANGUAGES_EXAM
@@ -705,13 +715,7 @@ router.beforeEach(async (to) => {
       return ROUTES.STUDENT_LANGUAGES_SUBSCRIBE
     }
 
-    // The interactive AI exam is the entry assessment. Let it (and the hub) through; the legacy
-    // placement page stays reachable directly but is no longer the forced gate.
-    if (
-      routeName === 'student-languages-exam' ||
-      routeName === 'student-languages-placement' ||
-      routeName === 'student-languages'
-    ) {
+    if (routeName === 'student-languages-exam' || routeName === 'student-languages') {
       return
     }
 

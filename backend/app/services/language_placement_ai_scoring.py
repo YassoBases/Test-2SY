@@ -132,7 +132,7 @@ async def score_writing_ai(*, text: str, prompt: str = "") -> tuple[float, dict]
             user_prompt, system=WRITING_SYSTEM, temperature=0.1, max_output_tokens=_MAX_TOKENS
         )
     except Exception as exc:
-        logger.warning("Placement writing AI scoring failed: %s", exc)
+        logger.warning("Placement writing AI scoring failed error_type=%s", type(exc).__name__)
         return None
     data = _parse(raw)
     if not data or "criteria" not in data:
@@ -193,7 +193,7 @@ async def score_speaking_ai(*, audio_data: bytes, suffix: str = ".webm", prompt:
         wav_path = _normalize_to_wav_16k(tmp_path)
         data = await _speaking_eval_claude(wav_path.read_bytes(), prompt)
     except Exception as exc:
-        logger.warning("Placement speaking AI scoring failed: %s", exc)
+        logger.warning("Placement speaking AI scoring failed error_type=%s", type(exc).__name__)
         return None
     finally:
         for p in (tmp_path, wav_path):

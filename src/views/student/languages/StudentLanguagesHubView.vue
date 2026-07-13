@@ -294,10 +294,10 @@ function goSubscribe() {
   router.push(ROUTES.STUDENT_LANGUAGES_SUBSCRIBE)
 }
 function goPlacement() {
-  router.push(ROUTES.STUDENT_LANGUAGES_PLACEMENT)
+  router.push(ROUTES.STUDENT_LANGUAGES_EXAM)
 }
 function goPlacementResults() {
-  router.push({ path: ROUTES.STUDENT_LANGUAGES_PLACEMENT, query: { results: '1' } })
+  router.push(ROUTES.STUDENT_LANGUAGES_PLACEMENT_HISTORY)
 }
 
 const retakeBlocked = computed(() => {

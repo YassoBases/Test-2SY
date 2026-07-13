@@ -93,6 +93,7 @@ export const ROUTES = {
   STUDENT_LANGUAGES_INSIGHTS: '/student/languages/insights',
   STUDENT_LANGUAGES_EXAM: '/student/languages/exam',
   STUDENT_LANGUAGES_PLACEMENT: '/student/languages/placement',
+  STUDENT_LANGUAGES_PLACEMENT_HISTORY: '/student/languages/placement-history',
   STUDENT_LANGUAGES_SUBSCRIBE: '/student/languages/subscribe',
   VERIFY_CERTIFICATE: (number) => `/verify-certificate/${number}`,
   TEACHER_SETUP: '/teacher/setup',

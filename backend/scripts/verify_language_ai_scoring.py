@@ -70,8 +70,8 @@ def _static_checks() -> dict[str, bool]:
     from app.services import language_speaking_feedback_service as feedback
     from app.services.language_placement_scoring_service import score_speaking, score_writing
 
-    placement_src = (Path(__file__).resolve().parents[1] / "app" / "services" / "language_placement_service.py").read_text(
-        encoding="utf-8"
+    legacy_placement_service = (
+        Path(__file__).resolve().parents[1] / "app" / "services" / "language_placement_service.py"
     )
     writing_src = (Path(__file__).resolve().parents[1] / "app" / "services" / "language_writing_service.py").read_text(
         encoding="utf-8"
@@ -87,10 +87,7 @@ def _static_checks() -> dict[str, bool]:
         "speaking_feedback_module_exists": hasattr(feedback, "analyze_speaking_recording"),
         "arabic_learner_prompts": "Arabic-speaking" in ai_src and "German" not in ai_src,
         "feedback_ar_in_rubric": "feedback_ar" in ai_src,
-        "placement_uses_ai_writing": "score_writing_ai" in placement_src,
-        "placement_uses_ai_speaking": "score_speaking_ai" in placement_src,
-        "placement_keeps_rule_fallback": "score_writing(resp_json" in placement_src
-        and "score_speaking(resp_json" in placement_src,
+        "legacy_placement_runtime_removed": not legacy_placement_service.exists(),
         "writing_uses_ai_scoring": "score_writing_ai" in writing_src,
         "writing_keeps_rule_fallback": "score_writing({" in writing_src,
         "speaking_uses_feedback_service": "analyze_speaking_recording" in speaking_src,

@@ -9,9 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_student_actor
 from app.db.session import get_db
-from app.models.language.assessment import LanguageAssessmentSkillScore
 from app.models.language.enums import LanguageSkill
-from app.models.language.placement import LanguagePlacementAttempt
 from app.models.user import User
 from app.schemas.language import LanguageAccessOut, LanguageProductOut, LanguageSubscribeOut, LanguageSubscribeRequest
 from app.schemas.language_learning import (
@@ -64,12 +62,9 @@ from app.schemas.language_learning import (
     WritingSubmitOut,
 )
 from app.schemas.language_placement import (
-    PlacementResultsOut,
-    PlacementSaveResponseIn,
-    PlacementSaveResponseOut,
+    PlacementHistoryLatestOut,
+    PlacementHistoryListOut,
     PlacementSpeakingUploadOut,
-    PlacementStartOut,
-    PlacementSubmitIn,
 )
 from app.schemas.language_certificate import LanguageCertificateListOut
 from app.services.language_access_service import (
@@ -86,6 +81,7 @@ from app.services.language_content_service import (
 )
 from app.services.language_curriculum_service import build_curriculum_overview, record_objective_practice
 from app.services.language_microlesson_service import get_micro_lesson
+from app.services.language_placement_history_service import list_placement_history
 from app.services.language_xp_service import award_daily_mission_xp, get_xp_overview
 from app.services.language_daily_plan_service import build_daily_plan
 from app.services.language_daily_mission_service import build_daily_mission, renew_daily_mission
@@ -97,13 +93,6 @@ from app.schemas.language_curriculum import (
     DailyPlanOut,
     ObjectivePracticeIn,
     ObjectivePracticeOut,
-)
-from app.services.language_placement_service import (
-    get_bank_with_responses,
-    save_response,
-    start_or_resume_attempt,
-    submit_attempt,
-    upload_speaking_audio,
 )
 from app.services.language_reading_service import (
     explain_sentence,
@@ -165,6 +154,20 @@ from app.services.language_certificate_service import list_student_certificates
 router = APIRouter(prefix="/student/languages", tags=["Language Learning"])
 logger = logging.getLogger(__name__)
 
+_LEGACY_PLACEMENT_REMOVED_DETAIL = {
+    "code": "legacy_placement_removed",
+    "message": "The legacy placement system was removed. Use the AI placement exam instead.",
+    "redirect": "/student/languages/exam",
+}
+
+
+def _raise_legacy_placement_removed() -> None:
+    """Compatibility response with no authentication, body parsing, or database access."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=_LEGACY_PLACEMENT_REMOVED_DETAIL,
+    )
+
 
 def _progress_out(row) -> LessonProgressOut:
     if not row:
@@ -210,126 +213,36 @@ async def language_subscribe(
     return result
 
 
-@router.post("/placement/start", response_model=PlacementStartOut)
-async def placement_start(
-    student: User = Depends(require_active_language_subscription()),
+@router.api_route(
+    "/placement/{legacy_path:path}",
+    methods=["POST", "PUT", "PATCH", "DELETE"],
+    include_in_schema=False,
+)
+async def legacy_placement_removed(legacy_path: str):
+    """One inert compatibility route replaces every legacy placement mutation handler."""
+    del legacy_path
+    _raise_legacy_placement_removed()
+
+
+@router.get("/placement-history", response_model=PlacementHistoryListOut)
+async def placement_history(
+    student: User = Depends(require_student_actor()),
     db: AsyncSession = Depends(get_db),
 ):
-    attempt_id, language_id = await start_or_resume_attempt(db, student_id=student.id)
-    sections, questions, responses_by_qid = await get_bank_with_responses(
-        db, student_id=student.id, attempt_id=attempt_id
-    )
-    attempt = await db.get(LanguagePlacementAttempt, attempt_id)
-    await db.commit()
-    return PlacementStartOut(
-        attempt={
-            "id": attempt_id,
-            "language_id": language_id,
-            "status": attempt.status.value if hasattr(attempt.status, "value") else str(attempt.status),
-            "started_at": attempt.started_at,
-            "submitted_at": attempt.submitted_at,
-        },
-        sections=[
-            {
-                "id": s.id,
-                "skill": s.skill.value if hasattr(s.skill, "value") else str(s.skill),
-                "title_ar": s.title_ar,
-                "sort_order": s.sort_order,
-            }
-            for s in sections
-        ],
-        questions=[
-            {
-                "id": q.id,
-                "section_id": q.section_id,
-                "question_type": q.question_type,
-                "prompt": q.prompt_json or {},
-                "media_url": q.media_url,
-                "max_points": q.max_points,
-                "level_hint": q.level_hint,
-                "sort_order": q.sort_order,
-            }
-            for q in questions
-        ],
-        responses_by_question_id=responses_by_qid,
-    )
+    """Return coherent historical snapshots owned by the authenticated student."""
+    results = await list_placement_history(db, student_id=student.id)
+    return PlacementHistoryListOut(available=bool(results), results=results)
 
 
-@router.put("/placement/responses", response_model=PlacementSaveResponseOut)
-async def placement_save_response(
-    body: PlacementSaveResponseIn,
-    student: User = Depends(require_active_language_subscription()),
+@router.get("/placement-history/latest", response_model=PlacementHistoryLatestOut)
+async def latest_placement_history(
+    student: User = Depends(require_student_actor()),
     db: AsyncSession = Depends(get_db),
 ):
-    await save_response(
-        db,
-        student_id=student.id,
-        attempt_id=body.attempt_id,
-        question_id=body.question_id,
-        response_json=body.response_json,
-    )
-    await db.commit()
-    return PlacementSaveResponseOut(ok=True)
-
-
-@router.post("/placement/speaking/upload", response_model=PlacementSpeakingUploadOut)
-async def placement_upload_speaking(
-    attempt_id: int = Form(...),
-    question_id: int = Form(...),
-    file: UploadFile = File(...),
-    duration_seconds: int | None = Form(default=None),
-    student: User = Depends(require_active_language_subscription()),
-    db: AsyncSession = Depends(get_db),
-):
-    media = await upload_speaking_audio(
-        db,
-        student_id=student.id,
-        attempt_id=attempt_id,
-        question_id=question_id,
-        file=file,
-        duration_seconds=duration_seconds,
-    )
-    await db.commit()
-    return PlacementSpeakingUploadOut(ok=True, media_object_id=media.id, public_url=media.public_url)
-
-
-@router.post("/placement/submit", response_model=PlacementResultsOut)
-async def placement_submit(
-    body: PlacementSubmitIn,
-    student: User = Depends(require_active_language_subscription()),
-    db: AsyncSession = Depends(get_db),
-):
-    assessment, path_id = await submit_attempt(db, student_id=student.id, attempt_id=body.attempt_id)
-    await db.commit()
-    scores = await db.execute(select(LanguageAssessmentSkillScore).where(LanguageAssessmentSkillScore.assessment_id == assessment.id))
-    rows = scores.scalars().all()
-    # Surface which skill set the bottleneck overall level (tie -> first in LanguageSkill enum order).
-    weakest_skill = None
-    overall = assessment.overall_level
-    if overall:
-        order = {s: i for i, s in enumerate(LanguageSkill)}
-        matching = sorted((r for r in rows if r.level == overall), key=lambda r: order.get(r.skill, 99))
-        if matching:
-            r0 = matching[0]
-            weakest_skill = r0.skill.value if hasattr(r0.skill, "value") else str(r0.skill)
-    return PlacementResultsOut(
-        assessment_id=assessment.id,
-        overall_level=assessment.overall_level.value if assessment.overall_level else None,
-        overall_calculation_method=assessment.overall_calculation_method,
-        completed_at=assessment.completed_at,
-        weakest_skill=weakest_skill,
-        skills=[
-            {
-                "skill": r.skill.value if hasattr(r.skill, "value") else str(r.skill),
-                "score_percent": r.score_percent,
-                "level": r.level.value if hasattr(r.level, "value") else str(r.level),
-                "raw_metrics_json": r.raw_metrics_json,
-                "ai_evaluation_json": r.ai_evaluation_json,
-            }
-            for r in rows
-        ],
-        path_id=path_id,
-    )
+    """Return the latest coherent placement snapshot, never a live-analytics composite."""
+    results = await list_placement_history(db, student_id=student.id, limit=1)
+    latest = results[0] if results else None
+    return PlacementHistoryLatestOut(available=latest is not None, result=latest)
 
 
 @router.get("/hub", response_model=LanguageHubOut)
@@ -903,7 +816,9 @@ async def writing_list(
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_writing(db, student_id=student.id)
+    payload = await list_writing(db, student_id=student.id)
+    await db.commit()
+    return payload
 
 
 @router.get("/writing/{prompt_id}", response_model=WritingPromptOut)

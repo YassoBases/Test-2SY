@@ -15,35 +15,8 @@ export async function subscribeLanguage(method = 'card') {
   return data
 }
 
-export async function placementStartApi() {
-  const { data } = await api.post('/student/languages/placement/start')
-  return data
-}
-
-export async function placementSaveResponseApi({ attempt_id, question_id, response_json }) {
-  const { data } = await api.put('/student/languages/placement/responses', {
-    attempt_id,
-    question_id,
-    response_json,
-  })
-  return data
-}
-
-export async function placementUploadSpeakingApi({ attemptId, questionId, blob, durationSeconds }) {
-  const form = new FormData()
-  form.append('attempt_id', String(attemptId))
-  form.append('question_id', String(questionId))
-  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
-  if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
-  const { data } = await api.post('/student/languages/placement/speaking/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 5 * 60 * 1000,
-  })
-  return data
-}
-
-export async function placementSubmitApi(attemptId) {
-  const { data } = await api.post('/student/languages/placement/submit', { attempt_id: attemptId })
+export async function fetchPlacementHistory() {
+  const { data } = await api.get('/student/languages/placement-history')
   return data
 }
 
@@ -442,21 +415,20 @@ export async function fetchExamState(sessionId) {
   return data
 }
 
-export async function transcribeExamSpeaking(sessionId, blob) {
-  const form = new FormData()
-  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/transcribe`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 2 * 60 * 1000,
-  })
-  return data
-}
-
-export async function submitSpeakingTurn(sessionId, blob, durationSeconds, transcription = '') {
+export async function submitSpeakingTurn(
+  sessionId,
+  blob,
+  durationSeconds,
+  requestId,
+  stateRevision,
+  turnToken,
+) {
   const form = new FormData()
   form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
   if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
-  if (transcription) form.append('transcription', transcription)
+  form.append('request_id', requestId)
+  form.append('state_revision', String(stateRevision))
+  form.append('turn_token', turnToken)
   const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/turn`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 2 * 60 * 1000,
@@ -464,20 +436,33 @@ export async function submitSpeakingTurn(sessionId, blob, durationSeconds, trans
   return data
 }
 
-export async function answerExamMcq(sessionId, choiceIndex) {
+export async function answerExamMcq(sessionId, choiceIndex, requestId, stateRevision, questionToken) {
   const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, {
     choice_index: choiceIndex,
+    request_id: requestId,
+    state_revision: stateRevision,
+    question_token: questionToken,
   })
   return data
 }
 
-export async function submitExamWriting(sessionId, text) {
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/writing`, { text })
+export async function submitExamWriting(sessionId, text, requestId, stateRevision, promptToken) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/writing`, {
+    text,
+    request_id: requestId,
+    state_revision: stateRevision,
+    prompt_token: promptToken,
+  })
   return data
 }
 
 export async function fetchExamReport(sessionId) {
   const { data } = await api.get(`/student/languages/exam/${sessionId}/report`)
+  return data
+}
+
+export async function retryExamEvaluation(sessionId) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/evaluation/retry`)
   return data
 }
 

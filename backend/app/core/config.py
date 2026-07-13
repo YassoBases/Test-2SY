@@ -147,7 +147,13 @@ class Settings(BaseSettings):
     LANGUAGE_STT_PROVIDER: str = "openai"  # openai | whisper
     LANGUAGE_STT_MODEL: str = "gpt-4o-transcribe"
     LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: bool = True
+    LANGUAGE_FFMPEG_TIMEOUT_SECONDS: int = 20
+    LANGUAGE_AUDIO_DECODE_MAX_SECONDS: int = 181
     GENAI_EXAM_MAX_AUDIO_MB: int = 10
+    # Optional comma-separated overrides, e.g. "placement_start=5/60,placement_poll=60/60".
+    # The limiter remains intentionally process-local and is safe only for the current single-worker topology.
+    LANGUAGE_PLACEMENT_RATE_LIMITS: str = ""
+    LANGUAGE_RATE_LIMIT_CLEANUP_SECONDS: int = 60
     LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
     LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
     LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0

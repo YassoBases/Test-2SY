@@ -30,8 +30,21 @@
       <p class="text-caption text-medium-emphasis mb-0">
         Ends with a short guided spoken interview that pinpoints your exact level.
       </p>
-      <v-btn color="secondary" variant="flat" size="large" :loading="busy" prepend-icon="mdi-play" class="mt-3" @click="start">
+      <v-btn color="secondary" variant="flat" size="large" :loading="busy" :disabled="rateLimitBlocked" prepend-icon="mdi-play" class="mt-3" @click="start">
         Start the exam
+      </v-btn>
+      <v-btn
+        v-if="evaluationFailed && sessionId"
+        color="warning"
+        variant="tonal"
+        size="large"
+        :loading="busy"
+        :disabled="rateLimitBlocked"
+        prepend-icon="mdi-refresh"
+        class="mt-3 ml-2"
+        @click="retryEvaluation"
+      >
+        Retry report evaluation
       </v-btn>
     </v-card>
 
@@ -58,6 +71,7 @@
             variant="tonal"
             prepend-icon="mdi-restart"
             :loading="busy"
+            :disabled="rateLimitBlocked"
             @click="startFresh"
           >
             Start fresh
@@ -107,13 +121,11 @@
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
-            :disabled="busy || transcribing" @click="recorder.toggleRecording()"
+            :disabled="busy" @click="recorder.toggleRecording()"
           />
           <div class="text-caption text-medium-emphasis mt-2">
             <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
-            <span v-else-if="transcribing">Turning your speech into text…</span>
-            <span v-else-if="spokenText">Transcript ready ✓ — review it, then submit</span>
-            <span v-else-if="recorder.audioBlob.value">Audio ready — waiting for transcript…</span>
+            <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
           <div class="text-caption text-medium-emphasis mt-3">— or —</div>
@@ -126,29 +138,15 @@
             prepend-icon="mdi-upload"
             label="Upload an audio file"
             class="mt-2 upload-input"
-            :disabled="busy || transcribing || recorder.recording.value"
+            :disabled="busy || recorder.recording.value"
             @update:model-value="onUpload"
           />
         </div>
 
-        <v-textarea
-          v-if="recorder.audioBlob.value || transcribing || spokenText"
-          v-model="spokenText"
-          class="mt-3"
-          variant="outlined"
-          rows="3"
-          dir="ltr"
-          label="Your answer (transcribed automatically)"
-          placeholder="Your spoken answer will appear here…"
-          :loading="transcribing"
-          readonly
-          hide-details="auto"
-        />
-
         <div class="d-flex justify-end mt-3">
           <v-btn
             color="secondary" variant="flat" :loading="busy"
-            :disabled="!recorder.audioBlob.value || !spokenText || recorder.recording.value || transcribing"
+            :disabled="!recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
             prepend-icon="mdi-send" @click="sendSpeaking"
           >
             Submit answer
@@ -178,22 +176,6 @@
               <template v-else>Replays remaining: {{ listensLeft }}</template>
             </div>
           </template>
-          <template v-else-if="canListeningFallback">
-            <v-btn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-play"
-              class="mb-2"
-              :disabled="listenCount >= MAX_LISTENS"
-              @click="playListeningText"
-            >
-              Play clip
-            </v-btn>
-            <div class="text-caption mb-3" :class="listensLeft ? 'text-medium-emphasis' : 'text-warning'">
-              <template v-if="listenCount === 0">Press play to listen (max {{ MAX_LISTENS }} times)</template>
-              <template v-else>Replays remaining: {{ listensLeft }}</template>
-            </div>
-          </template>
           <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-3">
             Audio playback is unavailable for this clip.
           </v-alert>
@@ -203,7 +185,7 @@
         </template>
         <p v-else class="text-body-2 text-medium-emphasis mb-3" dir="ltr">{{ state.mcq.instructions }}</p>
 
-        <!-- Listening questions are hidden only when there is something playable to listen to. -->
+        <!-- Listening questions remain hidden until a real audio playback begins. -->
         <template v-if="showMcqQuestion">
           <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
           <v-radio-group v-model="choice" hide-details class="mb-3">
@@ -211,12 +193,23 @@
           </v-radio-group>
 
           <div class="d-flex justify-end">
-            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="choice === null" prepend-icon="mdi-arrow-right" @click="sendMcq">
+            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="choice === null || rateLimitBlocked" prepend-icon="mdi-arrow-right" @click="sendMcq">
               Next
             </v-btn>
           </div>
         </template>
         <p v-else-if="listeningRequiresPlayback" class="text-caption text-medium-emphasis mb-0">Listen first — the question appears after you play the clip.</p>
+      </v-card>
+
+      <v-card v-else-if="state.phase === 'content_unavailable'" class="glass-card pa-8 text-center" variant="flat">
+        <v-icon icon="mdi-cloud-alert" color="warning" size="42" class="mb-3" />
+        <h3 class="text-subtitle-1 font-weight-bold mb-1">This section is temporarily unavailable</h3>
+        <p class="text-caption text-medium-emphasis mb-3">
+          This is a technical content problem, not a missing answer. Your completed work is preserved.
+        </p>
+        <v-btn color="warning" variant="tonal" prepend-icon="mdi-refresh" :loading="busy" :disabled="rateLimitBlocked" @click="retryContent">
+          Retry section preparation
+        </v-btn>
       </v-card>
 
       <!-- WRITING -->
@@ -237,7 +230,7 @@
           <span class="text-caption" :class="wordCount >= state.writing.min_words ? 'text-success' : 'text-medium-emphasis'">
             {{ wordCount }} words (min {{ state.writing.min_words }})
           </span>
-          <v-btn color="secondary" variant="flat" :loading="busy" :disabled="wordCount < state.writing.min_words" prepend-icon="mdi-check" @click="sendWriting">
+          <v-btn color="secondary" variant="flat" :loading="busy" :disabled="wordCount < state.writing.min_words || rateLimitBlocked" prepend-icon="mdi-check" @click="sendWriting">
             Finish exam
           </v-btn>
         </div>
@@ -302,11 +295,11 @@
         </v-col>
       </v-row>
 
-      <!-- speaking breakdown (IELTS 4 criteria) -->
+      <!-- speaking breakdown (transcript-assessable criteria) -->
       <section v-if="speakingCriteria.length" class="section-block">
         <div class="section-block__head">
           <h3 class="section-block__title">Speaking breakdown</h3>
-          <p class="section-block__subtitle mb-0">The four IELTS speaking criteria</p>
+          <p class="section-block__subtitle mb-0">Transcript-based criteria; pronunciation is unassessed</p>
         </div>
         <v-card class="glass-card pa-3" variant="flat">
           <div v-for="c in speakingCriteria" :key="c.key" class="mb-2">
@@ -408,7 +401,7 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
@@ -417,11 +410,11 @@ import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
 import {
   initiateExam,
   fetchExamState,
-  transcribeExamSpeaking,
   submitSpeakingTurn,
   answerExamMcq,
   submitExamWriting,
   fetchExamReport,
+  retryExamEvaluation,
   abandonExam,
 } from '../../../api/language.js'
 import { getErrorMessage } from '../../../api/client.js'
@@ -448,11 +441,14 @@ const CONSISTENCY_LABEL = {
 const view = ref('intro') // intro | exam | evaluating | report | loading
 const loadError = ref('')
 const busy = ref(false)
+const rateLimitBlocked = ref(false)
 
 const sessionId = ref(null)
 const state = ref(null)
 const lastFeedback = ref(null)
 const report = ref(null)
+const evaluationFailed = ref(false)
+const submissionRequestId = ref('')
 
 const examCorrections = computed(() =>
   (report.value?.detected_errors || []).map((e) => ({
@@ -465,25 +461,24 @@ const examCorrections = computed(() =>
 
 const recorder = useVoiceRecorder({ minSeconds: 1 })
 const uploadFile = ref(null)
-const spokenText = ref('')
-const transcribing = ref(false)
-let transcriptionRequest = 0
 const choice = ref(null)
 const writingText = ref('')
+
+function ensureSubmissionRequestId() {
+  if (!submissionRequestId.value) {
+    submissionRequestId.value = globalThis.crypto?.randomUUID?.()
+      || `placement-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
+  return submissionRequestId.value
+}
 
 // Listening integrity: questions hidden until first listen; max 2 replays.
 const MAX_LISTENS = 2
 const listenCount = ref(0)
 const audioFailed = ref(false)
-const canUseSpeech = computed(() =>
-  typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
-)
-const hasListeningAudio = computed(() => Boolean(state.value?.mcq?.audio_url) && !audioFailed.value)
-const canListeningFallback = computed(() => Boolean(state.value?.mcq?.audio_text) && canUseSpeech.value)
 const listeningRequiresPlayback = computed(() =>
   state.value?.phase === 'listening'
   && listenCount.value === 0
-  && (hasListeningAudio.value || canListeningFallback.value),
 )
 const showMcqQuestion = computed(() => state.value?.phase !== 'listening' || !listeningRequiresPlayback.value)
 let prepAttempts = 0
@@ -503,6 +498,8 @@ const loaderMsg = ref(LOADER_MESSAGES[0])
 let loaderTimer = null
 let pollTimer = null
 let prepTimer = null
+let pollRunId = 0
+let rateLimitTimer = null
 
 const isSpeakingPhase = computed(() => state.value?.phase === 'speaking' || state.value?.phase === 'interview')
 const isMcqPhase = computed(() => ['listening', 'reading', 'grammar_vocab'].includes(state.value?.phase))
@@ -576,12 +573,15 @@ const writingCriteria = computed(() => {
 const speakingCriteria = computed(() => {
   const b = report.value?.speaking_breakdown
   if (!b || !Object.keys(b).length) return []
-  return [
+  const criteria = [
     { key: 'fluency', label: 'Fluency & coherence', value: b.fluency || 0 },
     { key: 'lexical', label: 'Lexical resource', value: b.lexical || 0 },
     { key: 'grammar', label: 'Grammar', value: b.grammar || 0 },
-    { key: 'pronunciation', label: 'Pronunciation', value: b.pronunciation || 0 },
   ]
+  if (Object.prototype.hasOwnProperty.call(b, 'pronunciation')) {
+    criteria.push({ key: 'pronunciation', label: 'Pronunciation', value: b.pronunciation || 0 })
+  }
+  return criteria
 })
 
 function barColor(pct) {
@@ -600,27 +600,6 @@ function onListenPlay() {
   listenCount.value += 1
 }
 
-watch(recorder.audioBlob, async (blob) => {
-  const requestId = ++transcriptionRequest
-  spokenText.value = ''
-  if (!blob || !sessionId.value || !isSpeakingPhase.value) {
-    transcribing.value = false
-    return
-  }
-
-  transcribing.value = true
-  loadError.value = ''
-  try {
-    const result = await transcribeExamSpeaking(sessionId.value, blob)
-    if (requestId === transcriptionRequest) spokenText.value = (result.transcription || '').trim()
-  } catch (e) {
-    if (requestId === transcriptionRequest) {
-      loadError.value = getErrorMessage(e, 'Could not understand the audio. Please record again.')
-    }
-  } finally {
-    if (requestId === transcriptionRequest) transcribing.value = false
-  }
-})
 const listensLeft = computed(() => Math.max(0, MAX_LISTENS - listenCount.value))
 
 function onAudioUnavailable() {
@@ -634,25 +613,10 @@ function onAudioMetadata(event) {
   }
 }
 
-function stopListeningText() {
-  if (canUseSpeech.value) window.speechSynthesis.cancel()
-}
-
-function playListeningText() {
-  const text = (state.value?.mcq?.audio_text || '').trim()
-  if (!text || !canUseSpeech.value || listenCount.value >= MAX_LISTENS) return
-  stopListeningText()
-  const utterance = new window.SpeechSynthesisUtterance(text)
-  utterance.lang = 'en-US'
-  utterance.rate = 0.92
-  window.speechSynthesis.speak(utterance)
-  onListenPlay()
-}
-
 function applyState(data) {
   if (prepTimer) { clearTimeout(prepTimer); prepTimer = null }
-  stopListeningText()
   state.value = data
+  submissionRequestId.value = ''
   if (data.last_feedback) lastFeedback.value = data.last_feedback
   // reset per-section inputs
   choice.value = null
@@ -673,25 +637,68 @@ function applyState(data) {
   }
 }
 
-function schedulePrepPoll() {
+function retryAfterMs(error, fallbackMs) {
+  const headers = error?.response?.headers
+  const raw = headers?.['retry-after'] ?? headers?.get?.('retry-after')
+  if (raw == null || raw === '') return fallbackMs
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(5 * 60 * 1000, Math.max(1000, Math.ceil(seconds * 1000)))
+  }
+  const retryAt = Date.parse(raw)
+  if (Number.isFinite(retryAt)) {
+    return Math.min(5 * 60 * 1000, Math.max(1000, retryAt - Date.now()))
+  }
+  return fallbackMs
+}
+
+function handleRequestError(error, fallbackMessage) {
+  if (error?.response?.status !== 429) {
+    loadError.value = getErrorMessage(error, fallbackMessage)
+    return
+  }
+  const delayMs = retryAfterMs(error, 30_000)
+  const seconds = Math.max(1, Math.ceil(delayMs / 1000))
+  rateLimitBlocked.value = true
+  if (rateLimitTimer) clearTimeout(rateLimitTimer)
+  rateLimitTimer = setTimeout(() => {
+    rateLimitTimer = null
+    rateLimitBlocked.value = false
+  }, delayMs)
+  loadError.value = `Too many requests. Please retry in ${seconds} seconds.`
+}
+
+async function recoverStaleState(error) {
+  const detail = error?.response?.data?.detail
+  if (detail?.code !== 'stale_exam_state' || !sessionId.value) return false
+  try {
+    applyState(await fetchExamState(sessionId.value))
+    loadError.value = 'The exam advanced before this answer arrived. Review the current question and answer again.'
+  } catch (refreshError) {
+    handleRequestError(refreshError, 'The exam state changed and could not be refreshed')
+  }
+  return true
+}
+
+function schedulePrepPoll(delayMs = 2500) {
   prepAttempts += 1
   if (prepAttempts > 30) {
-    // ~75s with no content -> background generation likely failed; let the student start over.
-    loadError.value = 'Preparing your exam is taking too long. Please start over.'
-    view.value = 'intro'
+    loadError.value = 'Required exam content is temporarily unavailable. Your answers were preserved.'
+    state.value = { ...state.value, phase: 'content_unavailable', evidence_status: 'content_unavailable' }
     return
   }
   prepTimer = setTimeout(async () => {
+    prepTimer = null
     try {
       applyState(await fetchExamState(sessionId.value))
-    } catch {
-      schedulePrepPoll()
+    } catch (e) {
+      schedulePrepPoll(retryAfterMs(e, 2500))
     }
-  }, 2500)
+  }, delayMs)
 }
 
 async function start() {
-  if (busy.value) return
+  if (busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
@@ -701,14 +708,27 @@ async function start() {
     speakingChat.value = []
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not start the exam')
+    handleRequestError(e, 'Could not start the exam')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function retryContent() {
+  if (!sessionId.value || busy.value || rateLimitBlocked.value) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    applyState(await fetchExamState(sessionId.value))
+  } catch (e) {
+    handleRequestError(e, 'Could not retry section preparation')
   } finally {
     busy.value = false
   }
 }
 
 async function startFresh() {
-  if (busy.value) return
+  if (busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
@@ -734,60 +754,91 @@ async function startFresh() {
 }
 
 async function sendSpeaking() {
-  if (!recorder.audioBlob.value || !spokenText.value || busy.value || transcribing.value) return
+  if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
-    const submittedTranscript = spokenText.value.trim()
     const data = await submitSpeakingTurn(
       sessionId.value,
       recorder.audioBlob.value,
       recorder.elapsed.value,
-      submittedTranscript,
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      state.value.turn_token || state.value.speaking?.turn_token,
     )
     // Show what the student said as a chat bubble (no scoring shown until the final report).
-    pushStudent(data.last_feedback?.transcription || submittedTranscript)
+    pushStudent(data.last_feedback?.transcription)
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not submit your answer')
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your answer')
   } finally {
     busy.value = false
   }
 }
 
 async function sendMcq() {
-  if (choice.value === null || busy.value) return
+  if (choice.value === null || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
-    const data = await answerExamMcq(sessionId.value, choice.value)
+    const data = await answerExamMcq(
+      sessionId.value,
+      choice.value,
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      state.value.question_token || state.value.mcq?.question_token,
+    )
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not save your answer')
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not save your answer')
   } finally {
     busy.value = false
   }
 }
 
 async function sendWriting() {
-  if (wordCount.value < (state.value?.writing?.min_words || 0) || busy.value) return
+  if (wordCount.value < (state.value?.writing?.min_words || 0) || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
-    const data = await submitExamWriting(sessionId.value, writingText.value.trim())
+    const data = await submitExamWriting(
+      sessionId.value,
+      writingText.value.trim(),
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      state.value.prompt_token || state.value.writing?.prompt_token,
+    )
     if (data.status === 'processing') {
       startEvaluating()
     } else {
       applyState(data)
     }
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not submit your writing')
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your writing')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function retryEvaluation() {
+  if (!sessionId.value || busy.value || rateLimitBlocked.value) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    await retryExamEvaluation(sessionId.value)
+    evaluationFailed.value = false
+    startEvaluating()
+  } catch (e) {
+    handleRequestError(e, 'Could not retry the placement evaluation')
   } finally {
     busy.value = false
   }
 }
 
 function startEvaluating() {
+  finishLoading()
+  const runId = pollRunId
+  evaluationFailed.value = false
   view.value = 'evaluating'
   let i = 0
   loaderMsg.value = LOADER_MESSAGES[0]
@@ -797,29 +848,39 @@ function startEvaluating() {
   }, 1500)
   const startedAt = Date.now()
   let attempts = 0
-  pollTimer = setInterval(async () => {
+  const pollReport = async () => {
+    pollTimer = null
     attempts += 1
+    let nextDelay = 2000
     try {
       const r = await fetchExamReport(sessionId.value)
+      if (runId !== pollRunId) return
       const elapsed = Date.now() - startedAt
       if (r.status === 'completed' && r.report && elapsed >= 4000) {
         report.value = r.report
         finishLoading()
         view.value = 'report'
+        return
       } else if (r.status === 'failed') {
         finishLoading()
-        loadError.value = 'The report could not be generated. Please try again.'
+        evaluationFailed.value = true
+        loadError.value = r.error_message || 'The report could not be generated. Please retry the evaluation.'
         view.value = 'intro'
+        return
       }
-    } catch {
-      /* keep polling */
+    } catch (e) {
+      if (runId !== pollRunId) return
+      nextDelay = retryAfterMs(e, 2000)
     }
     if (attempts > 45) {
       finishLoading()
       loadError.value = 'Report is taking too long. Please try again later.'
       view.value = 'intro'
+      return
     }
-  }, 2000)
+    if (runId === pollRunId) pollTimer = setTimeout(pollReport, nextDelay)
+  }
+  pollTimer = setTimeout(pollReport, 0)
 }
 
 async function loadReport() {
@@ -830,14 +891,18 @@ async function loadReport() {
       view.value = 'report'
     }
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not load your report')
+    if (e?.response?.status === 429) {
+      pollTimer = setTimeout(loadReport, retryAfterMs(e, 30_000))
+    } else {
+      loadError.value = getErrorMessage(e, 'Could not load your report')
+    }
   }
 }
 
 function finishLoading() {
-  stopListeningText()
+  pollRunId += 1
   if (loaderTimer) clearInterval(loaderTimer)
-  if (pollTimer) clearInterval(pollTimer)
+  if (pollTimer) clearTimeout(pollTimer)
   if (prepTimer) clearTimeout(prepTimer)
   loaderTimer = null
   pollTimer = null
@@ -861,7 +926,10 @@ async function restart() {
   view.value = 'intro'
 }
 
-onUnmounted(finishLoading)
+onUnmounted(() => {
+  finishLoading()
+  if (rateLimitTimer) clearTimeout(rateLimitTimer)
+})
 </script>
 
 <style scoped>
