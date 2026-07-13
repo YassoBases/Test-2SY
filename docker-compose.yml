@@ -97,6 +97,59 @@ services:
         "--reload",
       ]
 
+  db-test:
+    profiles: ["test"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eduspark_test
+      POSTGRES_PASSWORD: eduspark_test
+      POSTGRES_DB: eduspark_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eduspark_test -d eduspark_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  backend-test:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      DOCKER_COMPOSE: "1"
+      DEBUG: "false"
+      JWT_SECRET: test-only-placement-suite-secret-with-sufficient-entropy
+      POSTGRES_HOST: db-test
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: eduspark_test
+      POSTGRES_PASSWORD: eduspark_test
+      POSTGRES_DB: eduspark_test
+      DATABASE_URL: postgresql+asyncpg://eduspark_test:eduspark_test@db-test:5432/eduspark_test
+      DATABASE_URL_SYNC: postgresql+psycopg2://eduspark_test:eduspark_test@db-test:5432/eduspark_test
+      SYNC_DATABASE_URL: postgresql+psycopg2://eduspark_test:eduspark_test@db-test:5432/eduspark_test
+      TEST_DATABASE_NAME: eduspark_test
+      TEST_DATABASE_HOST: db-test
+      TEST_DATABASE_RESET_ALLOWED: "1"
+      APPLY_LEGACY_SCHEMA_PATCHES: "false"
+      ENABLE_EMBEDDINGS: "false"
+      ENABLE_FAISS: "false"
+      ENABLE_PGVECTOR: "false"
+      ENABLE_TTS: "false"
+      ENABLE_WHISPER: "false"
+      LANGUAGE_TTS_PROVIDER: disabled
+      LANGUAGE_STT_PROVIDER: openai
+      LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: "false"
+      LANGUAGE_CONVERSATION_MOCK_AI: "true"
+      UPLOAD_DIR: /tmp/eduspark-test-uploads
+    tmpfs:
+      - /tmp/eduspark-test-uploads
+    depends_on:
+      db-test:
+        condition: service_healthy
+
   frontend:
     build:
       context: .
