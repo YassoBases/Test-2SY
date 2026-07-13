@@ -34,6 +34,7 @@ from app.schemas.language_exam import (
     SpeakingTurnAssessment,
     WritingGradeSchema,
 )
+from app.services import language_exam_service
 from app.services.language_audio_security_service import ValidatedAudio
 from app.services.language_exam_service import ExamAIError
 from app.services.language_transcription_service import ConversationTranscription
@@ -911,6 +912,56 @@ async def test_ai_grading_failure_creates_no_profile_or_analytics_projection(
     assert evaluation["evaluation_status"] == "scorer_unavailable"
     assert evaluation["error_code"] == "scorer_unavailable"
     assert evaluation["evaluation_lease_expires_at"] is None
+
+    async with postgres_session_factory() as db:
+        analytics = await db.get(
+            LanguageAnalytics,
+            {"student_id": record.student_id, "language_id": record.language_id},
+        )
+        profile = (
+            await db.execute(
+                select(LanguageStudentProfile).where(
+                    LanguageStudentProfile.student_id == record.student_id,
+                    LanguageStudentProfile.language_id == record.language_id,
+                )
+            )
+        ).scalar_one_or_none()
+    assert analytics is None
+    assert profile is None
+
+
+async def test_malformed_ai_grading_output_leaves_the_session_safely_failed(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """A schema-invalid (not merely absent) AI grading response must fail the exam the same
+    safe way an outright-unavailable grader already does: no level, no profile/analytics rows,
+    no silent completion."""
+
+    record = await exam_record_factory(state=_completed_evidence_state(), status="evaluating")
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(language_exam.ai_engine, "_mock", False)
+
+    async def malformed_llm_json(*_args, **_kwargs):
+        # Schema-invalid: "fluency" is out of the 0.0-10.0 range Pydantic enforces.
+        return (
+            '{"level": "B1", "fluency": 999.0, "lexical": 5.0, "grammar": 5.0, '
+            '"pronunciation": 0.0, "score": 5.0}'
+        )
+
+    monkeypatch.setattr(language_exam_service, "generate_llm_json", malformed_llm_json)
+
+    await language_exam._run_evaluation(record.session_id)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    evaluation = stored.exam_state["evaluation"]
+    assert stored.status == "failed"
+    assert stored.is_completed is False
+    assert stored.assessment_report is None
+    assert evaluation["evaluation_status"] == "scorer_unavailable"
+    assert evaluation["error_code"] == "scorer_unavailable"
 
     async with postgres_session_factory() as db:
         analytics = await db.get(

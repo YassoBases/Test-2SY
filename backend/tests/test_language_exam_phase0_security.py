@@ -19,6 +19,7 @@ from app.api.language_exam import (
 )
 from app.schemas.language_exam import McqPromptOut
 from app.services import language_rate_limit_service as rate_limit
+from app.services import language_exam_service
 from app.services.language_exam_service import (
     AIEngineService,
     ExamAIError,
@@ -187,6 +188,76 @@ def test_unavailable_ai_grader_fails_closed_instead_of_awarding_a_level(method_n
         call = engine.grade_writing(
             prompt_text="Write about your school.",
             answer="A sufficiently long answer that must never receive a fabricated C-level score.",
+            effective_level="C2",
+        )
+    else:
+        call = engine.grade_speaking(
+            evidence=build_verified_speaking_evidence([_spoken_result(1)], []),
+            effective_level="C2",
+        )
+    with pytest.raises(ExamAIError):
+        asyncio.run(call)
+
+
+_WRITING_MALFORMED_JSON = {
+    "missing_field": '{"task_achievement": 5.0, "coherence": 5.0, "lexical": 5.0, "grammar": 5.0, "score": 5.0}',
+    "wrong_type": '{"level": "B1", "task_achievement": "high", "coherence": 5.0, "lexical": 5.0, "grammar": 5.0, "score": 5.0}',
+    "out_of_range": '{"level": "B1", "task_achievement": 999.0, "coherence": 5.0, "lexical": 5.0, "grammar": 5.0, "score": 5.0}',
+    "invalid_cefr": '{"level": "Z9", "task_achievement": 5.0, "coherence": 5.0, "lexical": 5.0, "grammar": 5.0, "score": 5.0}',
+    "unparseable": "not json at all",
+}
+_SPEAKING_MALFORMED_JSON = {
+    "missing_field": '{"fluency": 5.0, "lexical": 5.0, "grammar": 5.0, "pronunciation": 0.0, "score": 5.0}',
+    "wrong_type": '{"level": "B1", "fluency": "high", "lexical": 5.0, "grammar": 5.0, "pronunciation": 0.0, "score": 5.0}',
+    "out_of_range": '{"level": "B1", "fluency": 999.0, "lexical": 5.0, "grammar": 5.0, "pronunciation": 0.0, "score": 5.0}',
+    "invalid_cefr": '{"level": "Z9", "fluency": 5.0, "lexical": 5.0, "grammar": 5.0, "pronunciation": 0.0, "score": 5.0}',
+    "unparseable": "not json at all",
+}
+
+
+@pytest.mark.parametrize(
+    "method_name,malformed_json",
+    [
+        (method_name, payload)
+        for method_name, payloads in (
+            ("grade_writing", _WRITING_MALFORMED_JSON),
+            ("grade_speaking", _SPEAKING_MALFORMED_JSON),
+        )
+        for payload in payloads.values()
+    ],
+    ids=[
+        f"{method_name}-{case_id}"
+        for method_name, payloads in (
+            ("grade_writing", _WRITING_MALFORMED_JSON),
+            ("grade_speaking", _SPEAKING_MALFORMED_JSON),
+        )
+        for case_id in payloads
+    ],
+)
+def test_malformed_ai_grading_json_fails_closed_instead_of_awarding_a_level(
+    monkeypatch, method_name, malformed_json
+):
+    """Schema-invalid AI output must fail the same way "AI unavailable" already does.
+
+    Unlike test_unavailable_ai_grader_fails_closed_instead_of_awarding_a_level (which forces
+    ``_mock`` so the grader never calls the LLM at all), this forces ``_mock`` OFF so the real
+    _parse_json/model_validate path actually runs against a malformed response. Each method gets
+    its own schema-correct malformed payloads (WritingGradeSchema and SpeakingGradeSchema use
+    different field names) — reusing one payload set for both let bad values land on fields the
+    other schema doesn't have, where Pydantic silently ignores them instead of failing.
+    """
+    engine = AIEngineService()
+    engine._mock = False
+
+    async def fake_generate_llm_json(*_args, **_kwargs):
+        return malformed_json
+
+    monkeypatch.setattr(language_exam_service, "generate_llm_json", fake_generate_llm_json)
+
+    if method_name == "grade_writing":
+        call = engine.grade_writing(
+            prompt_text="Write about your school.",
+            answer="A sufficiently long answer that must never receive a fabricated score.",
             effective_level="C2",
         )
     else:

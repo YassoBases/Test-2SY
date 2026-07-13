@@ -382,6 +382,128 @@ async def test_client_transcript_field_is_ignored_by_actual_speaking_endpoint(
         assert result["pronunciation_status"] == "unassessed"
 
 
+async def _seed_student(postgres_session_factory) -> int:
+    marker = uuid.uuid4().hex[:12]
+    async with postgres_session_factory() as db:
+        user = User(
+            email=f"placement-other-{marker}@example.test",
+            name="Other Student",
+            hashed_password="not-used",
+            role=UserRole.student,
+        )
+        db.add(user)
+        await db.commit()
+        return user.id
+
+
+def _ownership_state() -> dict:
+    return {
+        "version": 3,
+        "state_revision": 1,
+        "sections": ["speaking", "reading", "writing"],
+        "cursor": 0,
+        "reading": {
+            "ready": True,
+            "pool": {
+                "A2": {
+                    "level": "A2",
+                    "question": "Choose A.",
+                    "options": ["A", "B"],
+                    "correct_index": 0,
+                    "question_token": "reading-question-token-0001",
+                }
+            },
+            "current_level": "A2",
+            "asked": [],
+            "max_steps": 1,
+            "done": False,
+        },
+        "writing": {
+            "ready": True,
+            "prompt": "Write.",
+            "prompt_token": "writing-prompt-token-0001",
+            "min_words": 40,
+            "response": None,
+            "done": False,
+        },
+        "speaking": {
+            "total_turns": 1,
+            "turn": 1,
+            "pending_question": "Tell me about your day.",
+            "turn_token": "speaking-turn-token-0001",
+            "results": [],
+            "done": False,
+        },
+    }
+
+
+@pytest.mark.integration
+@pytest.mark.postgresql
+async def test_student_cannot_access_or_mutate_another_students_exam_session(
+    api_client, asgi_app, postgres_session_factory
+):
+    """Student B must get 404 from every exam route when addressing student A's session_id."""
+    owner_id, _language_id, session_id = await _seed_session(
+        postgres_session_factory, _ownership_state()
+    )
+    other_student_id = await _seed_student(postgres_session_factory)
+    assert other_student_id != owner_id
+
+    dependencies = _install_exam_overrides(
+        asgi_app, postgres_session_factory, student_id=other_student_id
+    )
+    try:
+        state_resp = await api_client.get(f"/api/student/languages/exam/{session_id}/state")
+        answer_resp = await api_client.post(
+            f"/api/student/languages/exam/{session_id}/answer",
+            json={
+                "choice_index": 0,
+                "request_id": "owner-check-answer-0001",
+                "state_revision": 1,
+                "question_token": "reading-question-token-0001",
+            },
+        )
+        writing_resp = await api_client.post(
+            f"/api/student/languages/exam/{session_id}/writing",
+            json={
+                "text": " ".join(f"word{i}" for i in range(40)),
+                "request_id": "owner-check-writing-0001",
+                "state_revision": 1,
+                "prompt_token": "writing-prompt-token-0001",
+            },
+        )
+        speaking_resp = await api_client.post(
+            f"/api/student/languages/exam/{session_id}/speaking/turn",
+            data={
+                "request_id": "owner-check-speaking-0001",
+                "state_revision": "1",
+                "turn_token": "speaking-turn-token-0001",
+            },
+            files={"file": ("answer.webm", b"unused-ownership-fails-first", "audio/webm")},
+        )
+        abandon_resp = await api_client.post(f"/api/student/languages/exam/{session_id}/abandon")
+        report_resp = await api_client.get(f"/api/student/languages/exam/{session_id}/report")
+    finally:
+        _clear_exam_overrides(asgi_app, dependencies)
+
+    for label, response in (
+        ("state", state_resp),
+        ("answer", answer_resp),
+        ("writing", writing_resp),
+        ("speaking/turn", speaking_resp),
+        ("abandon", abandon_resp),
+        ("report", report_resp),
+    ):
+        assert response.status_code == 404, f"{label}: expected 404, got {response.status_code}: {response.text}"
+
+    async with postgres_session_factory() as db:
+        session = await db.get(LanguageExamSession, session_id)
+        assert session.status == "in_progress"
+        assert session.exam_state["state_revision"] == 1
+        assert session.exam_state["writing"]["response"] is None
+        assert session.exam_state["speaking"]["results"] == []
+
+
 @pytest.mark.integration
 @pytest.mark.postgresql
 async def test_rate_limit_header_is_returned_by_actual_state_endpoint(
