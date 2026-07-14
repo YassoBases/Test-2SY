@@ -620,6 +620,9 @@ function applyState(data) {
   if (prepTimer) { clearTimeout(prepTimer); prepTimer = null }
   state.value = data
   submissionRequestId.value = ''
+  // A freshly-applied, current state supersedes any earlier error (e.g. a stale-answer recovery
+  // or a prior failed attempt) -- never leave an old banner showing next to a now-current question.
+  loadError.value = ''
   if (data.last_feedback) lastFeedback.value = data.last_feedback
   // reset per-section inputs
   choice.value = null
@@ -675,8 +678,11 @@ async function recoverStaleState(error) {
   const detail = error?.response?.data?.detail
   if (detail?.code !== 'stale_exam_state' || !sessionId.value) return false
   try {
+    // Silent recovery: the UI now shows the true current question, so no scary banner is shown
+    // for a stale answer once we've successfully resynced -- applyState() clears any leftover
+    // loadError from the request that just got rejected. Only a genuine recovery failure (below)
+    // or a non-stale error (handled by the caller) should ever surface a visible message.
     applyState(await fetchExamState(sessionId.value))
-    loadError.value = 'The exam advanced before this answer arrived. Review the current question and answer again.'
   } catch (refreshError) {
     handleRequestError(refreshError, 'The exam state changed and could not be refreshed')
   }
