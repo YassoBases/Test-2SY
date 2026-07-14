@@ -620,6 +620,127 @@ async def test_retry_recovers_listening_after_a_transient_preparation_failure(
     assert latest["speaking"]["done"] is True
 
 
+async def test_materialize_listening_audio_times_out_gracefully_instead_of_hanging(
+    monkeypatch,
+) -> None:
+    """Root-cause regression: a cold Supertonic engine load observed to take several minutes on
+    the very first synthesis of a fresh process (confirmed in production logs: 'Fetching 26
+    files... [04:02<...]'). A single slow/hanging TTS call must not block content preparation
+    indefinitely -- it must time out and gracefully drop this rung (existing policy: missing audio
+    removes the rung instead of exposing its transcript), not hang or raise."""
+    monkeypatch.setattr(language_exam, "_LISTENING_TTS_TIMEOUT_S", 0.05)
+
+    async def hanging_synthesize(_text):
+        await asyncio.sleep(1)
+        return "/uploads/language_exam_audio/should-never-be-used.wav"
+
+    monkeypatch.setattr(language_exam, "synthesize_exam_audio", hanging_synthesize)
+
+    item = {"audio_text": "A slow item.", "level": "A2"}
+    audio_url, audio_text, created = await language_exam._materialize_listening_audio(None, item)
+
+    assert audio_url is None
+    assert created is False
+    assert audio_text == "A slow item."
+
+
+async def test_maybe_retrigger_prep_clears_stale_evidence_status_and_error_code(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Regression for why retry appeared not to work even after the debounce fix: a prior failed
+    attempt marks content_prep_error_code and the current section's own evidence_status as
+    content_unavailable. Without clearing these on a fresh retrigger, get_state's own `unavailable`
+    check (which ORs the per-section evidence_status together with the top-level
+    content_prep_status) keeps reporting content_unavailable to the frontend even while a genuinely
+    new _prepare_content attempt is running -- silently defeating retry."""
+    state = _speaking_done_preparing_state()
+    state["content_prep_status"] = "content_unavailable"
+    state["content_prep_error_code"] = "content_generation_rate_limited"
+    state["content_prep_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=language_exam._PREP_RETRY_AFTER_S + 1)
+    ).isoformat()
+    state["listening"]["evidence_status"] = "content_unavailable"
+    record = await exam_record_factory(state=state)
+
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        triggered = language_exam._maybe_retrigger_prep(sess, record.language_id, BackgroundTasks())
+        assert triggered is True
+        assert sess.exam_state["content_prep_status"] == "preparing"
+        assert "content_prep_error_code" not in sess.exam_state
+        assert sess.exam_state["listening"]["evidence_status"] == "retry_required"
+        await db.commit()
+
+
+async def test_repeated_polling_within_debounce_schedules_exactly_one_attempt(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """'Retry must start one clean preparation attempt, not multiple overlapping attempts' and
+    'must not consume rate-limit quota repeatedly due to polling': simulating several /state polls
+    landing within the same debounce window (e.g. rapid frontend auto-polling) must only ever
+    schedule _prepare_content -- and therefore only ever consume one placement_generation
+    rate-limit hit -- once, not once per poll."""
+    state = _speaking_done_preparing_state()
+    state["content_prep_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=language_exam._PREP_RETRY_AFTER_S + 1)
+    ).isoformat()
+    record = await exam_record_factory(state=state)
+
+    results = []
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        for _ in range(5):
+            results.append(language_exam._maybe_retrigger_prep(sess, record.language_id, BackgroundTasks()))
+        await db.commit()
+
+    assert results == [True, False, False, False, False]
+
+
+async def test_stale_prep_token_cannot_overwrite_newer_successful_content(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """'Test that stale content_prep_token attempts cannot overwrite newer successful content':
+    an old, superseded _prepare_content attempt (carrying a prep_token that no longer matches the
+    session's current content_prep_token, e.g. because a retrigger already took over) must never
+    merge its results over already-current data, even if it finishes after the newer attempt has
+    already taken over."""
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    state = _speaking_done_preparing_state(prep_token="stale-token-0000000000000001")
+    record = await exam_record_factory(state=state)
+
+    # Simulate a newer attempt having already taken over before the stale one's work finishes.
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        new_state = {**sess.exam_state, "content_prep_token": "current-token-0000000000001"}
+        sess.exam_state = new_state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+
+    stale_prepared = {
+        "reading": {"ready": True, "pool": {"A2": {"question": "stale"}}},
+        "listening": {"ready": True, "pool": {"A2": {"question": "stale", "audio_url": "/x.wav"}}},
+        "grammar_vocab": {"ready": True, "pool": {"A2": {"question": "stale"}}},
+        "writing": {"prompt": "stale prompt", "ready": True},
+    }
+    merged = await language_exam._merge_prepared_content(
+        session_id=record.session_id,
+        prep_token="stale-token-0000000000000001",
+        source_revision=state["state_revision"],
+        prepared=stale_prepared,
+    )
+    assert merged is False
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    latest = stored.exam_state
+    assert latest["content_prep_token"] == "current-token-0000000000001"
+    assert latest["listening"]["ready"] is False
+    assert not latest["listening"].get("pool")
+
+
 def _mcq_state() -> dict:
     return {
         "version": 3,

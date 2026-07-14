@@ -1070,10 +1070,22 @@ async def _resolve_listening_audio_text(db: AsyncSession | None, item: dict) -> 
     return text or None
 
 
+_LISTENING_TTS_TIMEOUT_S = 25
+
+
 async def _materialize_listening_audio(
     db: AsyncSession | None, item: dict
 ) -> tuple[str | None, str | None, bool]:
-    """Ensure a listening item has a real audio URL generated from its own transcript."""
+    """Ensure a listening item has a real audio URL generated from its own transcript.
+
+    Bounded by _LISTENING_TTS_TIMEOUT_S: a cold Supertonic engine can take minutes to load on the
+    very first synthesis of a fresh process (one-time model download). Rather than letting that
+    block this item -- and every later item in the same _prepare_content pass -- indefinitely, a
+    slow attempt times out and this rung is dropped (existing graceful-degradation policy: missing
+    audio removes the rung instead of exposing its transcript). The underlying engine load itself
+    is not cancelled by this timeout (see _ensure_engine_loaded's asyncio.shield) -- it keeps
+    warming up in the background, so the next item, the next retry, or the next session's attempt
+    finds it already loaded and completes quickly."""
 
     audio_url = await _resolve_listening_audio(db, item)
     audio_text = await _resolve_listening_audio_text(db, item)
@@ -1084,7 +1096,9 @@ async def _materialize_listening_audio(
 
     generated_url = None
     try:
-        generated_url = await synthesize_exam_audio(audio_text)
+        generated_url = await asyncio.wait_for(
+            synthesize_exam_audio(audio_text), timeout=_LISTENING_TTS_TIMEOUT_S
+        )
     except Exception as exc:  # pragma: no cover - model/runtime variance
         logger.warning("Placement listening TTS failed error_type=%s", type(exc).__name__)
 
@@ -1946,25 +1960,34 @@ def _cleanup_exam_audio(state: dict) -> None:
             pass
 
 
-_PREP_RETRY_AFTER_S = 90
-# Listening content prep has no cached/pre-synthesized audio for any bank item (confirmed: every
-# listening bank row's audio_meta_json is empty), so a normal, successful run needs up to six
-# sequential TTS synthesis calls (one per CEFR level) plus reading/writing LLM generation --
-# comfortably longer than a short debounce. A too-short value here causes _maybe_retrigger_prep to
-# fire again while the first attempt is still legitimately in flight: the redundant second
-# _prepare_content both wastes the first attempt's work (discarded at merge time as stale, see
-# _merge_prepared_content's content_prep_token check) and burns an extra hit from the
+_PREP_RETRY_AFTER_S = 150
+# Root cause (confirmed from logs): the Supertonic TTS engine is loaded lazily and cached for the
+# lifetime of the process (see _tts_engine in language_supertonic_service.py). The very first
+# synthesis after a fresh process start can trigger a one-time model download observed to take
+# several minutes ("Fetching 26 files... [04:02<...]"); every listening bank row's audio_meta_json
+# is empty (confirmed), so a normal run needs up to six sequential per-level TTS calls with no
+# cache to fall back on. Each call is now individually bounded by _LISTENING_TTS_TIMEOUT_S (a slow
+# item's rung is dropped, existing graceful-degradation policy -- the shared engine load itself is
+# never cancelled, see _ensure_engine_loaded's asyncio.shield), so 150s (6 x 25s) comfortably covers
+# the worst realistic case for one _prepare_content pass. A too-short value here causes
+# _maybe_retrigger_prep to fire again while the first attempt is still legitimately in flight: the
+# redundant second _prepare_content both wastes the first attempt's work (discarded at merge time
+# as stale, see _merge_prepared_content's content_prep_token check) and burns an extra hit from the
 # "placement_generation" rate limit (3 per 300s, keyed per session) for no benefit -- eventually
 # exhausting it and landing the section in content_unavailable purely from self-inflicted retries,
-# not genuine abuse. It has also been observed to race the Supertonic model loader's own temp-file
-# staging when two attempts overlap. 90s comfortably exceeds realistic total prep time while still
-# self-healing a genuinely dead background task (e.g. after a server restart) promptly.
+# not genuine abuse.
 
 
 def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, background_tasks: BackgroundTasks) -> bool:
     """Self-heal: if the current section's content never got generated (background task died /
     server restarted), re-launch _prepare_content -- but not more often than every
-    _PREP_RETRY_AFTER_S seconds (see that constant's comment for why the value matters)."""
+    _PREP_RETRY_AFTER_S seconds (see that constant's comment for why the value matters).
+
+    Clears the stale content_unavailable markers (per-section evidence_status and the top-level
+    content_prep_error_code) that a prior failed attempt may have left behind. Without this, a
+    freshly retriggered attempt would still read back as content_unavailable to the caller (see
+    get_state's `unavailable` check, which also looks at the per-section evidence_status) even
+    though a brand new _prepare_content is genuinely running -- silently defeating retry."""
     state = sess.exam_state or {}
     section = _current_section(state)
     if section not in PREPARED_SECTIONS:
@@ -1982,6 +2005,10 @@ def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, backgroun
     state["content_prep_at"] = now.isoformat()
     state["content_prep_token"] = _new_exam_token()
     state["content_prep_status"] = "preparing"
+    state.pop("content_prep_error_code", None)
+    for prepared_section in PREPARED_SECTIONS:
+        if not state.get(prepared_section, {}).get("ready"):
+            state.setdefault(prepared_section, {})["evidence_status"] = "retry_required"
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     background_tasks.add_task(_prepare_content, sess.id, language_id, state.get("start_level_hint") or "A2")

@@ -728,6 +728,11 @@ async function retryContent() {
   if (!sessionId.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
+  // An explicit retry always gets a fresh auto-poll budget. Without this, once prepAttempts had
+  // already passed 30 from an earlier wait, applyState's "phase === 'preparing' -> schedulePrepPoll()"
+  // path would immediately re-exceed the cap on the very next tick and show "temporarily
+  // unavailable" again even though the server had genuinely just started a new attempt.
+  prepAttempts = 0
   try {
     applyState(await fetchExamState(sessionId.value))
   } catch (e) {

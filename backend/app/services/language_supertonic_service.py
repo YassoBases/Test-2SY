@@ -38,6 +38,29 @@ def _voice_style(voice_name: str):
     return _tts_engine().get_voice_style(voice_name)
 
 
+_engine_load_task: asyncio.Task | None = None
+
+
+async def _ensure_engine_loaded() -> None:
+    """Lazily load the Supertonic engine exactly once, even under concurrent callers.
+
+    The first real synthesis after a fresh process start can trigger a one-time model download
+    that takes minutes. Without this guard, multiple concurrent callers (e.g. several listening
+    content-preparation attempts overlapping) would each independently call TTS(auto_download=True),
+    racing on the same on-disk download staging directory (observed: "Directory not empty" cleanup
+    warnings and outright download failures). asyncio.shield ensures a caller that stops waiting
+    (e.g. an outer per-item timeout) never cancels the shared load itself -- it keeps running in
+    the background, and the very next caller (or the same one retrying) reuses the same in-flight
+    load instead of starting a duplicate.
+    """
+    global _engine_load_task
+    if _tts_engine.cache_info().currsize > 0:
+        return
+    if _engine_load_task is None:
+        _engine_load_task = asyncio.ensure_future(asyncio.to_thread(_tts_engine))
+    await asyncio.shield(_engine_load_task)
+
+
 def _synthesize_sync(text: str, *, language: str, output_path: Path, voice_name: str) -> bool:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     engine = _tts_engine()
@@ -63,6 +86,7 @@ async def synthesize_language_speech(
     voice = (voice_name or settings.LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
     lang = (language or "en").strip().lower()
     try:
+        await _ensure_engine_loaded()
         return await asyncio.to_thread(
             _synthesize_sync,
             cleaned,
