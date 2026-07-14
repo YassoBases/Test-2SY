@@ -1699,6 +1699,128 @@ async def test_select_placement_bank_items_exclude_subskills_is_a_soft_optional_
     assert with_exclusion == []
 
 
+async def test_speaking_bank_prompt_falls_back_to_adjacent_level_for_unused_subskill(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Regression for the QA-observed repeated self_intro/self_intro: when the target level's
+    only subskill has already been used this session (e.g. A1 = self_intro only), and no other
+    subskill exists at that level, _speaking_bank_prompt must search an adjacent CEFR level
+    (+/-1 band) for an unused subskill before ever repeating the used one -- priority order steps
+    1 then 2."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    used_a1_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A1",
+        prompt_text="ALREADY_USED_SELF_INTRO",
+        subskill="self_intro",
+    )
+    fresh_a2_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="FRESH_ROUTINE_DESCRIPTION",
+        subskill="routine_description",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db,
+            language_id=record.language_id,
+            level_str="A1",
+            used_item_ids={used_a1_id},
+            used_subskills={"self_intro"},
+        )
+
+    assert item is not None
+    assert item["bank_item_id"] == fresh_a2_id
+    assert item["subskill"] == "routine_description"
+    assert item["level"] == "A2", "must genuinely come from the adjacent level, not the target level"
+
+
+async def test_speaking_bank_prompt_falls_back_to_same_level_repeat_when_no_adjacent_unused_subskill(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """The adjacent-level search is still a soft preference, not a hard requirement (priority
+    order step 3): if neither the target level nor any adjacent level has an unused subskill,
+    selection must still return a valid, not-yet-used prompt at the target level -- even though
+    its subskill repeats -- rather than failing the turn."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    used_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A1",
+        prompt_text="ALREADY_USED_SELF_INTRO",
+        subskill="self_intro",
+    )
+    other_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A1",
+        prompt_text="SECOND_SELF_INTRO_ITEM",
+        subskill="self_intro",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db,
+            language_id=record.language_id,
+            level_str="A1",
+            used_item_ids={used_id},
+            used_subskills={"self_intro"},
+        )
+
+    assert item is not None, "must still produce a prompt when no unused subskill exists anywhere nearby"
+    assert item["bank_item_id"] == other_id
+    assert item["bank_item_id"] != used_id
+
+
+async def test_speaking_bank_prompt_adjacent_level_search_still_excludes_legacy_rows(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """The adjacent-level tier must apply the same MVP-only filter as the target-level tier: a
+    legacy (pre-MVP) row at the adjacent level must never be selected just because it's the only
+    candidate there -- selection must fall through and safely return None (triggering the
+    existing AI-generation fallback) rather than ever surfacing a legacy row."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    used_a1_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A1",
+        prompt_text="ALREADY_USED_SELF_INTRO",
+        subskill="self_intro",
+    )
+    await _insert_legacy_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="LEGACY_SHOULD_NOT_BE_SELECTED",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db,
+            language_id=record.language_id,
+            level_str="A1",
+            used_item_ids={used_a1_id},
+            used_subskills={"self_intro"},
+        )
+
+    assert item is None
+
+
 async def test_old_in_flight_speaking_session_without_pending_bank_item_id_still_works(
     monkeypatch,
     postgres_session_factory,

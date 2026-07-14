@@ -34,8 +34,11 @@ from app.services.language_speaking_placement_seed_service import (
 
 
 _CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]
-_EXPECTED_TOTAL_SEEDS = 30
-_EXPECTED_BASE_SEEDS = 24
+# 30 original (24 base + 6 boundary) + 6-item A1/A2 diversity top-up (3 simple_personal_information
+# + 3 simple_preference) added to fix repeated self_intro/self_intro speaking prompts -- see
+# TASK_TYPES/SPEAKING_PROMPT_SEEDS in language_speaking_placement_seed_service.py.
+_EXPECTED_TOTAL_SEEDS = 36
+_EXPECTED_BASE_SEEDS = 30
 _EXPECTED_BOUNDARY_SEEDS = 6
 
 

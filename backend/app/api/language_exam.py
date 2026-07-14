@@ -787,6 +787,33 @@ _SPEAKING_BANK_SCENARIO = {
 }
 
 
+_SPEAKING_LEVEL_ORDER = [
+    LanguageLevel.A1,
+    LanguageLevel.A2,
+    LanguageLevel.B1,
+    LanguageLevel.B2,
+    LanguageLevel.C1,
+    LanguageLevel.C2,
+]
+
+
+def _adjacent_speaking_levels(level: LanguageLevel) -> list[LanguageLevel]:
+    """CEFR levels exactly one band above/below the given level (closer direction first: up,
+    then down), e.g. B1 -> [B2, A1]; A1 (no lower neighbor) -> [A2]; C2 (no higher neighbor) ->
+    [C1]. Used only by _speaking_bank_prompt's diversity fallback -- never for scoring/level
+    estimation, and never for any other bank skill."""
+    try:
+        rank = _SPEAKING_LEVEL_ORDER.index(level)
+    except ValueError:
+        return []
+    neighbors = []
+    if rank + 1 < len(_SPEAKING_LEVEL_ORDER):
+        neighbors.append(_SPEAKING_LEVEL_ORDER[rank + 1])
+    if rank - 1 >= 0:
+        neighbors.append(_SPEAKING_LEVEL_ORDER[rank - 1])
+    return neighbors
+
+
 async def _speaking_bank_prompt(
     db: AsyncSession,
     *,
@@ -799,51 +826,53 @@ async def _speaking_bank_prompt(
     None if the bank has nothing usable (caller falls back to live scenario/question generation)
     -- mirrors _writing_prompt's exact-level-then-fallback pattern.
 
-    require_mvp_marker=True restricts selection to the curated 30-item MVP bank
+    require_mvp_marker=True restricts selection to the curated MVP bank
     (body_json.review_status="mvp_approved_pending_full_review"), excluding older/legacy
     speaking_prompt rows seeded by the generic seed_placement_question_bank.py script that
     predate it -- those legacy rows are untouched (not deleted/deactivated), just never
     selected here.
 
-    used_subskills, if given, is a soft diversity preference: a candidate whose subskill/task_type
-    hasn't already appeared in this session is preferred over one that has (e.g. avoids
-    self_intro immediately followed by another self_intro). This is never a hard requirement --
-    if no such candidate exists at this level, selection falls back to the plain
-    used_item_ids-only behavior below, so a thin bank can never fail to produce a prompt just
-    because every remaining item shares an already-seen subskill."""
+    used_subskills, if given, is a soft diversity preference applied in priority order (never a
+    hard requirement -- a thin bank can never fail to produce a prompt just because every
+    remaining item shares an already-seen subskill):
+      1. Target level, preferring an item whose subskill/task_type hasn't appeared this session.
+      2. An adjacent CEFR level (+/-1 band), still preferring an unused subskill -- covers levels
+         that today have exactly one subskill of their own (e.g. A1 = self_intro only, A2 =
+         routine_description only), where a second turn at the same level would otherwise always
+         repeat it even though a neighboring level has something fresh.
+      3. Target level again, unused bank_item_id only -- subskill may repeat.
+      4. None -- caller falls back to live AI generation."""
     try:
         lvl = LanguageLevel(level_str)
     except ValueError:
         lvl = LanguageLevel.A2
 
-    if used_subskills:
+    async def _at_level(level: LanguageLevel, *, exclude_subskills: set[str] | None) -> dict | None:
         for row in await select_placement_bank_items(
             db,
             language_id=language_id,
             skill="speaking_prompt",
-            level=lvl,
+            level=level,
             count=1,
             used_item_ids=used_item_ids,
             require_mvp_marker=True,
-            exclude_subskills=used_subskills,
+            exclude_subskills=exclude_subskills,
         ):
             item = bank_item_to_exam_item(row)
             if str(item.get("question") or "").strip():
                 return item
+        return None
 
-    for row in await select_placement_bank_items(
-        db,
-        language_id=language_id,
-        skill="speaking_prompt",
-        level=lvl,
-        count=1,
-        used_item_ids=used_item_ids,
-        require_mvp_marker=True,
-    ):
-        item = bank_item_to_exam_item(row)
-        if str(item.get("question") or "").strip():
+    if used_subskills:
+        item = await _at_level(lvl, exclude_subskills=used_subskills)
+        if item is not None:
             return item
-    return None
+        for neighbor in _adjacent_speaking_levels(lvl):
+            item = await _at_level(neighbor, exclude_subskills=used_subskills)
+            if item is not None:
+                return item
+
+    return await _at_level(lvl, exclude_subskills=None)
 
 
 def _speaking_bank_question_text(item: dict) -> str:

@@ -1,11 +1,12 @@
 """Draft speaking-placement prompt content and seeding logic (Blueprint Phase A0+A1, MVP
 activation).
 
-MVP product decision: the 30 drafted speaking_prompt items are used for MVP placement WITHOUT a
-completed human-review pass. This module must never write or imply that a human review was
-performed -- every item it writes carries an explicit, machine-readable
-"mvp_approved_pending_full_review" / human_reviewed=False marker (see MVP_REVIEW_STATUS below),
-and a full linguistic/content audit is expected after MVP.
+MVP product decision: the drafted speaking_prompt items (originally 30; extended with a small A1/A2
+diversity top-up, see SPEAKING_PROMPT_SEEDS) are used for MVP placement WITHOUT a completed
+human-review pass. This module must never write or imply that a human review was performed --
+every item it writes carries an explicit, machine-readable "mvp_approved_pending_full_review" /
+human_reviewed=False marker (see MVP_REVIEW_STATUS below), and a full linguistic/content audit is
+expected after MVP.
 
 Kept importable/testable under app/services/ (rather than only in backend/scripts/, which is
 excluded from the test Docker image via Dockerfile.test.dockerignore) so the seeding logic and
@@ -49,7 +50,9 @@ OLDER_GRADE_BANDS = ["middle_school", "secondary", "mixed_school"]
 
 TASK_TYPES = (
     "self_intro",
+    "simple_personal_information",
     "routine_description",
+    "simple_preference",
     "past_narration",
     "opinion_justification",
     "compare_contrast",
@@ -69,7 +72,12 @@ DURATION_BY_LEVEL: dict[str, dict[str, int]] = {
 
 COMPONENT_CODE_BY_TASK_TYPE: dict[str, str | None] = {
     "self_intro": "speaking.intro_personal",
+    # Same A1 component as self_intro -- both are personal-information-disclosure tasks at the
+    # same CEFR band, just a different prompt angle (see the taxonomy's existing precedent of
+    # grouping conceptually-similar task types under one component, e.g. past_narration below).
+    "simple_personal_information": "speaking.intro_personal",
     "routine_description": "speaking.describe_routine",
+    "simple_preference": None,  # no existing learner-model component fits a bare preference+reason task yet
     "past_narration": "speaking.justify_opinion",  # existing event-mapping conflates B1 narration into this component
     "opinion_justification": "speaking.justify_opinion",
     "compare_contrast": None,  # no existing learner-model component for this task type yet
@@ -84,10 +92,22 @@ REFERENCE_NOTES_BY_TASK_TYPE: dict[str, str] = {
         "self-description (name, origin, likes). Confirm it asks for nothing beyond a first "
         "name / general origin. Suitable for all grade bands."
     ),
+    "simple_personal_information": (
+        "Reviewer check: prompt asks for one simple, closed-scope personal fact or preference "
+        "(e.g. favorite color, family size) -- deliberately narrower than self_intro's full "
+        "introduction framing, so the two task types read as genuinely different questions. "
+        "Confirm it stays basic/present-tense. Suitable for all grade bands."
+    ),
     "routine_description": (
         "Reviewer check: prompt elicits present-simple habitual description with sequencing "
         "vocabulary. Confirm the scenario stays neutral and age-appropriate; avoid "
         "workplace-specific routines for young learners."
+    ),
+    "simple_preference": (
+        "Reviewer check: prompt asks the student to state a simple preference between two "
+        "everyday options and give one brief reason, using present-tense/simple structures "
+        "appropriate for A2 -- deliberately distinct from routine_description's daily-schedule "
+        "framing. Confirm the topic is neutral and age-appropriate. Suitable for all grade bands."
     ),
     "past_narration": (
         "Reviewer check: prompt requires past-tense narration with some sequencing. Confirm the "
@@ -233,6 +253,30 @@ SPEAKING_PROMPT_SEEDS: list[SpeakingPromptSeed] = [
         situation="You are meeting a host family for the first time during a homestay visit.",
         prompt_text="Introduce yourself to your host family. Tell them your name, where you are from, and your favorite food.",
     ),
+    # --- A1 : simple_personal_information (universal, no age restriction) -----------------
+    # Deliberately distinct from self_intro: one narrow personal-fact question rather than a
+    # full introduction, so an A1-level session has more than one subskill to draw from.
+    _seed(
+        key="A1:simple_personal_information:01",
+        level="A1",
+        subskill="simple_personal_information",
+        situation="A new friend wants to know a little about you.",
+        prompt_text="What is your favorite color? Why do you like it?",
+    ),
+    _seed(
+        key="A1:simple_personal_information:02",
+        level="A1",
+        subskill="simple_personal_information",
+        situation="Someone is asking about your family.",
+        prompt_text="Tell me about your family. How many people are in your family?",
+    ),
+    _seed(
+        key="A1:simple_personal_information:03",
+        level="A1",
+        subskill="simple_personal_information",
+        situation="A classmate is curious about the things you like.",
+        prompt_text="What is your favorite animal? Why do you like it?",
+    ),
     # --- A2 : routine_description (universal, no age restriction) -------------------------
     _seed(
         key="A2:routine_description:01",
@@ -254,6 +298,30 @@ SPEAKING_PROMPT_SEEDS: list[SpeakingPromptSeed] = [
         subskill="routine_description",
         situation="Someone is asking about your school or daily routine.",
         prompt_text="Describe your usual weekday routine. What time do you wake up, what do you do during the day, and what time do you go to bed?",
+    ),
+    # --- A2 : simple_preference (universal, no age restriction) ----------------------------
+    # Deliberately distinct from routine_description: a stated preference plus one reason,
+    # not a daily-schedule description, so an A2-level session has more than one subskill.
+    _seed(
+        key="A2:simple_preference:01",
+        level="A2",
+        subskill="simple_preference",
+        situation="A friend is asking about the things you enjoy.",
+        prompt_text="What is your favorite season of the year? Explain why you like it.",
+    ),
+    _seed(
+        key="A2:simple_preference:02",
+        level="A2",
+        subskill="simple_preference",
+        situation="Someone wants to know your food preferences.",
+        prompt_text="Do you prefer eating at home or eating at a restaurant? Explain your preference.",
+    ),
+    _seed(
+        key="A2:simple_preference:03",
+        level="A2",
+        subskill="simple_preference",
+        situation="A classmate is asking about how you like to relax.",
+        prompt_text="Do you prefer reading books or watching movies? Explain your preference.",
     ),
     # --- B1 : past_narration (universal, no age restriction) ------------------------------
     _seed(
