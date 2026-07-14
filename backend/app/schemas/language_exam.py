@@ -85,6 +85,81 @@ class FinalAcademicReportSchema(BaseModel):
         return round(max(0.0, min(10.0, float(v))), 1)
 
 
+class SpeakingPromptEvidence(BaseModel):
+    """Which speaking prompts were actually used this session -- MVP bank vs. AI fallback,
+    subskill/task-type diversity, and whether curated-bank review metadata was resolvable."""
+
+    prompt_source: str = "unknown"  # mvp_speaking_prompt_bank | fallback_generated | unknown
+    prompt_review_status: str = ""
+    expected_turns: int = 0
+    turns_answered: int = 0
+    unique_bank_items_count: int = 0
+    unique_subskills_count: int = 0
+    repeated_subskills: bool = False
+    subskills_seen: list[str] = Field(default_factory=list)
+    bank_item_ids_present: bool = False
+    fallback_prompt_used: bool = False
+
+
+class SpeakingSttEvidence(BaseModel):
+    """Transcript-availability evidence only -- never a proxy for answer quality/score."""
+
+    provider: str = ""
+    transcripts_count: int = 0
+    empty_transcripts_count: int = 0
+    short_transcripts_count: int = 0
+    total_word_count: int = 0
+    average_words_per_turn: float = 0.0
+    confidence_available: bool = False
+    evidence_status: str = "unavailable"  # usable | limited | insufficient | unavailable
+
+
+class SpeakingLanguageEvaluation(BaseModel):
+    """A read-only restatement of the existing grade_speaking() result -- never a second LLM
+    call, never a new scoring formula. dimensions.pronunciation is always the literal string
+    "unassessed" because no acoustic pronunciation scorer exists for MVP."""
+
+    provider: str = ""
+    source: str = "grade_speaking"
+    dimensions: dict[str, float | str | None] = Field(default_factory=dict)
+    estimated_cefr: str = ""
+    score: float | None = None
+    scoring_changed: bool = False
+
+
+class SpeakingProsodyEvidence(BaseModel):
+    """MVP delivery evidence derived only from audio_duration_seconds + transcript word count
+    (no raw audio, no acoustic/pause/rhythm analysis, no Hume/EVI call of any kind)."""
+
+    provider: str = "derived_duration_transcript"
+    runtime_status: str = "not_implemented"  # available | partial | not_implemented | unavailable
+    speech_rate_wpm: list[float | None] = Field(default_factory=list)
+    average_speech_rate_wpm: float | None = None
+    response_duration_status: str = "unknown"  # under | within | over | unknown
+    short_response_turns: int = 0
+    very_short_response_turns: int = 0
+    acoustic_metrics_available: bool = False
+    pause_metrics_available: bool = False
+    rhythm_metrics_available: bool = False
+    evi_runtime_status: str = "not_implemented"
+
+
+class SpeakingAssessmentCore(BaseModel):
+    """Additive, MVP evidence/auditability layer for Speaking. Labels and evidence only -- never
+    changes final_level, confidence, or grade_speaking's own scoring (scoring_changed is always
+    false and exists only so a future task can grep for when that stops being true)."""
+
+    speaking_assessment_core_version: str = "speaking_assessment_core_mvp_v1"
+    speaking_rubric_version: str = "speaking_llm_transcript_rubric_v1"
+    scoring_changed: bool = False
+    prompt_evidence: SpeakingPromptEvidence = Field(default_factory=SpeakingPromptEvidence)
+    stt_evidence: SpeakingSttEvidence = Field(default_factory=SpeakingSttEvidence)
+    language_evaluation: SpeakingLanguageEvaluation = Field(default_factory=SpeakingLanguageEvaluation)
+    prosody_evidence: SpeakingProsodyEvidence = Field(default_factory=SpeakingProsodyEvidence)
+    review_flags: list[str] = Field(default_factory=list)
+    needs_human_review: bool = False
+
+
 class MultiSkillReportSchema(BaseModel):
     """Final placement report. Per-skill CEFR levels + an AI-written narrative.
 
@@ -130,6 +205,11 @@ class MultiSkillReportSchema(BaseModel):
     cross_phase_consistency: str = "consistent"
     # Components that were deliberately not scored because no authoritative signal exists.
     unassessed_components: list[str] = Field(default_factory=list)
+
+    # Additive MVP evidence/auditability layer (see language_speaking_assessment_core_service.py).
+    # Labels and evidence only -- never changes any of the scoring fields above.
+    assessment_core_version: str = "ai_exam_assessment_core_v1"
+    speaking_assessment: SpeakingAssessmentCore = Field(default_factory=SpeakingAssessmentCore)
 
 
 class ExamNarrativeSchema(BaseModel):

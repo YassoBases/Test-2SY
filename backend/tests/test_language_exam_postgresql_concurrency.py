@@ -2978,3 +2978,171 @@ async def test_placement_completed_at_is_set_once_and_survives_a_retake(
     assert profile.placement_completed_at == first_completed_at
     assert profile.last_assessment_date is not None
     assert profile.last_assessment_date >= first_last_assessment
+
+
+def _completed_evidence_state_with_mvp_bank_turns(bank_item_ids: list[int]) -> dict:
+    """Same shape as _completed_evidence_state(), but with realistic MVP-bank-backed speaking
+    turns (bank_item_id/bank_item_subskill/audio_duration_seconds/stt_engine populated) so the
+    Speaking Assessment Core's bank-metadata lookup and evidence fields have real data to reflect."""
+    state = _completed_evidence_state()
+    subskills = ["self_intro", "routine_description", "past_narration"]
+    state["speaking"]["results"] = [
+        {
+            "question": f"Speaking question {index}",
+            "transcription": f"Verified speaking response number {index} with enough words to be healthy.",
+            "audio_sha256": hashlib.sha256(f"speaking-{index}".encode()).hexdigest(),
+            "audio_duration_seconds": 15.0,
+            "stt_engine": "openai",
+            "bank_item_id": bank_item_ids[index],
+            "bank_item_subskill": subskills[index],
+        }
+        for index in range(3)
+    ]
+    return state
+
+
+async def test_final_report_includes_speaking_assessment_core_with_expected_versions_and_evidence(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Versioning/report test: the final assessment_report must additively carry
+    assessment_core_version, speaking_assessment_core_version, speaking_rubric_version,
+    scoring_changed=false, and evidence reflecting the real MVP-bank-backed turns used."""
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: True)
+
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0}, status="abandoned"
+    )
+    bank_item_ids = [
+        await _insert_speaking_bank_item(
+            postgres_session_factory,
+            language_id=record.language_id,
+            level="B1",
+            prompt_text=f"Prompt {i}",
+            subskill=subskill,
+        )
+        for i, subskill in enumerate(["self_intro", "routine_description", "past_narration"])
+    ]
+
+    state = _completed_evidence_state_with_mvp_bank_turns(bank_item_ids)
+    record = await exam_record_factory(state=state, status="evaluating")
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+
+    speaking_grade = SpeakingGradeSchema(
+        level=CEFRLevel.B1, fluency=6.0, lexical=5.5, grammar=7.0, pronunciation=0.0,
+        score=6.2, feedback="Pronunciation was unassessed.", detected_errors=[],
+    )
+    writing_grade = WritingGradeSchema(
+        level=CEFRLevel.B1, task_achievement=5.0, coherence=5.0, lexical=5.0, grammar=5.0,
+        score=5.0, feedback="A complete response.", detected_errors=[],
+    )
+    narrative = ExamNarrativeSchema(
+        summary="Placement complete.", strengths=["Communicates connected ideas."],
+        weaknesses=["Needs more grammatical range."],
+        recommendations=["Practise connected speech.", "Review verb forms.", "Read daily."],
+        detected_errors=[], recommended_starting_lesson_topic="Past and present verb forms",
+    )
+    monkeypatch.setattr(language_exam.ai_engine, "grade_speaking", lambda **_kwargs: _async(speaking_grade))
+    monkeypatch.setattr(language_exam.ai_engine, "grade_writing", lambda **_kwargs: _async(writing_grade))
+    monkeypatch.setattr(language_exam.ai_engine, "build_final_narrative", lambda **_kwargs: _async(narrative))
+
+    await language_exam._run_evaluation(record.session_id)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    report = stored.assessment_report
+    assert report["assessment_core_version"] == "ai_exam_assessment_core_v1"
+
+    sa = report["speaking_assessment"]
+    assert sa["speaking_assessment_core_version"] == "speaking_assessment_core_mvp_v1"
+    assert sa["speaking_rubric_version"] == "speaking_llm_transcript_rubric_v1"
+    assert sa["scoring_changed"] is False
+    assert sa["language_evaluation"]["scoring_changed"] is False
+
+    prompt_evidence = sa["prompt_evidence"]
+    assert prompt_evidence["expected_turns"] == 3
+    assert prompt_evidence["turns_answered"] == 3
+    assert prompt_evidence["prompt_source"] == "mvp_speaking_prompt_bank"
+    assert prompt_evidence["unique_bank_items_count"] == 3
+    assert prompt_evidence["unique_subskills_count"] == 3
+    assert prompt_evidence["repeated_subskills"] is False
+    assert prompt_evidence["fallback_prompt_used"] is False
+    assert prompt_evidence["prompt_review_status"] == "mvp_approved_pending_full_review"
+    assert "speaking_prompts_pending_full_review" in sa["review_flags"]
+    assert sa["needs_human_review"] is False
+
+    stt_evidence = sa["stt_evidence"]
+    assert stt_evidence["transcripts_count"] == 3
+    assert stt_evidence["empty_transcripts_count"] == 0
+    assert stt_evidence["confidence_available"] is False
+    assert stt_evidence["evidence_status"] == "usable"
+
+    prosody_evidence = sa["prosody_evidence"]
+    assert prosody_evidence["provider"] == "derived_duration_transcript"
+    assert prosody_evidence["runtime_status"] == "partial"
+    assert prosody_evidence["evi_runtime_status"] == "not_implemented"
+    assert prosody_evidence["acoustic_metrics_available"] is False
+    assert prosody_evidence["pause_metrics_available"] is False
+    assert prosody_evidence["rhythm_metrics_available"] is False
+
+
+async def test_speaking_assessment_core_does_not_change_final_scoring_or_completion_behavior(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """No-scoring-change test: adding the Speaking Assessment Core must not alter the final CEFR
+    level, the confidence value, or placement_completed_at behavior -- proven by asserting the
+    exact values the pre-existing (unmodified) grading formula would produce for these fixed,
+    known mocked inputs."""
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: True)
+    record = await exam_record_factory(state=_completed_evidence_state(), status="evaluating")
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+
+    speaking_grade = SpeakingGradeSchema(
+        level=CEFRLevel.B1, fluency=6.0, lexical=5.5, grammar=7.0, pronunciation=0.0,
+        score=6.2, feedback="Pronunciation was unassessed.", detected_errors=[],
+    )
+    writing_grade = WritingGradeSchema(
+        level=CEFRLevel.B1, task_achievement=5.0, coherence=5.0, lexical=5.0, grammar=5.0,
+        score=5.0, feedback="A complete response.", detected_errors=[],
+    )
+    narrative = ExamNarrativeSchema(
+        summary="Placement complete.", strengths=["Communicates connected ideas."],
+        weaknesses=["Needs more grammatical range."],
+        recommendations=["Practise connected speech.", "Review verb forms.", "Read daily."],
+        detected_errors=[], recommended_starting_lesson_topic="Past and present verb forms",
+    )
+    monkeypatch.setattr(language_exam.ai_engine, "grade_speaking", lambda **_kwargs: _async(speaking_grade))
+    monkeypatch.setattr(language_exam.ai_engine, "grade_writing", lambda **_kwargs: _async(writing_grade))
+    monkeypatch.setattr(language_exam.ai_engine, "build_final_narrative", lambda **_kwargs: _async(narrative))
+
+    await language_exam._run_evaluation(record.session_id)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    report = stored.assessment_report
+    # Unchanged scoring fields -- identical to what the pre-existing formula produces for this
+    # exact mocked grade (score is taken verbatim from grade_speaking's own output, never
+    # recomputed by the assessment core).
+    assert report["speaking_level"] == "B1"
+    assert report["speaking_score"] == 6.2
+    assert report["speaking_breakdown"] == {"fluency": 6.0, "lexical": 5.5, "grammar": 7.0}
+    # Written anchor (reading/listening at A2, writing at B1) sits one CEFR band from spoken (B1)
+    # for this fixture -- abs(gap) == 1, still "consistent", base confidence 0.8 before the
+    # existing no-acoustic-scorer discount (*0.85, capped at 0.78): round(0.8 * 0.85, 2) == 0.68.
+    assert report["confidence"] == round(min(0.8 * 0.85, 0.78), 2)
+    assert report["cross_phase_consistency"] == "consistent"
+    assert report["unassessed_components"] == ["speaking.pronunciation"]
+    assert stored.status == "completed"
+    assert stored.is_completed is True
+
+    async with postgres_session_factory() as db:
+        profile = (
+            await db.execute(
+                select(LanguageStudentProfile).where(
+                    LanguageStudentProfile.student_id == record.student_id,
+                    LanguageStudentProfile.language_id == record.language_id,
+                )
+            )
+        ).scalar_one()
+    assert profile.placement_completed_at is not None

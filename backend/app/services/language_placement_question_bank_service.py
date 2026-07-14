@@ -231,3 +231,21 @@ async def record_bank_item_answer(db: AsyncSession, *, item_id: int, correct: bo
         .where(LanguagePlacementQuestionBankItem.id == item_id)
         .values(**values)
     )
+
+
+async def fetch_bank_item_metadata(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, dict]:
+    """Read-only lookup of body_json for a specific set of bank item ids (e.g. review_status /
+    expected_response_seconds needed to build report-time evidence summaries). Never mutates
+    rows. Missing/deleted ids are simply absent from the returned mapping -- callers must handle
+    that safely rather than assuming every id resolves."""
+    ids = {int(x) for x in item_ids if x is not None}
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(LanguagePlacementQuestionBankItem.id, LanguagePlacementQuestionBankItem.body_json).where(
+                LanguagePlacementQuestionBankItem.id.in_(ids)
+            )
+        )
+    ).all()
+    return {row.id: (row.body_json or {}) for row in rows}

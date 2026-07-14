@@ -88,10 +88,12 @@ from app.services.language_placement_policy_service import (
 from app.services.language_placement_question_bank_service import (
     BoundaryTarget,
     bank_item_to_exam_item,
+    fetch_bank_item_metadata,
     record_bank_item_answer,
     select_placement_bank_items,
 )
 from app.services.language_rate_limit_service import check, check_or_raise
+from app.services.language_speaking_assessment_core_service import build_speaking_assessment_core
 from app.services.language_subscription_service import ensure_language_profile, get_default_language
 from app.services.language_transcription_service import transcribe_english_audio
 from app.services.language_tts_service import synthesize_exam_audio
@@ -1589,11 +1591,6 @@ async def _run_claimed_evaluation(
                     for r in results
                 ) or "(none)"
 
-            guess = await _effective_level(db, student_id=student_id, language_id=language_id)
-            # Release the read transaction before any scorer call; no DB connection or row lock is
-            # held while external AI work is in flight.
-            await db.rollback()
-
             # --- Speaking: independent 4-criteria rubric over Phase-1 + Phase-2 turns.
             ph1_results = state.get("speaking", {}).get("results", [])
             ph2_results = state.get("interview", {}).get("results", [])
@@ -1608,6 +1605,19 @@ async def _run_claimed_evaluation(
             else:
                 live_available = len(ph1_results) >= SPEAKING_TURNS
             sp_evidence = build_verified_speaking_evidence(ph1_results, ph2_results)
+
+            # Speaking Assessment Core (MVP evidence/auditability layer, additive/report-only --
+            # see language_speaking_assessment_core_service.py): a read-only lookup of the
+            # body_json metadata (review_status, expected_response_seconds) for whichever bank
+            # items this session's speaking turns actually used, if any. Never mutates bank rows.
+            speaking_bank_item_ids = {int(r["bank_item_id"]) for r in sp_results if r.get("bank_item_id")}
+            speaking_bank_item_metadata = await fetch_bank_item_metadata(db, speaking_bank_item_ids)
+
+            guess = await _effective_level(db, student_id=student_id, language_id=language_id)
+            # Release the read transaction before any scorer call; no DB connection or row lock is
+            # held while external AI work is in flight.
+            await db.rollback()
+
             sp_detected: list = []
             if sp_results:
                 sp_grade = await ai_engine.grade_speaking(evidence=sp_evidence, effective_level=guess)
@@ -1619,6 +1629,15 @@ async def _run_claimed_evaluation(
                 sp_detected = list(sp_grade.detected_errors)
             else:
                 raise RuntimeError("Verified speaking evidence is unavailable")
+
+            speaking_assessment_core = build_speaking_assessment_core(
+                results=sp_results,
+                grade=sp_grade,
+                expected_turns=SPEAKING_TURNS,
+                llm_provider=get_settings().LLM_PROVIDER,
+                prosody_provider=get_settings().SPEAKING_PROSODY_PROVIDER,
+                bank_item_metadata=speaking_bank_item_metadata,
+            )
 
             # --- Reading / Listening: adaptive (staircase) result.
             r_asked = state.get("reading", {}).get("asked", [])
@@ -1739,6 +1758,7 @@ async def _run_claimed_evaluation(
                 confidence=round(confidence, 2),
                 cross_phase_consistency=consistency,
                 unassessed_components=["speaking.pronunciation"],
+                speaking_assessment=speaking_assessment_core,
             )
 
             # Reacquire a short lock only after every external scorer has completed. The owner
