@@ -158,6 +158,34 @@ class Settings(BaseSettings):
     LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
     LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0
 
+    # Speaking assessment evidence pipeline — config only, no runtime wired yet (see
+    # backend/.env.example for placeholder values; real secrets belong only in an ignored local
+    # .env or a deployment secret manager, never here and never committed).
+    SPEAKING_TRANSCRIPTION_PROVIDER: str = "openai"  # openai | whisper
+    SPEAKING_TRANSCRIPTION_TIMEOUT_SECONDS: int = 120
+    # Pronunciation evidence (wav2vec2 | mock)
+    SPEAKING_PRONUNCIATION_PROVIDER: str = "wav2vec2"
+    SPEAKING_PRONUNCIATION_MODEL: str = "facebook/wav2vec2-lv-60-espeak-cv-ft"
+    SPEAKING_PRONUNCIATION_TIMEOUT_SECONDS: int = 120
+    SPEAKING_PRONUNCIATION_MIN_CONFIDENCE: float = 0.15
+    # Prosody/delivery evidence (acoustic | hume | mock) — MVP must stay "acoustic" (local,
+    # numpy-derived; no external API). Hume Expression Measurement is not used for MVP scoring.
+    SPEAKING_PROSODY_PROVIDER: str = "acoustic"
+    HUME_API_KEY: str = ""
+    SPEAKING_PROSODY_TIMEOUT_SECONDS: int = 120
+    SPEAKING_PROSODY_POLL_INTERVAL_SECONDS: int = 2
+    # Hume EVI live-conversation runtime — for a FUTURE live-conversation feature, not the
+    # current 3-turn placement flow. HUME_SECRET_KEY is server-side only (mints short-lived
+    # browser access tokens) and must never be exposed to the frontend.
+    SPEAKING_LIVE_CONVERSATION_PROVIDER: str = "hume_evi"
+    HUME_SECRET_KEY: str = ""
+    HUME_EVI_CONFIG_ID: str = ""
+    SPEAKING_EVI_TIMEOUT_SECONDS: int = 60
+    SPEAKING_EVI_RECONNECT_ENABLED: bool = False
+    SPEAKING_EVI_MAX_TURN_SECONDS: int = 120
+    SPEAKING_EVI_MAX_TURN_BYTES: int = 25_000_000
+    SPEAKING_EVI_TOKEN_TTL_SECONDS: int = 1500
+
     # Student lesson voice chat STT (Deepgram Nova — not used by Language module)
     DEEPGRAM_API_KEY: str = ""
     DEEPGRAM_STT_MODEL: str = "nova-3"
