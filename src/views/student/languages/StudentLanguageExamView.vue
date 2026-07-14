@@ -819,8 +819,8 @@ async function startFresh() {
 async function handleSpeakingRecordToggle() {
   if (recorder.recording.value) {
     // Stop the live connection, but deliberately keep the accumulated transcript visible so
-    // the student can still review it before deciding to Submit. It's cleared by the next
-    // recording (reset() below), a successful submit (applyState), or moving on
+    // the student can still review it before deciding to Submit. It's cleared by a re-recorded
+    // take (see below), a successful submit (applyState), or moving on
     // (restart/startFresh/unmount).
     recorder.toggleRecording()
     liveCaption.stop()
@@ -833,7 +833,15 @@ async function handleSpeakingRecordToggle() {
     recorder.toggleRecording()
     return
   }
-  liveCaption.reset() // clear any transcript left over from an earlier take of this question
+  if (recorder.audioBlob.value) {
+    // Re-recording (a previous take of this same question exists): clear that take's transcript
+    // before starting fresh. On the VERY FIRST recording attempt for a question, deliberately do
+    // NOT reset here -- applyState() already gave the preview a clean slate when the question
+    // rendered, and prewarming may have been capturing (and correctly transcribing) speech since
+    // then; resetting on every tap was wiping that already-accumulated text the instant the mic
+    // was pressed, which is what made the first spoken words disappear from the preview.
+    liveCaption.reset()
+  }
   if (!liveCaption.active.value) {
     // Not ready yet -- either the prewarm attempt from when this question rendered is still in
     // flight, or this is a fresh/re-recorded take that needs its own connection. Give it a
@@ -1084,7 +1092,11 @@ onUnmounted(() => {
   line-height: 1.5; min-height: 1.5em; max-height: 4.5em; overflow-y: auto;
   white-space: pre-wrap; word-break: break-word; text-align: left;
 }
-.live-caption-placeholder { font-style: italic; }
+.live-caption-placeholder {
+  /* Deliberately smaller/lighter than real transcript text (which inherits the larger, unstyled
+     base size above) so the placeholder reads as helper copy, not as if it were an answer. */
+  font-size: 0.875rem; font-style: italic;
+}
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);

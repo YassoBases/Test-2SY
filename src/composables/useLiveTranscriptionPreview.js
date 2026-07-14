@@ -29,12 +29,27 @@ export function useLiveTranscriptionPreview() {
   let peerConnection = null
   let dataChannel = null
   let localStream = null
+  // Keyed by "item_id:content_index" -- input_audio_transcription.delta events carry an
+  // incremental text FRAGMENT for one segment of speech, never the full transcript so far, so
+  // fragments must be accumulated per-segment and then joined across segments, not replaced.
   let itemText = new Map()
+  // Segments whose .completed event has already arrived -- their text is now final. Realtime
+  // can legitimately split one continuous utterance into multiple segments (e.g. across a brief
+  // pause), each with its own item_id, so a segment being "completed" must not stop OTHER,
+  // still-open segments from continuing to accumulate; it only freezes that one segment against
+  // further (out-of-order/duplicate) deltas corrupting or duplicating its already-final text.
+  let completedKeys = new Set()
   let currentAttempt = 0
   let inFlightPromise = null
 
   function updateTranscriptFromItems() {
     transcript.value = Array.from(itemText.values()).join(' ').trim()
+  }
+
+  function segmentKey(event) {
+    const itemId = typeof event.item_id === 'string' && event.item_id ? event.item_id : 'default'
+    const contentIndex = typeof event.content_index === 'number' ? event.content_index : 0
+    return `${itemId}:${contentIndex}`
   }
 
   function handleServerEvent(raw) {
@@ -45,15 +60,21 @@ export function useLiveTranscriptionPreview() {
       return
     }
     if (!event || typeof event !== 'object') return
-    const itemId = event.item_id || 'default'
     if (event.type === 'conversation.item.input_audio_transcription.delta' && typeof event.delta === 'string') {
-      itemText.set(itemId, (itemText.get(itemId) || '') + event.delta)
+      const key = segmentKey(event)
+      if (completedKeys.has(key)) return // this segment's completed transcript is already final
+      itemText.set(key, (itemText.get(key) || '') + event.delta)
       updateTranscriptFromItems()
     } else if (
       event.type === 'conversation.item.input_audio_transcription.completed'
       && typeof event.transcript === 'string'
     ) {
-      itemText.set(itemId, event.transcript)
+      // The completed transcript is authoritative for this segment: it REPLACES whatever
+      // partial deltas were accumulated (never appended alongside them), so the final text is
+      // never duplicated.
+      const key = segmentKey(event)
+      itemText.set(key, event.transcript)
+      completedKeys.add(key)
       updateTranscriptFromItems()
     }
   }
@@ -80,6 +101,7 @@ export function useLiveTranscriptionPreview() {
   function reset() {
     transcript.value = ''
     itemText = new Map()
+    completedKeys = new Set()
     unavailable.value = false
   }
 
