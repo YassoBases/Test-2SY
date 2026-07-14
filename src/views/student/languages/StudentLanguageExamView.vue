@@ -116,19 +116,19 @@
           </div>
         </div>
 
-        <div class="recorder-box pa-4 text-center">
+        <div class="recorder-box pa-3 text-center">
           <v-btn
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
             :disabled="busy" @click="handleSpeakingRecordToggle"
           />
-          <div class="text-caption text-medium-emphasis mt-2">
+          <div class="text-caption text-medium-emphasis mt-1">
             <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
             <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
-          <div class="text-caption text-medium-emphasis mt-3">— or —</div>
+          <div class="text-caption text-medium-emphasis mt-2">— or —</div>
           <v-file-input
             v-model="uploadFile"
             accept="audio/*"
@@ -147,18 +147,22 @@
              English-only even though the app defaults to an Arabic/RTL UI). Rendered as its own
              panel below the recorder box -- never nested inside it -- so the recording control
              stays visually primary. Stays hidden until a first real transcript delta arrives;
-             never shows a "Listening…" placeholder. -->
+             then stays visible (even after recording stops) so the student can review it before
+             Submit -- it is only cleared by a fresh recording, a successful submit (applyState),
+             or moving on (restart/startFresh/unmount). Styled as a draft-answer card: same
+             rounded/colored family as the submitted-answer chat bubble below, but dashed and
+             muted to read as "not yet submitted" rather than final. -->
         <div
-          v-if="recorder.recording.value && !liveCaption.unavailable.value && liveCaption.transcript.value"
+          v-if="!liveCaption.unavailable.value && liveCaption.transcript.value"
           class="live-caption-box mt-3"
           dir="ltr"
         >
-          <div class="live-caption-label text-caption text-medium-emphasis d-flex align-center">
+          <div class="live-caption-label text-caption text-medium-emphasis d-flex align-center mb-1">
             <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
             Live transcript preview
           </div>
-          <div class="live-caption-text text-body-2">{{ liveCaption.transcript.value }}</div>
-          <div class="text-caption text-medium-emphasis mt-1">Final submitted transcript may differ</div>
+          <div class="live-caption-text">{{ liveCaption.transcript.value }}</div>
+          <div class="live-caption-hint text-caption text-medium-emphasis mt-1">Final submitted transcript may differ</div>
         </div>
 
         <div class="d-flex justify-end mt-3">
@@ -805,10 +809,11 @@ function handleSpeakingRecordToggle() {
     liveCaption.reset()
     liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
   } else {
-    // Clear-on-stop: tearing down the connection alone isn't enough -- the accumulated
-    // transcript text must not linger once recording has ended.
+    // Stop the live connection, but deliberately keep the accumulated transcript visible so
+    // the student can still review it before deciding to Submit. It's cleared by the next
+    // recording (reset() above), a successful submit (applyState, below), or moving on
+    // (restart/startFresh/unmount).
     liveCaption.stop()
-    liveCaption.reset()
   }
 }
 
@@ -816,10 +821,6 @@ async function sendSpeaking() {
   if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
-  // Cleanup-on-submit: normally already cleared when recording ended, but this is a cheap,
-  // idempotent no-op otherwise -- the live preview must never linger past the answer it was for.
-  liveCaption.stop()
-  liveCaption.reset()
   // Identity of the question this submission answers. If a restart/fresh-start happens (a new
   // generation) or the exam otherwise already moved past this turn before the response arrives,
   // this attempt's outcome is obsolete and must be silently ignored -- never applied, never
@@ -1032,14 +1033,19 @@ onUnmounted(() => {
 .exam-msg--ai { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
 .recorder-box { border: 1px dashed rgba(var(--v-theme-secondary), 0.4); border-radius: 14px; }
 .live-caption-box {
-  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 10px; padding: 8px 12px; text-align: left;
+  /* Same rounded/colored family as .exam-msg (the submitted-answer bubble below), but dashed
+     and more muted -- reads as "draft, not yet submitted" rather than a final answer. */
+  background: rgba(var(--v-theme-secondary), 0.07); border: 1px dashed rgba(var(--v-theme-secondary), 0.35);
+  border-radius: 14px; padding: 10px 14px; text-align: left;
 }
 .live-caption-label { letter-spacing: 0.02em; }
 .live-caption-text {
-  line-height: 1.45; max-height: 4.35em; overflow-y: auto;
+  /* No text-size utility class on purpose -- inherits the same base size as .exam-msg so it
+     reads as real answer text, not tiny helper copy. */
+  line-height: 1.5; max-height: 4.5em; overflow-y: auto;
   white-space: pre-wrap; word-break: break-word; text-align: left;
 }
+.live-caption-hint { opacity: 0.75; }
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
