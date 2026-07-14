@@ -1946,12 +1946,25 @@ def _cleanup_exam_audio(state: dict) -> None:
             pass
 
 
-_PREP_RETRY_AFTER_S = 20
+_PREP_RETRY_AFTER_S = 90
+# Listening content prep has no cached/pre-synthesized audio for any bank item (confirmed: every
+# listening bank row's audio_meta_json is empty), so a normal, successful run needs up to six
+# sequential TTS synthesis calls (one per CEFR level) plus reading/writing LLM generation --
+# comfortably longer than a short debounce. A too-short value here causes _maybe_retrigger_prep to
+# fire again while the first attempt is still legitimately in flight: the redundant second
+# _prepare_content both wastes the first attempt's work (discarded at merge time as stale, see
+# _merge_prepared_content's content_prep_token check) and burns an extra hit from the
+# "placement_generation" rate limit (3 per 300s, keyed per session) for no benefit -- eventually
+# exhausting it and landing the section in content_unavailable purely from self-inflicted retries,
+# not genuine abuse. It has also been observed to race the Supertonic model loader's own temp-file
+# staging when two attempts overlap. 90s comfortably exceeds realistic total prep time while still
+# self-healing a genuinely dead background task (e.g. after a server restart) promptly.
 
 
 def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, background_tasks: BackgroundTasks) -> bool:
     """Self-heal: if the current section's content never got generated (background task died /
-    server restarted), re-launch _prepare_content ΓÇö but not more often than every 20s."""
+    server restarted), re-launch _prepare_content -- but not more often than every
+    _PREP_RETRY_AFTER_S seconds (see that constant's comment for why the value matters)."""
     state = sess.exam_state or {}
     section = _current_section(state)
     if section not in PREPARED_SECTIONS:

@@ -155,6 +155,40 @@ def _preparing_state(*, revision: int = 3, prep_token: str = "prep-token-0000000
     }
 
 
+def _speaking_done_preparing_state(
+    *, revision: int = 3, prep_token: str = "prep-token-0000000000000001"
+) -> dict:
+    """Mirrors _preparing_state() but with Speaking already completed (3/3) and the cursor
+    advanced to listening -- the exact transition point where manual QA observed Listening's
+    'This section is temporarily unavailable' after Speaking."""
+    return {
+        "version": 3,
+        "state_revision": revision,
+        "sections": ["speaking", "listening", "reading", "grammar_vocab", "writing"],
+        "cursor": 1,
+        "content_prep_token": prep_token,
+        "content_prep_status": "preparing",
+        "speaking": {
+            "turn": 4,
+            "total_turns": 3,
+            "pending_question": "",
+            "turn_token": "",
+            "results": [
+                {"question": "Q1", "transcription": "A1", "bank_item_id": 101, "estimated_level": "A2"},
+                {"question": "Q2", "transcription": "A2", "bank_item_id": 102, "estimated_level": "A2"},
+                {"question": "Q3", "transcription": "A3", "bank_item_id": 103, "estimated_level": "A2"},
+            ],
+            "done": True,
+            "evidence_status": "completed",
+        },
+        "listening": {"ready": False, "done": False, "asked": [], "pool": {}},
+        "reading": {"ready": False, "done": False, "asked": [], "pool": {}},
+        "grammar_vocab": {"ready": False, "done": False, "asked": [], "pool": {}},
+        "writing": {"ready": False, "done": False, "response": None},
+        "request_receipts": [],
+    }
+
+
 async def _stored_exam(postgres_session_factory, session_id: str) -> LanguageExamSession:
     async with postgres_session_factory() as db:
         return (
@@ -449,6 +483,141 @@ async def test_prepare_content_derives_used_item_ids_from_asked_entries_per_skil
     assert captured_used_ids["reading"] == {42}
     assert captured_used_ids["listening"] == {7}
     assert captured_used_ids["grammar_vocab"] == set()
+
+
+async def test_prepare_content_succeeds_for_listening_after_speaking_completes(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """After Speaking finishes (3/3, cursor advanced to listening), content preparation must
+    succeed and populate a usable listening pool -- the exact transition point where manual QA
+    observed 'This section is temporarily unavailable.'"""
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    _install_fast_content_preparation(monkeypatch)
+
+    state = _speaking_done_preparing_state()
+    record = await exam_record_factory(state=state)
+
+    await language_exam._prepare_content(record.session_id, record.language_id, "A2")
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    latest = stored.exam_state
+    assert latest["listening"]["ready"] is True
+    assert latest["listening"]["pool"]
+    assert latest["content_prep_status"] == "completed"
+    # Speaking's completed evidence must be untouched by content preparation.
+    assert latest["speaking"]["results"] == state["speaking"]["results"]
+    assert latest["speaking"]["done"] is True
+
+
+async def test_prepare_content_rate_limited_marks_content_unavailable_correctly(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """When the placement_generation rate limit is exhausted, content prep must fail closed with
+    a structured content_unavailable state (not silently hang or crash) -- this is the exact
+    failure observed in manual QA (content_prep_error_code=content_generation_rate_limited)."""
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: False)
+
+    state = _speaking_done_preparing_state()
+    record = await exam_record_factory(state=state)
+
+    await language_exam._prepare_content(record.session_id, record.language_id, "A2")
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    latest = stored.exam_state
+    assert latest["content_prep_status"] == "content_unavailable"
+    assert latest["content_prep_error_code"] == "content_generation_rate_limited"
+    assert latest["listening"]["evidence_status"] == "content_unavailable"
+    # Speaking evidence must remain untouched even on a failed prep attempt.
+    assert latest["speaking"]["results"] == state["speaking"]["results"]
+
+
+async def test_maybe_retrigger_prep_does_not_fire_before_the_debounce_window_elapses(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Regression for the root cause behind the Listening 'temporarily unavailable' bug: a
+    too-short retry debounce let _maybe_retrigger_prep re-launch _prepare_content while the
+    first, genuinely-still-running attempt (up to six sequential TTS calls plus LLM content
+    generation) hadn't finished yet -- wasting its work (discarded as stale at merge time) and
+    burning an extra hit from the 3-per-300s placement_generation rate limit for no benefit,
+    eventually exhausting it. A prep attempt that only just started must not be retriggered."""
+    state = _speaking_done_preparing_state()
+    state["content_prep_at"] = datetime.now(timezone.utc).isoformat()
+    record = await exam_record_factory(state=state)
+
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        triggered = language_exam._maybe_retrigger_prep(sess, record.language_id, BackgroundTasks())
+        assert triggered is False
+        assert sess.exam_state["content_prep_token"] == state["content_prep_token"]
+
+
+async def test_maybe_retrigger_prep_fires_once_the_debounce_window_has_elapsed(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Complementary case: once _PREP_RETRY_AFTER_S has genuinely elapsed (e.g. the background
+    task really did die -- server restart mid-generation), the self-heal retrigger must still
+    fire so the section can recover without the user needing to abandon the exam."""
+    state = _speaking_done_preparing_state()
+    stale_at = datetime.now(timezone.utc) - timedelta(seconds=language_exam._PREP_RETRY_AFTER_S + 1)
+    state["content_prep_at"] = stale_at.isoformat()
+    record = await exam_record_factory(state=state)
+
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        triggered = language_exam._maybe_retrigger_prep(sess, record.language_id, BackgroundTasks())
+        assert triggered is True
+        assert sess.exam_state["content_prep_status"] == "preparing"
+        assert sess.exam_state["content_prep_token"] != state["content_prep_token"]
+        await db.commit()
+
+
+async def test_retry_recovers_listening_after_a_transient_preparation_failure(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """End-to-end 'Retry section preparation' recovery: a session stuck in content_unavailable
+    (e.g. from a prior rate-limited attempt) must actually resume and succeed once retried --
+    proving the retry button is not a dead end, and that Speaking's completed evidence survives
+    the whole failure-then-retry cycle untouched."""
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+
+    state = _speaking_done_preparing_state()
+    state["content_prep_status"] = "content_unavailable"
+    state["content_prep_error_code"] = "content_generation_rate_limited"
+    state["content_prep_at"] = (
+        datetime.now(timezone.utc) - timedelta(seconds=language_exam._PREP_RETRY_AFTER_S + 1)
+    ).isoformat()
+    state["listening"]["evidence_status"] = "content_unavailable"
+    record = await exam_record_factory(state=state)
+
+    # "Retry section preparation" == GET /state -> _maybe_retrigger_prep (self-heal check).
+    async with postgres_session_factory() as db:
+        sess = await db.get(LanguageExamSession, record.session_id)
+        triggered = language_exam._maybe_retrigger_prep(sess, record.language_id, BackgroundTasks())
+        assert triggered is True
+        await db.commit()
+
+    # The re-launched background task itself now runs against real (succeeding) content sources.
+    _install_fast_content_preparation(monkeypatch)
+    await language_exam._prepare_content(record.session_id, record.language_id, "A2")
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    latest = stored.exam_state
+    assert latest["listening"]["ready"] is True
+    assert latest["content_prep_status"] == "completed"
+    # Speaking's completed evidence is preserved across the whole failure+retry cycle.
+    assert latest["speaking"]["results"] == state["speaking"]["results"]
+    assert latest["speaking"]["done"] is True
 
 
 def _mcq_state() -> dict:
