@@ -101,6 +101,30 @@ export function useLiveTranscriptionPreview() {
       const pc = new RTCPeerConnection()
       localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
       const dc = pc.createDataChannel('oai-events')
+      // The data channel is the exact path transcript deltas travel over, and it opens in
+      // lockstep with the underlying ICE/DTLS transport that also carries the audio track --
+      // waiting for it here (rather than declaring "active" the instant the SDP answer is
+      // merely accepted) is what actually confirms audio can start being transcribed. Without
+      // this, callers were told the preview was ready before the connection had truly finished
+      // negotiating, so whatever the student said in that gap was never sent for transcription.
+      const dataChannelReady = new Promise((resolve, reject) => {
+        const cleanup = () => {
+          dc.removeEventListener('open', onOpen)
+          dc.removeEventListener('error', onError)
+          pc.removeEventListener('connectionstatechange', onStateChange)
+        }
+        const onOpen = () => { cleanup(); resolve() }
+        const onError = () => { cleanup(); reject(new Error('live transcription data channel error')) }
+        const onStateChange = () => {
+          if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            cleanup()
+            reject(new Error(`live transcription connection ${pc.connectionState}`))
+          }
+        }
+        dc.addEventListener('open', onOpen)
+        dc.addEventListener('error', onError)
+        pc.addEventListener('connectionstatechange', onStateChange)
+      })
       dc.addEventListener('message', (e) => {
         if (myAttempt === currentAttempt) handleServerEvent(e.data)
       })
@@ -126,6 +150,8 @@ export function useLiveTranscriptionPreview() {
       }
       const answerSdp = await response.text()
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      if (myAttempt !== currentAttempt) return
+      await dataChannelReady
       if (myAttempt !== currentAttempt) return
       active.value = true
     } catch {

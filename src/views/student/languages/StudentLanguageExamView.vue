@@ -120,11 +120,13 @@
           <v-btn
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
+            :loading="preparingSpeech"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
-            :disabled="busy" @click="handleSpeakingRecordToggle"
+            :disabled="busy || preparingSpeech" @click="handleSpeakingRecordToggle"
           />
           <div class="text-caption text-medium-emphasis mt-1">
-            <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
+            <span v-if="preparingSpeech">Preparing live transcript…</span>
+            <span v-else-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
             <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
@@ -138,7 +140,7 @@
             prepend-icon="mdi-upload"
             label="Upload an audio file"
             class="mt-2 upload-input"
-            :disabled="busy || recorder.recording.value"
+            :disabled="busy || preparingSpeech || recorder.recording.value"
             @update:model-value="onUpload"
           />
         </div>
@@ -168,7 +170,7 @@
         <div class="d-flex justify-end mt-3">
           <v-btn
             color="secondary" variant="flat" :loading="busy"
-            :disabled="busy || !recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
+            :disabled="busy || preparingSpeech || !recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
             prepend-icon="mdi-send" @click="sendSpeaking"
           >
             Submit answer
@@ -487,6 +489,11 @@ const recorder = useVoiceRecorder({ minSeconds: 1 })
 // Speaking's live transcript preview (UX only -- see useLiveTranscriptionPreview.js). Never sent
 // for grading; the official transcript remains whatever the backend returns after Submit.
 const liveCaption = useLiveTranscriptionPreview()
+// True only during the brief window between tapping the mic and the actual recording starting,
+// while we give the live-caption channel a bounded chance to become ready first (see
+// handleSpeakingRecordToggle) -- never blocks the exam past this timeout.
+const preparingSpeech = ref(false)
+const LIVE_CAPTION_READY_TIMEOUT_MS = 3000
 const uploadFile = ref(null)
 const choice = ref(null)
 const writingText = ref('')
@@ -802,18 +809,32 @@ async function startFresh() {
   await start()
 }
 
-function handleSpeakingRecordToggle() {
-  const willStart = !recorder.recording.value
-  recorder.toggleRecording()
-  if (willStart) {
-    liveCaption.reset()
-    liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
-  } else {
+async function handleSpeakingRecordToggle() {
+  if (recorder.recording.value) {
     // Stop the live connection, but deliberately keep the accumulated transcript visible so
     // the student can still review it before deciding to Submit. It's cleared by the next
-    // recording (reset() above), a successful submit (applyState, below), or moving on
+    // recording (reset() below), a successful submit (applyState), or moving on
     // (restart/startFresh/unmount).
+    recorder.toggleRecording()
     liveCaption.stop()
+    return
+  }
+  // Give the live-caption channel a bounded chance to become ready BEFORE showing the
+  // "Recording…" cue that invites the student to speak -- starting that cue first (while the
+  // live-caption WebRTC handshake was still in flight) was exactly why the first words spoken
+  // were missing from the preview. liveCaption.start() itself resolves as soon as the outcome
+  // is known either way (ready or unavailable); the timeout only guards against a slow network,
+  // so a stalled live-caption setup never delays the exam itself.
+  liveCaption.reset()
+  preparingSpeech.value = true
+  try {
+    await Promise.race([
+      liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value)),
+      new Promise((resolve) => setTimeout(resolve, LIVE_CAPTION_READY_TIMEOUT_MS)),
+    ])
+  } finally {
+    preparingSpeech.value = false
+    recorder.toggleRecording()
   }
 }
 
