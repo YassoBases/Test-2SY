@@ -50,7 +50,12 @@ async def create_live_transcription_session() -> dict | None:
         "expires_after": {"anchor": "created_at", "seconds": ttl_seconds},
         "session": {
             "type": "transcription",
-            "audio": {"input": {"format": "pcm16", "transcription": {"model": model}}},
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "transcription": {"model": model},
+                }
+            },
         },
     }
     try:
