@@ -276,8 +276,23 @@ def _is_valid_mcq_item(item: dict) -> bool:
     return isinstance(options, list) and len(options) >= 2 and isinstance(ci, int) and 0 <= ci < len(options)
 
 
+def _already_used_bank_item_ids(state: dict, skill: str) -> set[int]:
+    """Bank item ids already asked for this skill in this exam session (session-scoped, P1.1).
+
+    Reads state[skill]["asked"] only — sections with no "asked" list (e.g. "writing") naturally
+    yield an empty set. Does not touch usage_count/correct_count or any lifetime/cross-session
+    history."""
+    asked = state.get(skill, {}).get("asked", []) or []
+    return {int(a["bank_item_id"]) for a in asked if a.get("bank_item_id")}
+
+
 async def _question_bank_pool(
-    db: AsyncSession, *, language_id: int, skill: str, levels: list[str]
+    db: AsyncSession,
+    *,
+    language_id: int,
+    skill: str,
+    levels: list[str],
+    used_item_ids: set[int] | None = None,
 ) -> dict[str, dict]:
     """Reviewed question-bank items: one internal MCQ item per requested CEFR level."""
     pool: dict[str, dict] = {}
@@ -288,6 +303,7 @@ async def _question_bank_pool(
             skill=skill,
             level=lvl,
             count=4 if skill == "listening" else 1,
+            used_item_ids=used_item_ids,
         ):
             item = bank_item_to_exam_item(row)
             if not _is_valid_mcq_item(item):
@@ -420,7 +436,8 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 return
 
             r_pool = await _question_bank_pool(
-                db, language_id=language_id, skill="reading", levels=ALL_CEFR_LEVELS
+                db, language_id=language_id, skill="reading", levels=ALL_CEFR_LEVELS,
+                used_item_ids=_already_used_bank_item_ids(source_state, "reading"),
             )
             r_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
             r_seeded = await _seeded_pool(
@@ -437,9 +454,11 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 language_id=language_id,
                 skill="grammar_vocab",
                 levels=ALL_CEFR_LEVELS,
+                used_item_ids=_already_used_bank_item_ids(source_state, "grammar_vocab"),
             )
             l_pool = await _question_bank_pool(
-                db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS
+                db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS,
+                used_item_ids=_already_used_bank_item_ids(source_state, "listening"),
             )
             l_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
             l_seeded = await _seeded_pool(
@@ -448,17 +467,20 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 skill=LanguageSkill.listening,
                 levels=l_missing,
             )
+            writing_used_ids = _already_used_bank_item_ids(source_state, "writing")
             reviewed_writing_prompt = await _writing_prompt(
                 db,
                 language_id=language_id,
                 level_str=level,
                 include_generic=False,
+                used_item_ids=writing_used_ids,
             )
             generic_writing_prompt = reviewed_writing_prompt or await _writing_prompt(
                 db,
                 language_id=language_id,
                 level_str=level,
                 include_generic=True,
+                used_item_ids=writing_used_ids,
             )
             await db.rollback()
 
@@ -616,7 +638,12 @@ async def _merge_prepared_content(
 
 
 async def _writing_prompt(
-    db: AsyncSession, *, language_id: int, level_str: str, include_generic: bool = True
+    db: AsyncSession,
+    *,
+    language_id: int,
+    level_str: str,
+    include_generic: bool = True,
+    used_item_ids: set[int] | None = None,
 ) -> str | None:
     """Pull a reviewed/seeded writing prompt near the level; optionally fall back to generic."""
     try:
@@ -629,6 +656,7 @@ async def _writing_prompt(
         skill="writing_prompt",
         level=lvl,
         count=1,
+        used_item_ids=used_item_ids,
     ):
         item = bank_item_to_exam_item(row)
         prompt = str(item.get("question") or "").strip()
@@ -2220,7 +2248,14 @@ async def answer_mcq(
     bank_item_id = item.get("bank_item_id")
     if bank_item_id:
         await record_bank_item_answer(db, item_id=int(bank_item_id), correct=correct)
-    sec.setdefault("asked", []).append({"level": cur, "correct": correct, "chosen_index": body.choice_index})
+    sec.setdefault("asked", []).append({
+        "level": cur,
+        "correct": correct,
+        "chosen_index": body.choice_index,
+        # Retained so a later _prepare_content run can exclude it via used_item_ids (P1.1) —
+        # scoring/adaptive logic never reads this key.
+        "bank_item_id": int(bank_item_id) if bank_item_id else None,
+    })
     asked_levels = {a["level"] for a in sec["asked"]}
 
     # Adaptive staircase: harder if correct, easier if wrong; stop when converged / out of steps.

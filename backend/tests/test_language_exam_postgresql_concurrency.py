@@ -23,8 +23,10 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.api import language_exam
 from app.models.language.analytics import LanguageAnalytics
 from app.models.language.catalog import Language
+from app.models.language.enums import LanguageLevel
 from app.models.language.exam import LanguageExamSession
 from app.models.language.profile import LanguageStudentProfile
+from app.models.language.question_bank import LanguagePlacementQuestionBankItem
 from app.models.user import User, UserRole
 from app.schemas.language_exam import (
     CEFRLevel,
@@ -349,6 +351,105 @@ async def test_prepare_content_cannot_revive_an_abandoned_exam(
     assert all(latest[section]["ready"] is False for section in language_exam.PREPARED_SECTIONS)
 
 
+async def test_question_bank_pool_excludes_already_used_bank_item_ids(
+    postgres_session_factory,
+) -> None:
+    """P1.1 mechanism: with a single seeded A2 reading item, passing its own id as
+    used_item_ids must make it disappear from the pool — proving the exclusion this call site
+    now wires through actually prevents reselection, not just that the parameter exists."""
+    marker = uuid.uuid4().hex[:10]
+    async with postgres_session_factory() as db:
+        language = Language(
+            code=f"p11-{marker}",
+            name_en="P1.1 test language",
+            name_ar="P1.1 test language",
+            is_active=True,
+        )
+        db.add(language)
+        await db.flush()
+        bank_item = LanguagePlacementQuestionBankItem(
+            language_id=language.id,
+            skill="reading",
+            level=LanguageLevel.A2,
+            question_type="mcq",
+            prompt_text="Which answer is correct?",
+            passage="A short passage.",
+            options_json=["correct", "wrong"],
+            correct_index=0,
+            source="seed",
+            is_verified=True,
+            is_active=True,
+        )
+        db.add(bank_item)
+        await db.commit()
+        language_id, bank_item_id = language.id, bank_item.id
+
+    async with postgres_session_factory() as db:
+        pool_without_exclusion = await language_exam._question_bank_pool(
+            db, language_id=language_id, skill="reading", levels=["A2"]
+        )
+    assert "A2" in pool_without_exclusion
+    assert pool_without_exclusion["A2"]["bank_item_id"] == bank_item_id
+
+    async with postgres_session_factory() as db:
+        pool_with_exclusion = await language_exam._question_bank_pool(
+            db,
+            language_id=language_id,
+            skill="reading",
+            levels=["A2"],
+            used_item_ids={bank_item_id},
+        )
+    assert "A2" not in pool_with_exclusion
+
+
+async def test_prepare_content_derives_used_item_ids_from_asked_entries_per_skill(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """P1.1 call-site wiring: _prepare_content must derive used_item_ids from each skill's own
+    exam_state[skill]["asked"] entries and pass them into _question_bank_pool. Before this fix
+    (used_item_ids not passed at this call site), the spy below would observe None for every
+    skill instead of the ids actually recorded in "asked" — failing this exact assertion."""
+    captured_used_ids: dict[str, set[int] | None] = {}
+
+    async def spy_question_bank_pool(_db, *, skill, levels, used_item_ids=None, **_kwargs):
+        captured_used_ids[skill] = used_item_ids
+        return {}
+
+    async def empty_pool(*_args, **_kwargs):
+        return {}
+
+    async def writing_prompt(*_args, **_kwargs):
+        return "Write about a memorable day."
+
+    async def no_generated_content(**_kwargs):
+        return {"items": []}
+
+    monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
+    monkeypatch.setattr(language_exam, "check", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(language_exam, "_question_bank_pool", spy_question_bank_pool)
+    monkeypatch.setattr(language_exam, "_seeded_pool", empty_pool)
+    monkeypatch.setattr(language_exam, "_generated_pool", empty_pool)
+    monkeypatch.setattr(language_exam, "_writing_prompt", writing_prompt)
+    monkeypatch.setattr(language_exam.ai_engine, "generate_comprehension_set", no_generated_content)
+
+    state = _preparing_state()
+    state["reading"]["asked"] = [
+        {"level": "A2", "correct": True, "chosen_index": 0, "bank_item_id": 42}
+    ]
+    state["listening"]["asked"] = [
+        {"level": "B1", "correct": False, "chosen_index": 1, "bank_item_id": 7}
+    ]
+    record = await exam_record_factory(state=state)
+
+    await language_exam._prepare_content(record.session_id, record.language_id, "A2")
+
+    assert captured_used_ids["reading"] == {42}
+    assert captured_used_ids["listening"] == {7}
+    assert captured_used_ids["grammar_vocab"] == set()
+
+
 def _mcq_state() -> dict:
     return {
         "version": 3,
@@ -432,7 +533,7 @@ async def test_two_concurrent_mcq_answers_only_apply_one_revision_and_token(
     latest = stored.exam_state
     assert latest["state_revision"] == state["state_revision"] + 1
     assert latest["reading"]["asked"] == [
-        {"level": "A2", "correct": True, "chosen_index": 0}
+        {"level": "A2", "correct": True, "chosen_index": 0, "bank_item_id": None}
     ]
     assert latest["reading"]["current_level"] == "B1"
     assert len(latest["request_receipts"]) == 1

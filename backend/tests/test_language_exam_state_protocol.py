@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.language_exam import (
+    _already_used_bank_item_ids,
     _ensure_state_protocol,
     _new_exam_token,
     _record_request,
@@ -165,3 +166,22 @@ def test_evidence_statuses_is_sections_driven_for_speaking_and_interview():
     }
     statuses = exam_evidence_statuses(with_interview)
     assert statuses["interview"] == "missing_student_response"
+
+
+def test_already_used_bank_item_ids_extracts_from_asked_entries():
+    """P1.1: session-scoped exclusion set is built only from this skill's own "asked" entries;
+    missing/None bank_item_id values are ignored; a skill with no "asked" list (e.g. "writing")
+    yields an empty set rather than erroring."""
+    state = {
+        "reading": {
+            "asked": [
+                {"level": "A2", "correct": True, "chosen_index": 0, "bank_item_id": 5},
+                {"level": "B1", "correct": False, "chosen_index": 1, "bank_item_id": 9},
+                {"level": "B1", "correct": False, "chosen_index": 1, "bank_item_id": None},
+            ]
+        },
+        "writing": {"response": "some text"},
+    }
+    assert _already_used_bank_item_ids(state, "reading") == {5, 9}
+    assert _already_used_bank_item_ids(state, "writing") == set()
+    assert _already_used_bank_item_ids(state, "listening") == set()
