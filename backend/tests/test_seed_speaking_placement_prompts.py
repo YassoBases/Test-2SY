@@ -1,10 +1,13 @@
-"""Tests for the offline speaking-placement prompt seed content and logic (Blueprint Phase A0+A1).
+"""Tests for the offline speaking-placement prompt seed content and logic (Blueprint Phase A0+A1,
+MVP activation).
 
 Static tests validate the authored SPEAKING_PROMPT_SEEDS content itself (no DB needed).
-Postgres-marked tests validate the actual insert/update/idempotency behavior against a real
-database. Nothing here exercises the live exam route -- these items are inert drafts until a
-separate, later task wires skill="speaking_prompt" selection into the exam and a human review
-pass activates individual items.
+Postgres-marked tests validate the actual insert/update/idempotency/activation behavior against a
+real database. These 30 items are used for MVP placement without a completed human-review pass
+(explicit product decision) -- tests here confirm every item carries a clear, machine-readable
+"not human-reviewed yet" marker, and that no code path ever claims a review was done. Wiring
+skill="speaking_prompt" selection into the live exam is covered separately in
+test_language_exam_postgresql_concurrency.py.
 """
 
 from __future__ import annotations
@@ -20,9 +23,11 @@ from app.models.language.enums import LanguageLevel
 from app.models.language.question_bank import LanguagePlacementQuestionBankItem
 from app.services.language_speaking_placement_seed_service import (
     GRADE_BANDS,
+    MVP_REVIEW_STATUS,
     SPEAKING_PROMPT_SEEDS,
     TASK_TYPES,
     _apply_content_fields,
+    activate_mvp_drafts,
     db_stable_key,
     seed_speaking_prompts,
 )
@@ -135,6 +140,16 @@ def test_every_seed_has_nonempty_reference_notes_for_the_reviewer():
         assert "Reviewer check" in notes
 
 
+def test_every_seed_body_json_carries_mvp_pending_review_marker():
+    """Test B: every item must clearly, machine-readably record that it is MVP-approved but NOT
+    human-reviewed -- this module must never write or imply a completed human review."""
+    for seed in SPEAKING_PROMPT_SEEDS:
+        body = seed.body_json()
+        assert body["review_status"] == MVP_REVIEW_STATUS == "mvp_approved_pending_full_review"
+        assert body["human_reviewed"] is False
+        assert "MVP" in body["reference_notes"]
+
+
 def test_apply_content_fields_always_sets_speaking_prompt_skill_and_question_type():
     """Pure unit check on the row-population helper using a lightweight fake row, independent
     of any database -- confirms skill/question_type are hardcoded, not seed-dependent."""
@@ -195,7 +210,10 @@ async def test_dry_run_does_not_write_anything(postgres_session_factory):
 
 
 @pytest.mark.postgresql
-async def test_apply_inserts_all_seeds_as_unverified_active_drafts(postgres_session_factory):
+async def test_apply_inserts_all_seeds_as_mvp_verified_active_items(postgres_session_factory):
+    """Test A: fresh inserts default to is_verified=True/is_active=True, reflecting the explicit
+    MVP-approved-without-full-review product decision (no separate activation step needed for a
+    brand new environment/language)."""
     language_id, language_code = await _make_language(postgres_session_factory)
     async with postgres_session_factory() as db:
         inserts, updates = await seed_speaking_prompts(
@@ -208,7 +226,7 @@ async def test_apply_inserts_all_seeds_as_unverified_active_drafts(postgres_sess
     assert len(rows) == _EXPECTED_TOTAL_SEEDS
     expected_keys = {db_stable_key(language_code, s.content_key) for s in SPEAKING_PROMPT_SEEDS}
     for row in rows:
-        assert row.is_verified is False
+        assert row.is_verified is True
         assert row.is_active is True
         assert row.skill == "speaking_prompt"
         assert row.question_type == "speaking_prompt"
@@ -216,6 +234,9 @@ async def test_apply_inserts_all_seeds_as_unverified_active_drafts(postgres_sess
         assert row.prompt_text.strip()
         assert (row.body_json or {}).get("grade_band")
         assert row.stable_key in expected_keys
+        # Test B (integration level): the marker survives the real DB round-trip too.
+        assert row.body_json.get("review_status") == MVP_REVIEW_STATUS
+        assert row.body_json.get("human_reviewed") is False
 
 
 @pytest.mark.postgresql
@@ -268,10 +289,12 @@ async def test_seeding_two_languages_does_not_collide(postgres_session_factory):
 
 
 @pytest.mark.postgresql
-async def test_rerun_does_not_reset_a_manually_verified_item(postgres_session_factory):
-    """Simulates the real lifecycle: seed drafts, a human reviewer activates one item, then a
-    content author re-runs the script later (e.g. to fix a typo or add more items). The
-    reviewer's decision must survive that re-run untouched."""
+async def test_rerun_does_not_reactivate_a_manually_deactivated_item(postgres_session_factory):
+    """Simulates the real lifecycle now that fresh inserts default to is_verified=True: a human
+    reviewer later decides one specific item is unsuitable and deactivates it, then a content
+    author re-runs the script (e.g. to fix a typo or add more items). The reviewer's deactivation
+    must survive that re-run untouched -- seed_speaking_prompts() never touches is_verified/
+    is_active on an update, in either direction."""
     language_id, language_code = await _make_language(postgres_session_factory)
     async with postgres_session_factory() as db:
         await seed_speaking_prompts(db, language_id=language_id, language_code=language_code, apply=True)
@@ -285,8 +308,8 @@ async def test_rerun_does_not_reset_a_manually_verified_item(postgres_session_fa
                 )
             )
         ).scalar_one()
-        row.is_verified = True
-        row.reviewer_note = "Approved by a human reviewer in a later task."
+        row.is_verified = False
+        row.reviewer_note = "Deactivated by a human reviewer: culturally inappropriate scenario."
         await db.commit()
 
     async with postgres_session_factory() as db:
@@ -300,11 +323,85 @@ async def test_rerun_does_not_reset_a_manually_verified_item(postgres_session_fa
                 )
             )
         ).scalar_one()
-        assert row.is_verified is True, "re-running the seed script reset a human-verified item"
-        assert row.reviewer_note == "Approved by a human reviewer in a later task."
+        assert row.is_verified is False, "re-running the seed script reactivated a deliberately deactivated item"
+        assert row.reviewer_note == "Deactivated by a human reviewer: culturally inappropriate scenario."
 
-    # Every other item must still be an untouched, unverified draft.
+    # Every other item must still be an untouched, MVP-verified item.
     rows = await _all_items_for_language(postgres_session_factory, language_id)
     other_rows = [r for r in rows if r.stable_key != target_key]
     assert len(other_rows) == _EXPECTED_TOTAL_SEEDS - 1
-    assert all(r.is_verified is False for r in other_rows)
+    assert all(r.is_verified is True for r in other_rows)
+
+
+@pytest.mark.postgresql
+async def test_activate_mvp_drafts_upgrades_pristine_draft_rows(postgres_session_factory):
+    """Covers the real-world upgrade path: rows already inserted by an older version of
+    seed_speaking_prompts() (is_verified=False, source="draft_seed", exactly as this repo's prior
+    commit left them) must be elevated to is_verified=True/is_active=True by the explicit,
+    separate activation step."""
+    language_id, language_code = await _make_language(postgres_session_factory)
+    async with postgres_session_factory() as db:
+        for seed in SPEAKING_PROMPT_SEEDS:
+            row = LanguagePlacementQuestionBankItem(stable_key=db_stable_key(language_code, seed.content_key))
+            _apply_content_fields(row, seed, language_id=language_id)
+            row.is_verified = False  # the old pre-MVP default, simulated directly
+            row.is_active = True
+            db.add(row)
+        await db.commit()
+
+    rows_before = await _all_items_for_language(postgres_session_factory, language_id)
+    assert all(r.is_verified is False for r in rows_before)
+
+    async with postgres_session_factory() as db:
+        activated = await activate_mvp_drafts(db, language_code=language_code)
+    assert activated == _EXPECTED_TOTAL_SEEDS
+
+    rows_after = await _all_items_for_language(postgres_session_factory, language_id)
+    assert len(rows_after) == _EXPECTED_TOTAL_SEEDS
+    assert all(r.is_verified is True and r.is_active is True for r in rows_after)
+
+
+@pytest.mark.postgresql
+async def test_activate_mvp_drafts_is_idempotent(postgres_session_factory):
+    language_id, language_code = await _make_language(postgres_session_factory)
+    async with postgres_session_factory() as db:
+        row = LanguagePlacementQuestionBankItem(stable_key=db_stable_key(language_code, SPEAKING_PROMPT_SEEDS[0].content_key))
+        _apply_content_fields(row, SPEAKING_PROMPT_SEEDS[0], language_id=language_id)
+        row.is_verified = False
+        row.is_active = True
+        db.add(row)
+        await db.commit()
+
+    async with postgres_session_factory() as db:
+        first_run = await activate_mvp_drafts(db, language_code=language_code)
+    assert first_run == 1
+
+    async with postgres_session_factory() as db:
+        second_run = await activate_mvp_drafts(db, language_code=language_code)
+    assert second_run == 0
+
+
+@pytest.mark.postgresql
+async def test_activate_mvp_drafts_does_not_touch_rows_a_human_has_modified(postgres_session_factory):
+    """A row whose source is no longer "draft_seed" (a human/operator has reclassified it, e.g.
+    during review) must never be touched by activation -- even if it happens to still read
+    is_verified=False, that is treated as a deliberate decision, not a leftover pristine draft."""
+    language_id, language_code = await _make_language(postgres_session_factory)
+    seed = SPEAKING_PROMPT_SEEDS[0]
+    async with postgres_session_factory() as db:
+        row = LanguagePlacementQuestionBankItem(stable_key=db_stable_key(language_code, seed.content_key))
+        _apply_content_fields(row, seed, language_id=language_id)
+        row.source = "human_reviewed"  # no longer the pristine draft_seed state
+        row.is_verified = False
+        row.is_active = True
+        db.add(row)
+        await db.commit()
+
+    async with postgres_session_factory() as db:
+        activated = await activate_mvp_drafts(db, language_code=language_code)
+    assert activated == 0
+
+    rows = await _all_items_for_language(postgres_session_factory, language_id)
+    assert len(rows) == 1
+    assert rows[0].is_verified is False
+    assert rows[0].source == "human_reviewed"

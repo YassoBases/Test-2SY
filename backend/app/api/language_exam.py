@@ -779,6 +779,59 @@ async def _writing_prompt(
     )
 
 
+_SPEAKING_BANK_SCENARIO = {
+    "scenario": "AI placement speaking assessment",
+    "ai_persona": "an English placement examiner",
+    "student_role": "a test-taker",
+    "setting": "a spoken placement exam",
+}
+
+
+async def _speaking_bank_prompt(
+    db: AsyncSession, *, language_id: int, level_str: str, used_item_ids: set[int] | None = None
+) -> dict | None:
+    """Pull one verified, unused speaking_prompt bank item at the target level, or None if the
+    bank has nothing usable (caller falls back to live scenario/question generation) -- mirrors
+    _writing_prompt's exact-level-then-fallback pattern."""
+    try:
+        lvl = LanguageLevel(level_str)
+    except ValueError:
+        lvl = LanguageLevel.A2
+    for row in await select_placement_bank_items(
+        db,
+        language_id=language_id,
+        skill="speaking_prompt",
+        level=lvl,
+        count=1,
+        used_item_ids=used_item_ids,
+    ):
+        item = bank_item_to_exam_item(row)
+        if str(item.get("question") or "").strip():
+            return item
+    return None
+
+
+def _speaking_bank_question_text(item: dict) -> str:
+    situation = str(item.get("situation") or "").strip()
+    question = str(item.get("question") or "").strip()
+    return f"{situation} {question}".strip() if situation else question
+
+
+def _speaking_scenario_from_bank_item(item: dict) -> dict:
+    """A generic, honest scenario descriptor for bank-sourced speaking turns -- curated items are
+    independent semi-structured prompts, not a continuous roleplay, so persona/setting stay
+    fixed for the session rather than switching per item (MVP simplification)."""
+    return {**_SPEAKING_BANK_SCENARIO, "opening_question": _speaking_bank_question_text(item)}
+
+
+def _already_used_speaking_bank_item_ids(state: dict, section: str) -> set[int]:
+    """Bank item ids already asked in this session's speaking-like section. Mirrors
+    _already_used_bank_item_ids (P1.1) for MCQ sections, but speaking's turn history lives under
+    "results", not "asked"."""
+    results = state.get(section, {}).get("results", []) or []
+    return {int(r["bank_item_id"]) for r in results if r.get("bank_item_id")}
+
+
 # ---------------------------------------------------------------------------------------
 # state -> output contract
 # ---------------------------------------------------------------------------------------
@@ -1917,7 +1970,14 @@ async def initiate_exam(
     level = await _effective_level(db, student_id=student_id, language_id=language_id)
     learner_grade = await _student_grade(db, student_id=student_id)
     await db.rollback()
-    scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
+    # MVP: prefer a curated, MVP-approved speaking_prompt bank item over live scenario/question
+    # generation; fall back to the existing AI-generated (or grade-banded) path unchanged if the
+    # bank has nothing usable for this level/language.
+    opening_bank_item = await _speaking_bank_prompt(db, language_id=language_id, level_str=level)
+    if opening_bank_item is not None:
+        scenario = _speaking_scenario_from_bank_item(opening_bank_item)
+    else:
+        scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
 
     # Phase 2: recheck under the same per-user lock. A concurrent initiate may have won while AI
     # was running, in which case its session is returned and this generated scenario is discarded.
@@ -1950,6 +2010,9 @@ async def initiate_exam(
             "total_turns": SPEAKING_TURNS,
             "turn": 1,
             "pending_question": scenario["opening_question"],
+            # Retained so the turn-1 answer can record which bank item it came from (or None for
+            # AI-generated/fallback questions), mirroring bank_item_id retention in MCQ sections.
+            "pending_bank_item_id": opening_bank_item.get("bank_item_id") if opening_bank_item is not None else None,
             "turn_token": _new_exam_token(),
             "results": [],
             "done": False,
@@ -2235,6 +2298,7 @@ async def speaking_turn(
         )
 
     sp = state[section]
+    answered_bank_item_id = sp.get("pending_bank_item_id")
     sp.setdefault("results", []).append(
         {
             "question": question,
@@ -2249,6 +2313,9 @@ async def speaking_turn(
             "audio_mime_type": audio.mime_type,
             "stt_engine": stt.engine,
             "stt_model": stt.model,
+            # Retained so the next turn's bank selection can exclude it via used_item_ids,
+            # mirroring MCQ sections' bank_item_id retention (P1.1) -- scoring never reads this.
+            "bank_item_id": int(answered_bank_item_id) if answered_bank_item_id else None,
         }
     )
 
@@ -2262,11 +2329,29 @@ async def speaking_turn(
     if turn >= total:
         sp["done"] = True
         sp["pending_question"] = ""
+        sp["pending_bank_item_id"] = None
         sp["turn_token"] = ""
         sp["evidence_status"] = "completed"
     else:
         sp["turn"] = turn + 1
-        sp["pending_question"] = assessment.next_question or "Tell me more about that."
+        # MVP: prefer a curated bank prompt at the live estimated level (a light staircase) over
+        # asking Claude to invent the next question; fall back to the existing AI-generated
+        # question unchanged if the bank has nothing usable left. Interview (legacy, dormant)
+        # keeps its own unmodified behavior -- this only applies to the live "speaking" section.
+        next_bank_item = None
+        if section == "speaking":
+            next_bank_item = await _speaking_bank_prompt(
+                db,
+                language_id=language_id,
+                level_str=assessment.estimated_level.value,
+                used_item_ids=_already_used_speaking_bank_item_ids(state, section),
+            )
+        if next_bank_item is not None:
+            sp["pending_question"] = _speaking_bank_question_text(next_bank_item)
+            sp["pending_bank_item_id"] = next_bank_item.get("bank_item_id")
+        else:
+            sp["pending_question"] = assessment.next_question or "Tell me more about that."
+            sp["pending_bank_item_id"] = None
         sp["turn_token"] = _new_exam_token()
         sp["evidence_status"] = "missing_student_response"
 

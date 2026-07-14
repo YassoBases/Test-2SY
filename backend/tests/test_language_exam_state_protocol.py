@@ -11,6 +11,7 @@ from app.api.language_exam import (
     MCQ_SECTIONS,
     MIN_MCQ_EVIDENCE_ITEMS,
     _already_used_bank_item_ids,
+    _already_used_speaking_bank_item_ids,
     _boundary_situation,
     _ensure_state_protocol,
     _mcq_continuation_level,
@@ -18,6 +19,7 @@ from app.api.language_exam import (
     _record_request,
     _request_receipt,
     _require_current_state,
+    _speaking_bank_question_text,
     _state_revision,
     canonical_payload_hash,
     evaluation_lease_expired,
@@ -284,3 +286,38 @@ def test_boundary_situation_none_with_fewer_than_two_answers():
     """Nothing to compare yet -- must not raise, must not fabricate a boundary from one answer."""
     assert _boundary_situation([]) is None
     assert _boundary_situation([{"level": "A2", "correct": True, "chosen_index": 0}]) is None
+
+
+def test_speaking_bank_question_text_combines_situation_and_question():
+    """MVP speaking-bank wiring: the displayed question folds the bank item's short scenario
+    framing in front of the actual prompt text."""
+    item = {"situation": "A friend asks about your day.", "question": "Tell me about your day."}
+    assert _speaking_bank_question_text(item) == "A friend asks about your day. Tell me about your day."
+
+
+def test_speaking_bank_question_text_falls_back_to_question_only_without_situation():
+    assert _speaking_bank_question_text({"situation": "", "question": "Tell me about your day."}) == (
+        "Tell me about your day."
+    )
+    assert _speaking_bank_question_text({"question": "Tell me about your day."}) == "Tell me about your day."
+    assert _speaking_bank_question_text({"situation": "   ", "question": "  Tell me.  "}) == "Tell me."
+
+
+def test_already_used_speaking_bank_item_ids_reads_from_results_not_asked():
+    """Speaking's turn history lives under "results", not "asked" (unlike MCQ sections) -- this
+    must read the right key and ignore missing/None bank_item_id values, mirroring
+    _already_used_bank_item_ids's contract for MCQ sections (P1.1)."""
+    state = {
+        "speaking": {
+            "results": [
+                {"bank_item_id": 5, "estimated_level": "A2"},
+                {"bank_item_id": None, "estimated_level": "B1"},
+                {"bank_item_id": 9, "estimated_level": "B1"},
+            ],
+            "asked": [{"bank_item_id": 999}],  # must NOT be read for a speaking-like section
+        },
+        "writing": {"response": "some text"},
+    }
+    assert _already_used_speaking_bank_item_ids(state, "speaking") == {5, 9}
+    assert _already_used_speaking_bank_item_ids(state, "writing") == set()
+    assert _already_used_speaking_bank_item_ids(state, "interview") == set()

@@ -1,21 +1,32 @@
-"""Draft speaking-placement prompt content and seeding logic (Blueprint Phase A0+A1).
+"""Draft speaking-placement prompt content and seeding logic (Blueprint Phase A0+A1, MVP
+activation).
 
-This module only drafts candidate content -- it does not perform, and must never claim to
-perform, the human review that later activates an item for the live placement exam.
+MVP product decision: the 30 drafted speaking_prompt items are used for MVP placement WITHOUT a
+completed human-review pass. This module must never write or imply that a human review was
+performed -- every item it writes carries an explicit, machine-readable
+"mvp_approved_pending_full_review" / human_reviewed=False marker (see MVP_REVIEW_STATUS below),
+and a full linguistic/content audit is expected after MVP.
 
 Kept importable/testable under app/services/ (rather than only in backend/scripts/, which is
 excluded from the test Docker image via Dockerfile.test.dockerignore) so the seeding logic and
 authored content can be covered by the automated test suite. backend/scripts/
-seed_speaking_placement_prompts.py is a thin CLI wrapper around seed_speaking_prompts() below.
+seed_speaking_placement_prompts.py is a thin CLI wrapper around seed_speaking_prompts() and
+activate_mvp_drafts() below.
 
 Safety:
 - Idempotent by stable_key: existing rows are updated (content only), missing rows are inserted.
-- Every item this module writes is a DRAFT: is_verified is set to False only when a row is
-  first inserted, and is never touched again on subsequent re-runs -- so a later human review
-  pass (a separate task) can never be silently undone by re-running the seed to fix a typo or
-  add more items.
-- Nothing here is wired into the live exam route; skill="speaking_prompt" items are inert until
-  a future, separately-scoped task reads them back out.
+- seed_speaking_prompts() NEVER touches is_verified/is_active on an update -- only a fresh
+  insert sets them (now is_verified=True/is_active=True, reflecting the MVP-approved decision
+  for this batch). So a routine re-run (fixing a typo, adding more items) can never silently
+  change verification status either way.
+- activate_mvp_drafts() is a separate, narrowly-scoped, explicit one-time action for rows that
+  were already inserted before this MVP decision (i.e. still sitting in the exact
+  never-touched-since-seeding state: source == "draft_seed" and is_verified is False). It is
+  itself idempotent (a second run activates zero additional rows) and never touches a row a
+  human/operator has since modified in any way (different source, or already verified either
+  direction) -- so it cannot overwrite a later reviewer decision.
+- Nothing here is wired into the live exam route by this module itself; skill="speaking_prompt"
+  selection is wired in language_exam.py separately.
 """
 
 from __future__ import annotations
@@ -29,6 +40,8 @@ from app.models.language.catalog import Language
 from app.models.language.enums import LanguageLevel
 from app.models.language.question_bank import LanguagePlacementQuestionBankItem
 
+
+MVP_REVIEW_STATUS = "mvp_approved_pending_full_review"
 
 GRADE_BANDS = ("early_primary", "upper_primary", "middle_school", "secondary", "mixed_school")
 ALL_GRADE_BANDS = list(GRADE_BANDS)
@@ -144,6 +157,10 @@ class SpeakingPromptSeed:
             note += _BOUNDARY_REVIEWER_SUFFIX.format(
                 low=self.boundary_low_level.value, high=self.boundary_high_level.value
             )
+        note += (
+            " MVP note: this item is active for MVP placement without a completed human-review "
+            "pass -- the checks above still need to be performed in the full post-MVP audit."
+        )
         return note
 
     def body_json(self) -> dict:
@@ -151,6 +168,9 @@ class SpeakingPromptSeed:
             "grade_band": list(self.grade_band),
             "expected_response_seconds": self.expected_response_seconds,
             "reference_notes": self.reference_notes,
+            # Explicit, machine-readable MVP status -- never claim a human review was done.
+            "review_status": MVP_REVIEW_STATUS,
+            "human_reviewed": False,
         }
         if self.component_code:
             body["component_code"] = self.component_code
@@ -502,10 +522,10 @@ def summarize(seeds: list[SpeakingPromptSeed]) -> str:
     lines += [f"  {pair}: {count}" for pair, count in sorted(boundary_pairs.items())]
     lines.append("")
     lines.append(
-        "All items are DRAFTS (is_verified=False). A human reviewer must check each item for "
-        "CEFR-appropriateness, age/content safety, and clarity before activating it -- see each "
-        "item's body_json.reference_notes for what to check. This module never performs that "
-        "review itself."
+        f"All items are MVP-approved for placement use ({MVP_REVIEW_STATUS}) but have NOT had a "
+        "completed human review -- see each item's body_json.reference_notes/review_status. "
+        "This module never performs, and never claims to perform, that review itself; a full "
+        "linguistic/content audit is expected after MVP."
     )
     return "\n".join(lines)
 
@@ -524,9 +544,11 @@ async def seed_speaking_prompts(
     column's own unique constraint is global, not per-language): an existing row's content
     fields are updated but is_verified/is_active are deliberately left untouched, so a human
     reviewer's later decision on an item can never be silently reset by re-running this to fix a
-    typo or add more items. A brand new row is always inserted as an unverified, active draft.
-    Returns (inserts, updates); in dry-run mode (apply=False) nothing is written and the counts
-    are computed, not applied.
+    typo or add more items. A brand new row is inserted as an MVP-approved, active item
+    (is_verified=True/is_active=True -- these items are used for MVP placement without a
+    completed human review, per explicit product decision; see MVP_REVIEW_STATUS). Returns
+    (inserts, updates); in dry-run mode (apply=False) nothing is written and the counts are
+    computed, not applied.
     """
     seeds = SPEAKING_PROMPT_SEEDS if seeds is None else seeds
     keys = [db_stable_key(language_code, s.content_key) for s in seeds]
@@ -539,7 +561,7 @@ async def seed_speaking_prompts(
             if row is None:
                 row = LanguagePlacementQuestionBankItem(stable_key=key)
                 _apply_content_fields(row, seed, language_id=language_id)
-                row.is_verified = False
+                row.is_verified = True
                 row.is_active = True
                 db.add(row)
                 inserts += 1
@@ -551,3 +573,33 @@ async def seed_speaking_prompts(
         inserts = sum(1 for key in keys if key not in existing)
         updates = len(seeds) - inserts
     return inserts, updates
+
+
+async def activate_mvp_drafts(
+    db: AsyncSession, *, language_code: str, seeds: list[SpeakingPromptSeed] | None = None
+) -> int:
+    """One-time MVP go-live action: elevate rows still sitting in the exact pristine,
+    never-touched-since-seeding state (source == "draft_seed" and is_verified is False --
+    i.e. inserted by an older version of seed_speaking_prompts(), before the MVP-approved
+    decision made fresh inserts default to is_verified=True) to is_verified=True/is_active=True.
+
+    Deliberately separate from seed_speaking_prompts()'s routine content-sync path, which never
+    touches is_verified/is_active at all -- so a routine re-run (e.g. to add more items later)
+    can never accidentally reactivate an item a human has since deliberately deactivated. This
+    function itself only touches rows still exactly in that pristine draft state; anything a
+    human/operator has since modified (a different source, or already is_verified=True/False by
+    deliberate action after this ran once) is left untouched. Idempotent: a second run activates
+    zero additional rows once the batch has been activated once. Returns the number activated.
+    """
+    seeds = SPEAKING_PROMPT_SEEDS if seeds is None else seeds
+    keys = [db_stable_key(language_code, s.content_key) for s in seeds]
+    existing = await _existing_by_key(db, keys)
+    activated = 0
+    for row in existing.values():
+        if row.source == "draft_seed" and row.is_verified is False:
+            row.is_verified = True
+            row.is_active = True
+            activated += 1
+    if activated:
+        await db.commit()
+    return activated

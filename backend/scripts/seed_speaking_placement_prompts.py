@@ -1,9 +1,11 @@
-"""CLI entry point: seed DRAFT speaking-placement prompts (Blueprint Phase A0+A1).
+"""CLI entry point: seed and MVP-activate speaking-placement prompts (Blueprint Phase A0+A1, MVP
+activation).
 
-This script only drafts candidate content -- it does not perform, and must never claim to
-perform, the human review that later activates an item for the live placement exam.
+MVP product decision: these 30 items are used for MVP placement WITHOUT a completed human-review
+pass. This script never claims a human review was performed -- see the service module's
+MVP_REVIEW_STATUS marker, stamped into every item's body_json.
 
-The actual seed content and idempotent insert/update logic live in
+The actual seed content and idempotent insert/update/activation logic live in
 app/services/language_speaking_placement_seed_service.py (kept importable/testable there,
 since backend/scripts/ is excluded from the test Docker image). This file is just the
 command-line wrapper: argument parsing, opening a session, printing a summary.
@@ -11,8 +13,9 @@ command-line wrapper: argument parsing, opening a session, printing a summary.
 Safety:
 - Default mode is dry-run. Nothing is written unless --apply is passed.
 - Requires the 0003_placement_qbank migration/table to exist.
-- Every item written is a DRAFT (is_verified=False); see the service module's docstring for
-  the exact idempotency/re-run guarantees.
+- --apply both syncs content (never touching is_verified/is_active on an existing row) and runs
+  the one-time MVP activation pass (only touches rows still in the pristine, never-touched
+  draft state) -- see the service module's docstring for the exact idempotency/re-run guarantees.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from app.services.language_speaking_placement_seed_service import (
     SPEAKING_PROMPT_SEEDS,
     _language_id,
     _table_exists,
+    activate_mvp_drafts,
     seed_speaking_prompts,
     summarize,
 )
@@ -36,7 +40,10 @@ from app.services.language_speaking_placement_seed_service import (
 
 async def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Seed DRAFT (unverified) speaking placement prompts. Never marks anything verified."
+        description=(
+            "Seed and MVP-activate speaking placement prompts. Never claims a human review was "
+            "performed -- items are explicitly marked mvp_approved_pending_full_review."
+        )
     )
     parser.add_argument("--language-code", default="en")
     parser.add_argument("--apply", action="store_true", help="Write changes. Default is dry-run.")
@@ -55,9 +62,12 @@ async def main() -> int:
         inserts, updates = await seed_speaking_prompts(
             db, language_id=language_id, language_code=args.language_code, apply=args.apply
         )
+        activated = 0
+        if args.apply:
+            activated = await activate_mvp_drafts(db, language_code=args.language_code)
 
         mode = "APPLY" if args.apply else "DRY-RUN"
-        print(f"{mode}: seeds={len(SPEAKING_PROMPT_SEEDS)} inserts={inserts} updates={updates}")
+        print(f"{mode}: seeds={len(SPEAKING_PROMPT_SEEDS)} inserts={inserts} updates={updates} activated={activated}")
         print(summarize(SPEAKING_PROMPT_SEEDS))
     return 0
 

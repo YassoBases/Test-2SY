@@ -1103,6 +1103,294 @@ async def test_two_concurrent_audio_files_cannot_fill_two_speaking_turns(
     assert len(latest["request_receipts"]) == 1
 
 
+async def _insert_speaking_bank_item(
+    postgres_session_factory, *, language_id: int, level: str, prompt_text: str, situation: str = ""
+) -> int:
+    """Seed one verified, active speaking_prompt bank item -- MVP items are usable immediately,
+    unlike the MCQ/writing bank tests which don't need is_verified toggled explicitly."""
+    async with postgres_session_factory() as db:
+        item = LanguagePlacementQuestionBankItem(
+            language_id=language_id,
+            skill="speaking_prompt",
+            level=LanguageLevel(level),
+            question_type="speaking_prompt",
+            prompt_text=prompt_text,
+            situation=situation or None,
+            subskill="self_intro",
+            source="draft_seed",
+            is_verified=True,
+            is_active=True,
+            body_json={
+                "grade_band": ["mixed_school"],
+                "expected_response_seconds": {"min": 10, "target": 20, "max": 45},
+                "review_status": "mvp_approved_pending_full_review",
+                "human_reviewed": False,
+            },
+        )
+        db.add(item)
+        await db.commit()
+        return item.id
+
+
+async def _fake_audio_and_stt(monkeypatch) -> None:
+    async def fake_read(file) -> ValidatedAudio:
+        content = str(file.filename).encode("utf-8")
+        return ValidatedAudio(
+            data=content,
+            mime_type="audio/webm",
+            suffix=".webm",
+            sha256=hashlib.sha256(content).hexdigest(),
+            duration_seconds=3.0,
+        )
+
+    async def fake_transcribe(audio: ValidatedAudio) -> ConversationTranscription:
+        return ConversationTranscription(
+            text=f"A reasonable spoken answer {audio.sha256[:6]}", engine="test-stt", model="test-model"
+        )
+
+    monkeypatch.setattr(language_exam, "_read_speaking_audio", fake_read)
+    monkeypatch.setattr(language_exam, "_verified_server_transcription", fake_transcribe)
+
+
+async def test_initiate_exam_and_speaking_turns_use_verified_bank_prompts_with_staircase_and_no_repeats(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """MVP wiring Tests C, D, E: a new speaking session must pull its opening question, and every
+    subsequent turn's question, from verified speaking_prompt bank items -- following the live
+    per-turn estimated_level as a light staircase, never repeating an item, and never falling
+    back to the AI's own next_question/generated scenario when a bank item is available (proven
+    via a distinctive "poison" value that must never surface)."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    monkeypatch.setattr(language_exam, "_student_grade", lambda *_args, **_kwargs: _async(None))
+
+    async def poison_generate_scenario(**_kwargs) -> dict:
+        return {
+            "scenario": "POISON",
+            "ai_persona": "POISON",
+            "student_role": "POISON",
+            "setting": "POISON",
+            "opening_question": "POISON_SHOULD_NOT_APPEAR",
+        }
+
+    monkeypatch.setattr(language_exam.ai_engine, "generate_scenario_and_opening", poison_generate_scenario)
+
+    a2_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="Tell me about your day.",
+        situation="A friend asks about your day.",
+    )
+    b1_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="B1",
+        prompt_text="Tell me about a memorable trip.",
+        situation="A friend asks about travel.",
+    )
+    c1_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="C1",
+        prompt_text="Discuss how technology changes society.",
+        situation="A thoughtful discussion.",
+    )
+
+    async with postgres_session_factory() as db:
+        student = await db.get(User, record.student_id)
+        language = await db.get(Language, record.language_id)
+        monkeypatch.setattr(language_exam, "get_default_language", lambda _db: _async(language))
+        initiate_response = await language_exam.initiate_exam(BackgroundTasks(), student=student, db=db)
+
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] != "POISON_SHOULD_NOT_APPEAR"
+    assert "Tell me about your day." in sp["pending_question"]
+    assert sp["pending_bank_item_id"] == a2_id
+
+    # assess_speaking runs once per turn including the last (the "done" check happens after
+    # assessment), so this needs one value per turn even though turn 3's estimate is never used
+    # for further selection.
+    call_levels = iter([CEFRLevel.B1, CEFRLevel.C1, CEFRLevel.C1])
+
+    async def fake_assess(**kwargs) -> SpeakingTurnAssessment:
+        return SpeakingTurnAssessment(
+            transcription=kwargs["transcript"],
+            grammar_vocab_feedback="No material issue.",
+            pronunciation_feedback="",
+            fluency_note="Coherent response.",
+            estimated_level=next(call_levels),
+            next_question="POISON_SHOULD_NOT_APPEAR",
+        )
+
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", fake_assess)
+
+    async def submit_turn(filename: str, request_id: str):
+        stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+        sp = stored.exam_state["speaking"]
+        async with postgres_session_factory() as db:
+            return await language_exam.speaking_turn(
+                initiate_response.session_id,
+                BackgroundTasks(),
+                file=SimpleNamespace(filename=filename),
+                duration_seconds=None,
+                request_id=request_id,
+                state_revision=stored.exam_state["state_revision"],
+                turn_token=sp["turn_token"],
+                student=record.student,
+                db=db,
+            )
+
+    await submit_turn("turn1.webm", "mvp-staircase-turn-1")
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] != "POISON_SHOULD_NOT_APPEAR"
+    assert "memorable trip" in sp["pending_question"]
+    assert sp["pending_bank_item_id"] == b1_id
+
+    await submit_turn("turn2.webm", "mvp-staircase-turn-2")
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] != "POISON_SHOULD_NOT_APPEAR"
+    assert "technology changes society" in sp["pending_question"]
+    assert sp["pending_bank_item_id"] == c1_id
+
+    await submit_turn("turn3.webm", "mvp-staircase-turn-3")
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["done"] is True
+    assert sp["total_turns"] == 3  # speaking remains 3 turns for MVP
+    assert len(sp["results"]) == 3
+    bank_item_ids = [r["bank_item_id"] for r in sp["results"]]
+    assert bank_item_ids == [a2_id, b1_id, c1_id]
+    assert len(set(bank_item_ids)) == 3  # no repeated speaking prompt within the session
+
+
+async def test_speaking_uses_ai_fallback_when_no_verified_bank_item_available(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """MVP wiring Test F: when the bank has nothing usable (none seeded for this fresh language),
+    the exam must still work via the existing AI-generated scenario/next-question path --
+    fallback compatibility is fully preserved."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    monkeypatch.setattr(language_exam, "_student_grade", lambda *_args, **_kwargs: _async(None))
+
+    async def generate_scenario(**_kwargs) -> dict:
+        return {
+            "scenario": "At a community event",
+            "ai_persona": "Host",
+            "student_role": "Guest",
+            "setting": "Community hall",
+            "opening_question": "What brought you to the event?",
+        }
+
+    monkeypatch.setattr(language_exam.ai_engine, "generate_scenario_and_opening", generate_scenario)
+
+    async with postgres_session_factory() as db:
+        language = await db.get(Language, record.language_id)
+        monkeypatch.setattr(language_exam, "get_default_language", lambda _db: _async(language))
+        initiate_response = await language_exam.initiate_exam(BackgroundTasks(), student=record.student, db=db)
+
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] == "What brought you to the event?"
+    assert sp["pending_bank_item_id"] is None
+
+    async def fake_assess(**kwargs) -> SpeakingTurnAssessment:
+        return SpeakingTurnAssessment(
+            transcription=kwargs["transcript"],
+            grammar_vocab_feedback="No material issue.",
+            pronunciation_feedback="",
+            fluency_note="Coherent response.",
+            estimated_level=CEFRLevel.A2,
+            next_question="What activity would you like to join next?",
+        )
+
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", fake_assess)
+
+    async with postgres_session_factory() as db:
+        await language_exam.speaking_turn(
+            initiate_response.session_id,
+            BackgroundTasks(),
+            file=SimpleNamespace(filename="a.webm"),
+            duration_seconds=None,
+            request_id="fallback-turn-1",
+            state_revision=stored.exam_state["state_revision"],
+            turn_token=sp["turn_token"],
+            student=record.student,
+            db=db,
+        )
+
+    stored = await _stored_exam(postgres_session_factory, initiate_response.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] == "What activity would you like to join next?"
+    assert sp["pending_bank_item_id"] is None
+    assert sp["results"][0]["bank_item_id"] is None
+
+
+async def test_old_in_flight_speaking_session_without_pending_bank_item_id_still_works(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """MVP wiring Test G: a session created before this change (its "speaking" dict predates the
+    pending_bank_item_id key entirely) must keep working exactly as before -- falling back to
+    AI-generated next_question, with no crash from the new .get("pending_bank_item_id")."""
+    state = _speaking_state()  # pre-existing fixture, deliberately has no pending_bank_item_id key
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+
+    async def fake_assess(**kwargs) -> SpeakingTurnAssessment:
+        return SpeakingTurnAssessment(
+            transcription=kwargs["transcript"],
+            grammar_vocab_feedback="No material issue.",
+            pronunciation_feedback="",
+            fluency_note="Coherent response.",
+            estimated_level=CEFRLevel.A2,
+            next_question="What activity would you like to join next?",
+        )
+
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", fake_assess)
+
+    async with postgres_session_factory() as db:
+        await language_exam.speaking_turn(
+            record.session_id,
+            BackgroundTasks(),
+            file=SimpleNamespace(filename="a.webm"),
+            duration_seconds=None,
+            request_id="old-session-turn-1",
+            state_revision=state["state_revision"],
+            turn_token=state["speaking"]["turn_token"],
+            student=record.student,
+            db=db,
+        )
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sp = stored.exam_state["speaking"]
+    assert sp["pending_question"] == "What activity would you like to join next?"
+    assert sp["results"][0]["bank_item_id"] is None
+    assert sp["done"] is False
+    assert sp["turn"] == 2
+
+
 async def test_speaking_stt_wait_does_not_hold_the_exam_row_lock(
     monkeypatch,
     postgres_session_factory,
