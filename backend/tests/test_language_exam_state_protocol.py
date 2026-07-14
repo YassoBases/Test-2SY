@@ -8,8 +8,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.language_exam import (
+    MCQ_SECTIONS,
+    MIN_MCQ_EVIDENCE_ITEMS,
     _already_used_bank_item_ids,
     _ensure_state_protocol,
+    _mcq_continuation_level,
     _new_exam_token,
     _record_request,
     _request_receipt,
@@ -185,3 +188,52 @@ def test_already_used_bank_item_ids_extracts_from_asked_entries():
     assert _already_used_bank_item_ids(state, "reading") == {5, 9}
     assert _already_used_bank_item_ids(state, "writing") == set()
     assert _already_used_bank_item_ids(state, "listening") == set()
+
+
+def test_mcq_continuation_level_keeps_probing_below_minimum_evidence():
+    """P1.2 Test A: with fewer than MIN_MCQ_EVIDENCE_ITEMS answered and another pool level still
+    unasked, the guard must pick a level to keep going rather than stopping. It picks the nearest
+    remaining rung by CEFR rank distance (same style as _new_adaptive_section), not just any."""
+    level = _mcq_continuation_level(
+        pool_levels={"A2", "B1", "B2"},
+        asked_levels={"A2"},
+        asked_count=1,
+        current="A2",
+    )
+    assert level == "B1"  # B1 (rank distance 1) is nearer to A2 than B2 (rank distance 2)
+
+
+def test_mcq_continuation_level_stops_once_minimum_evidence_reached():
+    """P1.2 Test B: once MIN_MCQ_EVIDENCE_ITEMS items are answered, the guard defers to the
+    staircase's own stop signal even though the pool still has an unasked level left."""
+    assert MIN_MCQ_EVIDENCE_ITEMS == 3
+    level = _mcq_continuation_level(
+        pool_levels={"A2", "B1", "B2", "C1"},
+        asked_levels={"A2", "B1", "B2"},
+        asked_count=3,
+        current="B2",
+    )
+    assert level is None
+
+
+def test_mcq_continuation_level_stops_safely_when_pool_exhausted():
+    """P1.2 Test C: below the evidence floor but with no unasked pool level left, the guard must
+    still return None (defer to the caller's existing completion path) instead of stranding the
+    exam or looping — the pool being finite bounds this to "no infinite loop" by construction."""
+    level = _mcq_continuation_level(
+        pool_levels={"A2", "B1"},
+        asked_levels={"A2", "B1"},
+        asked_count=2,
+        current="B1",
+    )
+    assert level is None
+
+
+def test_min_mcq_evidence_guard_is_scoped_to_mcq_sections_only():
+    """P1.2 Test E (scope guard): the evidence floor only ever applies inside answer_mcq, which is
+    gated to MCQ_SECTIONS. Speaking and writing must never be members of that set, or a future
+    refactor could silently apply this MCQ-only guard to non-MCQ sections."""
+    assert MCQ_SECTIONS == {"listening", "reading", "grammar_vocab"}
+    assert "speaking" not in MCQ_SECTIONS
+    assert "writing" not in MCQ_SECTIONS
+    assert "interview" not in MCQ_SECTIONS

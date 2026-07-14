@@ -109,6 +109,7 @@ PREPARED_SECTIONS = {"listening", "reading", "grammar_vocab", "writing"}
 SPEAKING_TURNS = 3
 INTERVIEW_TURNS = 2  # Phase 2 — guided follow-up seeded by Phase 1 evidence.
 ADAPTIVE_MAX_STEPS = 5  # MCQ sections: max adaptive questions before settling on a level.
+MIN_MCQ_EVIDENCE_ITEMS = 3  # MCQ sections: don't settle on a level from fewer answered items than this.
 WRITING_MIN_WORDS = 40
 EVALUATION_LEASE_SECONDS = 15 * 60
 
@@ -284,6 +285,24 @@ def _already_used_bank_item_ids(state: dict, skill: str) -> set[int]:
     history."""
     asked = state.get(skill, {}).get("asked", []) or []
     return {int(a["bank_item_id"]) for a in asked if a.get("bank_item_id")}
+
+
+def _mcq_continuation_level(
+    *, pool_levels: set[str], asked_levels: set[str], asked_count: int, current: str
+) -> str | None:
+    """When the adaptive staircase converges/plateaus, decide whether to keep probing instead of
+    settling on a level (P1.2 minimum evidence floor).
+
+    Returns the next unasked pool level to ask (nearest to `current` by CEFR rank distance, same
+    selection style as _new_adaptive_section's initial-level snap), or None if evidence is already
+    sufficient (asked_count >= MIN_MCQ_EVIDENCE_ITEMS) or the pool has no unasked levels left — in
+    which case the caller should fall through to its existing completion path."""
+    if asked_count >= MIN_MCQ_EVIDENCE_ITEMS:
+        return None
+    remaining = [lv for lv in pool_levels if lv not in asked_levels]
+    if not remaining:
+        return None
+    return min(remaining, key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(current))))
 
 
 async def _question_bank_pool(
@@ -2265,8 +2284,18 @@ async def answer_mcq(
         asked_count=len(sec["asked"]), max_steps=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
     )
     if nxt is None:
-        sec["done"] = True
-        sec["evidence_status"] = "completed"
+        continuation = _mcq_continuation_level(
+            pool_levels=set(sec.get("pool", {}).keys()),
+            asked_levels=asked_levels,
+            asked_count=len(sec["asked"]),
+            current=cur,
+        )
+        if continuation is not None:
+            sec["current_level"] = continuation
+            sec["evidence_status"] = "missing_student_response"
+        else:
+            sec["done"] = True
+            sec["evidence_status"] = "completed"
     else:
         sec["current_level"] = nxt
         sec["evidence_status"] = "missing_student_response"

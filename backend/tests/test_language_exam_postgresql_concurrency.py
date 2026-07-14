@@ -539,6 +539,119 @@ async def test_two_concurrent_mcq_answers_only_apply_one_revision_and_token(
     assert len(latest["request_receipts"]) == 1
 
 
+def _evidence_floor_state(section: str) -> dict:
+    """Pool has 3 distinct levels (A1/A2/B1), but the plain 1-up-1-down staircase alone would
+    converge after only 2 answers -- B2 (the level after two correct answers from A2) isn't in
+    this pool, so adaptive_next_level returns None at asked_count=2. Used to prove the P1.2
+    minimum-evidence floor (MIN_MCQ_EVIDENCE_ITEMS=3) forces one more question first."""
+    return {
+        "version": 3,
+        "state_revision": 7,
+        "sections": [section],
+        "cursor": 0,
+        section: {
+            "mode": "adaptive",
+            "pool": {
+                "A1": {
+                    "question": "A1 question?",
+                    "options": ["correct", "wrong"],
+                    "correct_index": 0,
+                    "question_token": "evidence-floor-token-a1-000001",
+                    "bank_item_id": 101,
+                },
+                "A2": {
+                    "question": "A2 question?",
+                    "options": ["correct", "wrong"],
+                    "correct_index": 0,
+                    "question_token": "evidence-floor-token-a2-000001",
+                    "bank_item_id": 102,
+                },
+                "B1": {
+                    "question": "B1 question?",
+                    "options": ["correct", "wrong"],
+                    "correct_index": 0,
+                    "question_token": "evidence-floor-token-b1-000001",
+                    "bank_item_id": 103,
+                },
+            },
+            "current_level": "A2",
+            "asked": [],
+            "max_steps": 5,
+            "ready": True,
+            "done": False,
+            "evidence_status": "missing_student_response",
+        },
+        "request_receipts": [],
+    }
+
+
+@pytest.mark.parametrize("section", ["reading", "listening", "grammar_vocab"])
+async def test_mcq_section_keeps_probing_below_minimum_evidence_floor_before_completing(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+    section,
+) -> None:
+    """P1.2 Test D: reading/listening/grammar_vocab must not settle on a level from fewer than
+    MIN_MCQ_EVIDENCE_ITEMS=3 answered items while the pool still has an unasked level, even though
+    the plain staircase alone would stop after 2. Also covers Test E's P1.1 interaction: the
+    continuation must still resolve to the pool's own distinct, already-deduped items."""
+    state = _evidence_floor_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+
+    async def submit(request_id: str, choice_index: int):
+        stored = await _stored_exam(postgres_session_factory, record.session_id)
+        sec = stored.exam_state[section]
+        token = sec["pool"][sec["current_level"]]["question_token"]
+        async with postgres_session_factory() as db:
+            return await language_exam.answer_mcq(
+                record.session_id,
+                McqAnswerIn(
+                    choice_index=choice_index,
+                    request_id=request_id,
+                    state_revision=stored.exam_state["state_revision"],
+                    question_token=token,
+                ),
+                student=record.student,
+                db=db,
+            )
+
+    # Step 1: correct at A2 -> the staircase's own next level (B1) is in the pool -> ordinary
+    # advance, unaffected by the evidence floor.
+    await submit(f"evidence-floor-{section}-1", 0)
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is False
+    assert sec["current_level"] == "B1"
+    assert len(sec["asked"]) == 1
+
+    # Step 2: correct at B1 -> the staircase wants B2, which isn't in the pool, so
+    # adaptive_next_level alone would stop here at only 2 answered items. The evidence floor must
+    # force one more question (the only remaining pool level, A1) instead of finishing.
+    await submit(f"evidence-floor-{section}-2", 0)
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is False
+    assert sec["current_level"] == "A1"
+    assert sec["evidence_status"] == "missing_student_response"
+    assert len(sec["asked"]) == 2
+
+    # Step 3: wrong at A1 -> the staircase converges (stays at A1) and evidence now meets the
+    # floor (3 answered) -> the section is allowed to complete normally.
+    await submit(f"evidence-floor-{section}-3", 1)
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is True
+    assert sec["evidence_status"] == "completed"
+    assert len(sec["asked"]) == 3
+
+    # P1.1 compatibility: the evidence-floor continuation only ever selects among the pool's own
+    # pre-deduped levels, so no bank_item_id repeats within this session's asked list.
+    bank_item_ids = [a["bank_item_id"] for a in sec["asked"]]
+    assert len(bank_item_ids) == len(set(bank_item_ids)) == 3
+
+
 def _speaking_state() -> dict:
     return {
         "version": 3,
