@@ -652,6 +652,338 @@ async def test_mcq_section_keeps_probing_below_minimum_evidence_floor_before_com
     assert len(bank_item_ids) == len(set(bank_item_ids)) == 3
 
 
+async def _insert_boundary_bank_item(
+    postgres_session_factory,
+    *,
+    language_id: int,
+    skill: str,
+    level: str,
+    low: str,
+    high: str,
+) -> int:
+    """Seed one genuinely boundary-tagged, verified/active bank row so
+    select_placement_bank_items(..., boundary=...) has something real to find (P1.3).
+
+    Listening items additionally need a usable audio_url or _boundary_confirmation_item's own
+    validity check (mirroring _question_bank_pool's) discards them for missing audio evidence."""
+    async with postgres_session_factory() as db:
+        item = LanguagePlacementQuestionBankItem(
+            language_id=language_id,
+            skill=skill,
+            level=LanguageLevel(level),
+            boundary_low_level=LanguageLevel(low),
+            boundary_high_level=LanguageLevel(high),
+            question_type="mcq",
+            prompt_text="Boundary confirmation question?",
+            options_json=["boundary correct", "boundary wrong"],
+            correct_index=0,
+            source="seed",
+            is_verified=True,
+            is_active=True,
+            audio_meta_json=(
+                {"public_url": "/language-assets/en/placement/listening/boundary-test.wav"}
+                if skill == "listening"
+                else None
+            ),
+        )
+        db.add(item)
+        await db.commit()
+        return item.id
+
+
+def _boundary_prone_state(section: str) -> dict:
+    """4-level pool (A1..B2): correct at A2, correct at B1, incorrect at B2 satisfies both the
+    plain staircase (B1 already asked, so it converges) and the P1.2 evidence floor (3 answered),
+    landing exactly on a B1/B2 disagreement -- the scenario P1.3 boundary confirmation should
+    engage on."""
+
+    def _item(level: str, bank_item_id: int) -> dict:
+        return {
+            "question": f"{level} question?",
+            "options": ["correct", "wrong"],
+            "correct_index": 0,
+            "question_token": f"boundary-prone-token-{level.lower()}-000001",
+            "bank_item_id": bank_item_id,
+        }
+
+    return {
+        "version": 3,
+        "state_revision": 7,
+        "sections": [section],
+        "cursor": 0,
+        section: {
+            "mode": "adaptive",
+            "pool": {
+                "A1": _item("A1", 901),
+                "A2": _item("A2", 902),
+                "B1": _item("B1", 903),
+                "B2": _item("B2", 904),
+            },
+            "current_level": "A2",
+            "asked": [],
+            "max_steps": 5,
+            "ready": True,
+            "done": False,
+            "evidence_status": "missing_student_response",
+        },
+        "request_receipts": [],
+    }
+
+
+async def _drive_boundary_prone_state_to_trigger(postgres_session_factory, record, section: str) -> None:
+    """Answer A2 (correct), B1 (correct), B2 (incorrect) -- leaves both the staircase and the
+    P1.2 evidence floor satisfied, landing on a B1/B2 disagreement."""
+
+    async def submit(request_id: str, level: str, choice_index: int):
+        stored = await _stored_exam(postgres_session_factory, record.session_id)
+        sec = stored.exam_state[section]
+        token = sec["pool"][level]["question_token"]
+        async with postgres_session_factory() as db:
+            return await language_exam.answer_mcq(
+                record.session_id,
+                McqAnswerIn(
+                    choice_index=choice_index,
+                    request_id=request_id,
+                    state_revision=stored.exam_state["state_revision"],
+                    question_token=token,
+                ),
+                student=record.student,
+                db=db,
+            )
+
+    await submit(f"boundary-{section}-1", "A2", 0)
+    await submit(f"boundary-{section}-2", "B1", 0)
+    await submit(f"boundary-{section}-3", "B2", 1)
+
+
+@pytest.mark.parametrize("section", ["reading", "listening", "grammar_vocab"])
+async def test_boundary_confirmation_asks_one_extra_question_when_a_matching_item_exists(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+    section,
+) -> None:
+    """P1.3 Tests A, F: a genuine B1/B2 boundary item exists and hasn't been used yet -- the
+    section must ask exactly one more question built from that item (not zero), across all three
+    MCQ sections, and then finish immediately once it's answered."""
+    state = _boundary_prone_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    boundary_item_id = await _insert_boundary_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        skill=section,
+        level="B2",
+        low="B1",
+        high="B2",
+    )
+
+    await _drive_boundary_prone_state_to_trigger(postgres_session_factory, record, section)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is False
+    assert sec["boundary_asked"] is True
+    assert sec["evidence_status"] == "missing_student_response"
+    assert len(sec["asked"]) == 3
+    boundary_level_key = sec["current_level"]
+    assert sec["pool"][boundary_level_key]["bank_item_id"] == boundary_item_id
+
+    # Answer the boundary-confirmation question itself (incorrect here; a separate test proves the
+    # cap holds when it's answered correctly too) -- the section must finish right after.
+    async with postgres_session_factory() as db:
+        await language_exam.answer_mcq(
+            record.session_id,
+            McqAnswerIn(
+                choice_index=1,
+                request_id=f"boundary-{section}-confirm",
+                state_revision=stored.exam_state["state_revision"],
+                question_token=sec["pool"][boundary_level_key]["question_token"],
+            ),
+            student=record.student,
+            db=db,
+        )
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is True
+    assert sec["evidence_status"] == "completed"
+    assert len(sec["asked"]) == 4
+    assert sec["asked"][-1]["bank_item_id"] == boundary_item_id
+    bank_item_ids = [a["bank_item_id"] for a in sec["asked"]]
+    assert len(bank_item_ids) == len(set(bank_item_ids)) == 4
+
+
+async def test_boundary_confirmation_caps_at_one_question_when_answer_is_correct(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """P1.3 Test C: the cap must hold regardless of how the boundary-confirmation question itself
+    is answered -- answering it correctly must not trigger a second boundary/staircase round."""
+    section = "reading"
+    state = _boundary_prone_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    await _insert_boundary_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        skill=section,
+        level="B2",
+        low="B1",
+        high="B2",
+    )
+
+    await _drive_boundary_prone_state_to_trigger(postgres_session_factory, record, section)
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    boundary_level_key = sec["current_level"]
+
+    async with postgres_session_factory() as db:
+        await language_exam.answer_mcq(
+            record.session_id,
+            McqAnswerIn(
+                choice_index=0,  # correct this time
+                request_id="boundary-reading-confirm-correct",
+                state_revision=stored.exam_state["state_revision"],
+                question_token=sec["pool"][boundary_level_key]["question_token"],
+            ),
+            student=record.student,
+            db=db,
+        )
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is True
+    assert sec["evidence_status"] == "completed"
+    assert len(sec["asked"]) == 4
+
+
+async def test_boundary_confirmation_completes_safely_when_no_matching_item_exists(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """P1.3 Test B: a boundary situation is detected (B1 correct, B2 incorrect) but the bank has no
+    boundary-tagged item for that pair -- the section must complete safely at 3 answered items,
+    not block, and not loop looking for one."""
+    section = "reading"
+    state = _boundary_prone_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    # Deliberately no _insert_boundary_bank_item call -- the bank has nothing for this pair.
+
+    await _drive_boundary_prone_state_to_trigger(postgres_session_factory, record, section)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is True
+    assert sec["evidence_status"] == "completed"
+    assert len(sec["asked"]) == 3
+    # A boundary situation WAS detected and attempted (proving detection ran), it just found
+    # nothing usable -- this must not be retried or left half-finished.
+    assert sec["boundary_asked"] is True
+
+
+async def test_boundary_confirmation_excludes_an_already_used_bank_item_id(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """P1.3 Test D: if the only matching boundary item's id is already recorded as used within
+    this session, it must be excluded -- and since it's the only candidate, this looks identical
+    to "no matching item" (Test B) from the outside, but exercises the used_item_ids filter
+    specifically rather than an empty bank."""
+    section = "reading"
+    state = _boundary_prone_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    boundary_item_id = await _insert_boundary_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        skill=section,
+        level="B2",
+        low="B1",
+        high="B2",
+    )
+
+    # Pre-record that item id as already used for the pool's B2 entry, so by the time the
+    # staircase answers B2, _already_used_bank_item_ids(state, "reading") already contains it.
+    async with postgres_session_factory() as db:
+        row = (
+            await db.execute(select(LanguageExamSession).where(LanguageExamSession.id == record.session_id))
+        ).scalar_one()
+        exam_state = copy.deepcopy(row.exam_state)
+        exam_state[section]["pool"]["B2"]["bank_item_id"] = boundary_item_id
+        row.exam_state = exam_state
+        flag_modified(row, "exam_state")
+        await db.commit()
+
+    await _drive_boundary_prone_state_to_trigger(postgres_session_factory, record, section)
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is True
+    assert sec["evidence_status"] == "completed"
+    assert len(sec["asked"]) == 3
+    assert sec["boundary_asked"] is True
+    # The excluded id appears exactly once (the original B2 staircase answer) -- never again as a
+    # freshly-injected boundary question, proving the exclusion actually suppressed it.
+    matches = [a for a in sec["asked"] if a["bank_item_id"] == boundary_item_id]
+    assert len(matches) == 1
+    assert matches[0]["level"] == "B2"
+
+
+async def test_min_evidence_floor_still_applies_before_boundary_confirmation(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """P1.3 Test E: P1.2's minimum evidence floor must still take priority. A disagreement at only
+    2 answered items (below MIN_MCQ_EVIDENCE_ITEMS=3) must trigger the P1.2 continuation, not a
+    boundary-confirmation question -- even when a genuinely matching boundary item exists."""
+    section = "reading"
+    state = _evidence_floor_state(section)
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    # A genuinely matching A2/B1 boundary item exists in the bank -- it must not be reached yet.
+    await _insert_boundary_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        skill=section,
+        level="B1",
+        low="A2",
+        high="B1",
+    )
+
+    async def submit(request_id: str, level: str, choice_index: int):
+        stored = await _stored_exam(postgres_session_factory, record.session_id)
+        sec = stored.exam_state[section]
+        token = sec["pool"][level]["question_token"]
+        async with postgres_session_factory() as db:
+            return await language_exam.answer_mcq(
+                record.session_id,
+                McqAnswerIn(
+                    choice_index=choice_index,
+                    request_id=request_id,
+                    state_revision=stored.exam_state["state_revision"],
+                    question_token=token,
+                ),
+                student=record.student,
+                db=db,
+            )
+
+    await submit("evidence-before-boundary-1", "A2", 0)  # correct
+    await submit("evidence-before-boundary-2", "B1", 1)  # incorrect -> A2/B1 disagreement, but only 2 answered
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    sec = stored.exam_state[section]
+    assert sec["done"] is False
+    assert sec["current_level"] == "A1"  # P1.2's continuation, not the boundary item
+    assert not sec.get("boundary_asked")
+    assert len(sec["asked"]) == 2
+
+
 def _speaking_state() -> dict:
     return {
         "version": 3,

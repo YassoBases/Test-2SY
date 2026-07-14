@@ -86,6 +86,7 @@ from app.services.language_placement_policy_service import (
     next_allowed_retake_at,
 )
 from app.services.language_placement_question_bank_service import (
+    BoundaryTarget,
     bank_item_to_exam_item,
     record_bank_item_answer,
     select_placement_bank_items,
@@ -303,6 +304,77 @@ def _mcq_continuation_level(
     if not remaining:
         return None
     return min(remaining, key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(current))))
+
+
+def _boundary_situation(asked: list[dict]) -> tuple[str, str] | None:
+    """Detect uncertainty between two adjacent CEFR levels from the two most-recently-answered
+    items: one correct and the other, at the adjacent level, incorrect (P1.3).
+
+    Returns the (low, high) level strings to confirm, or None if the last two answers don't
+    straddle a single-band boundary (fewer than 2 answered, non-adjacent levels, or matching
+    correctness — agreement isn't uncertainty)."""
+    if len(asked) < 2:
+        return None
+    a, b = asked[-2], asked[-1]
+    if bool(a.get("correct")) == bool(b.get("correct")):
+        return None
+    try:
+        rank_a = cefr_rank(CEFRLevel(a["level"]))
+        rank_b = cefr_rank(CEFRLevel(b["level"]))
+    except ValueError:
+        return None
+    if abs(rank_a - rank_b) != 1:
+        return None
+    return (a["level"], b["level"]) if rank_a < rank_b else (b["level"], a["level"])
+
+
+async def _boundary_confirmation_item(
+    db: AsyncSession, *, language_id: int, skill: str, low: str, high: str, used_item_ids: set[int]
+) -> dict | None:
+    """Fetch one genuine boundary-tagged bank item for the (low, high) CEFR pair (P1.3), or None
+    if the bank has no such item.
+
+    select_placement_bank_items() falls back to a plain level-matched item when no boundary item
+    exists, so the returned row's own boundary_low_level/boundary_high_level are checked here to
+    confirm it's a real boundary hit and not that fallback in disguise."""
+    boundary = BoundaryTarget(low=LanguageLevel(low), high=LanguageLevel(high))
+    rows = await select_placement_bank_items(
+        db,
+        language_id=language_id,
+        skill=skill,
+        level=high,
+        count=1,
+        used_item_ids=used_item_ids,
+        boundary=boundary,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if row.boundary_low_level != boundary.low or row.boundary_high_level != boundary.high:
+        return None
+
+    item = bank_item_to_exam_item(row)
+    if not _is_valid_mcq_item(item):
+        return None
+    if skill == "listening":
+        if not _is_usable_audio_url(item.get("audio_url")):
+            item["audio_url"] = None
+        body = item.get("body") or {}
+        audio_text = _listening_text_from_body(body)
+        if item.get("content_id"):
+            content = await db.get(LanguageContentItem, item["content_id"])
+            body = content.body_json if content else body
+            if not audio_text:
+                audio_text = _listening_text_from_body(body)
+        audio_url = (body or {}).get("audio_url")
+        if not item.get("audio_url") and audio_text and _is_usable_audio_url(audio_url):
+            item["audio_url"] = str(audio_url)
+        if audio_text:
+            item["audio_text"] = audio_text
+        if not item.get("audio_url") and not item.get("audio_text"):
+            return None
+    item["source"] = "placement_qbank"
+    return item
 
 
 async def _question_bank_pool(
@@ -2277,28 +2349,58 @@ async def answer_mcq(
     })
     asked_levels = {a["level"] for a in sec["asked"]}
 
-    # Adaptive staircase: harder if correct, easier if wrong; stop when converged / out of steps.
-    nxt = adaptive_next_level(
-        current=cur, correct=correct, asked_levels=asked_levels,
-        pool_levels=set(sec.get("pool", {}).keys()),
-        asked_count=len(sec["asked"]), max_steps=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
-    )
-    if nxt is None:
-        continuation = _mcq_continuation_level(
-            pool_levels=set(sec.get("pool", {}).keys()),
-            asked_levels=asked_levels,
-            asked_count=len(sec["asked"]),
-            current=cur,
-        )
-        if continuation is not None:
-            sec["current_level"] = continuation
-            sec["evidence_status"] = "missing_student_response"
-        else:
-            sec["done"] = True
-            sec["evidence_status"] = "completed"
+    if sec.pop("_awaiting_boundary_answer", False):
+        # P1.3: the one allotted boundary-confirmation question has now been answered — the
+        # section always finishes here (regardless of correctness), so it can never ask a second.
+        sec["done"] = True
+        sec["evidence_status"] = "completed"
     else:
-        sec["current_level"] = nxt
-        sec["evidence_status"] = "missing_student_response"
+        # Adaptive staircase: harder if correct, easier if wrong; stop when converged / out of steps.
+        nxt = adaptive_next_level(
+            current=cur, correct=correct, asked_levels=asked_levels,
+            pool_levels=set(sec.get("pool", {}).keys()),
+            asked_count=len(sec["asked"]), max_steps=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
+        )
+        if nxt is None:
+            continuation = _mcq_continuation_level(
+                pool_levels=set(sec.get("pool", {}).keys()),
+                asked_levels=asked_levels,
+                asked_count=len(sec["asked"]),
+                current=cur,
+            )
+            boundary_item = None
+            if continuation is None and not sec.get("boundary_asked"):
+                boundary = _boundary_situation(sec["asked"])
+                if boundary is not None:
+                    sec["boundary_asked"] = True
+                    low, high = boundary
+                    boundary_item = await _boundary_confirmation_item(
+                        db,
+                        language_id=int(sess.language_id),
+                        skill=section,
+                        low=low,
+                        high=high,
+                        used_item_ids=_already_used_bank_item_ids(state, section),
+                    )
+            if continuation is not None:
+                sec["current_level"] = continuation
+                sec["evidence_status"] = "missing_student_response"
+            elif boundary_item is not None:
+                # P1.3: inject the boundary item under its own reported level so the existing
+                # pool/current_level/asked machinery (and adaptive_result's CEFR parsing) needs no
+                # changes; _awaiting_boundary_answer ensures this section finishes right after.
+                boundary_item["question_token"] = _new_exam_token()
+                level_key = boundary_item.get("level") or cur
+                sec.setdefault("pool", {})[level_key] = boundary_item
+                sec["current_level"] = level_key
+                sec["_awaiting_boundary_answer"] = True
+                sec["evidence_status"] = "missing_student_response"
+            else:
+                sec["done"] = True
+                sec["evidence_status"] = "completed"
+        else:
+            sec["current_level"] = nxt
+            sec["evidence_status"] = "missing_student_response"
 
     _advance_if_section_done(state)
     result_revision = _bump_state_revision(state)

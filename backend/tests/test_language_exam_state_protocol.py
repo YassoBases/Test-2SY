@@ -11,6 +11,7 @@ from app.api.language_exam import (
     MCQ_SECTIONS,
     MIN_MCQ_EVIDENCE_ITEMS,
     _already_used_bank_item_ids,
+    _boundary_situation,
     _ensure_state_protocol,
     _mcq_continuation_level,
     _new_exam_token,
@@ -237,3 +238,49 @@ def test_min_mcq_evidence_guard_is_scoped_to_mcq_sections_only():
     assert "speaking" not in MCQ_SECTIONS
     assert "writing" not in MCQ_SECTIONS
     assert "interview" not in MCQ_SECTIONS
+
+
+def test_boundary_situation_detects_adjacent_disagreement():
+    """P1.3: one correct item at the lower level and the adjacent-level item incorrect is exactly
+    the canonical uncertainty pattern -- must return (low, high) in rank order."""
+    asked = [
+        {"level": "B1", "correct": True, "chosen_index": 0, "bank_item_id": 1},
+        {"level": "B2", "correct": False, "chosen_index": 1, "bank_item_id": 2},
+    ]
+    assert _boundary_situation(asked) == ("B1", "B2")
+
+
+def test_boundary_situation_is_order_independent():
+    """The same disagreement, encountered in the opposite asking order, still resolves to
+    (low, high) by CEFR rank rather than by which one was asked first."""
+    asked = [
+        {"level": "B2", "correct": False, "chosen_index": 1, "bank_item_id": 2},
+        {"level": "B1", "correct": True, "chosen_index": 0, "bank_item_id": 1},
+    ]
+    assert _boundary_situation(asked) == ("B1", "B2")
+
+
+def test_boundary_situation_none_when_levels_agree():
+    """Two adjacent levels both answered the same way (both correct or both incorrect) is
+    consistent performance, not uncertainty -- no boundary situation."""
+    asked = [
+        {"level": "A2", "correct": True, "chosen_index": 0, "bank_item_id": 1},
+        {"level": "B1", "correct": True, "chosen_index": 0, "bank_item_id": 2},
+    ]
+    assert _boundary_situation(asked) is None
+
+
+def test_boundary_situation_none_when_levels_are_not_adjacent():
+    """A disagreement that spans more than one CEFR band (e.g. a P1.2-forced jump) isn't a single
+    boundary -- there's no one line to confirm, so no boundary situation is reported."""
+    asked = [
+        {"level": "A1", "correct": True, "chosen_index": 0, "bank_item_id": 1},
+        {"level": "B1", "correct": False, "chosen_index": 1, "bank_item_id": 2},
+    ]
+    assert _boundary_situation(asked) is None
+
+
+def test_boundary_situation_none_with_fewer_than_two_answers():
+    """Nothing to compare yet -- must not raise, must not fabricate a boundary from one answer."""
+    assert _boundary_situation([]) is None
+    assert _boundary_situation([{"level": "A2", "correct": True, "chosen_index": 0}]) is None
