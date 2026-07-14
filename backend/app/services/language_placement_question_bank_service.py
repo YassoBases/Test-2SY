@@ -90,11 +90,20 @@ async def select_placement_bank_items(
     boundary: BoundaryTarget | tuple[LanguageLevel | str, LanguageLevel | str] | None = None,
     subskills: Sequence[str] | None = None,
     require_verified: bool = True,
+    require_mvp_marker: bool = False,
 ) -> list[LanguagePlacementQuestionBankItem]:
     """Select reviewed placement items, preferring boundary items when requested.
 
     The function intentionally returns ORM rows instead of API schemas so the future exam
     flow can store internal fields like correct_index without exposing them to the frontend.
+
+    require_mvp_marker: speaking-placement-only gate (only ever passed True by
+    _speaking_bank_prompt in language_exam.py). When set, restricts results to items whose
+    body_json marks them as the curated MVP speaking bank
+    (review_status="mvp_approved_pending_full_review", human_reviewed=false) -- this excludes
+    older/legacy speaking_prompt rows that predate that bank (seeded by the generic
+    seed_placement_question_bank.py script) without deleting or deactivating them. Has no effect
+    on reading/listening/grammar_vocab/writing_prompt, which never pass this flag.
     """
 
     normalized_skill = normalize_bank_skill(skill)
@@ -122,6 +131,12 @@ async def select_placement_bank_items(
         )
         if require_verified:
             stmt = stmt.where(LanguagePlacementQuestionBankItem.is_verified.is_(True))
+        if require_mvp_marker:
+            stmt = stmt.where(
+                LanguagePlacementQuestionBankItem.body_json["review_status"].astext
+                == "mvp_approved_pending_full_review",
+                LanguagePlacementQuestionBankItem.body_json["human_reviewed"].astext == "false",
+            )
         if exclude_ids:
             stmt = stmt.where(LanguagePlacementQuestionBankItem.id.not_in(exclude_ids))
         if wanted_subskills:

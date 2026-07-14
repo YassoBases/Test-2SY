@@ -790,9 +790,15 @@ _SPEAKING_BANK_SCENARIO = {
 async def _speaking_bank_prompt(
     db: AsyncSession, *, language_id: int, level_str: str, used_item_ids: set[int] | None = None
 ) -> dict | None:
-    """Pull one verified, unused speaking_prompt bank item at the target level, or None if the
-    bank has nothing usable (caller falls back to live scenario/question generation) -- mirrors
-    _writing_prompt's exact-level-then-fallback pattern."""
+    """Pull one verified, unused, MVP-marked speaking_prompt bank item at the target level, or
+    None if the bank has nothing usable (caller falls back to live scenario/question generation)
+    -- mirrors _writing_prompt's exact-level-then-fallback pattern.
+
+    require_mvp_marker=True restricts selection to the curated 30-item MVP bank
+    (body_json.review_status="mvp_approved_pending_full_review"), excluding older/legacy
+    speaking_prompt rows seeded by the generic seed_placement_question_bank.py script that
+    predate it -- those legacy rows are untouched (not deleted/deactivated), just never
+    selected here."""
     try:
         lvl = LanguageLevel(level_str)
     except ValueError:
@@ -804,6 +810,7 @@ async def _speaking_bank_prompt(
         level=lvl,
         count=1,
         used_item_ids=used_item_ids,
+        require_mvp_marker=True,
     ):
         item = bank_item_to_exam_item(row)
         if str(item.get("question") or "").strip():

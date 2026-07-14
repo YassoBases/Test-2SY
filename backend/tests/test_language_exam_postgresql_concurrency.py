@@ -39,6 +39,7 @@ from app.schemas.language_exam import (
 from app.services import language_exam_service
 from app.services.language_audio_security_service import ValidatedAudio
 from app.services.language_exam_service import ExamAIError
+from app.services.language_placement_question_bank_service import select_placement_bank_items
 from app.services.language_transcription_service import ConversationTranscription
 
 
@@ -1342,6 +1343,133 @@ async def test_speaking_uses_ai_fallback_when_no_verified_bank_item_available(
     assert sp["pending_question"] == "What activity would you like to join next?"
     assert sp["pending_bank_item_id"] is None
     assert sp["results"][0]["bank_item_id"] is None
+
+
+async def _insert_legacy_speaking_bank_item(
+    postgres_session_factory, *, language_id: int, level: str, prompt_text: str, situation: str = ""
+) -> int:
+    """Seed one active+verified speaking_prompt row shaped like the pre-existing legacy rows
+    produced by the older, generic scripts/seed_placement_question_bank.py script (source=
+    content_seed, generic subskill=speaking_task, stable_key like "content:<id>", no
+    review_status/human_reviewed marker in body_json) -- these must never be selected for MVP
+    speaking placement even though they are active+verified, same as the real local DB rows this
+    regression guards against."""
+    async with postgres_session_factory() as db:
+        item = LanguagePlacementQuestionBankItem(
+            language_id=language_id,
+            skill="speaking_prompt",
+            level=LanguageLevel(level),
+            question_type="speaking_prompt",
+            prompt_text=prompt_text,
+            situation=situation or None,
+            subskill="speaking_task",
+            source="content_seed",
+            stable_key=f"content:{uuid.uuid4().hex[:12]}",
+            is_verified=True,
+            is_active=True,
+            body_json={"content_item_id": 999, "min_seconds": 10},
+        )
+        db.add(item)
+        await db.commit()
+        return item.id
+
+
+async def test_speaking_bank_prompt_prefers_mvp_row_over_legacy_row_at_same_level(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Regression test for the MVP-only speaking selection gate: given one legacy (pre-MVP,
+    generic) speaking_prompt row and one MVP-marked speaking_prompt row at the same CEFR level,
+    _speaking_bank_prompt must return the MVP row, never the legacy row -- even though both are
+    active+verified and therefore equally eligible under the shared, skill-agnostic
+    is_active/is_verified filter alone."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    legacy_id = await _insert_legacy_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="LEGACY_SHOULD_NOT_BE_SELECTED",
+    )
+    mvp_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="Tell me about your day.",
+        situation="A friend asks about your day.",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(db, language_id=record.language_id, level_str="A2")
+
+    assert item is not None
+    assert item["bank_item_id"] == mvp_id
+    assert item["bank_item_id"] != legacy_id
+    assert "LEGACY_SHOULD_NOT_BE_SELECTED" not in item["question"]
+
+
+async def test_speaking_bank_prompt_ignores_legacy_rows_entirely_and_falls_back(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """When only a legacy (pre-MVP) speaking_prompt row exists at a level -- no MVP-marked row --
+    _speaking_bank_prompt must return None (triggering the existing AI-generation fallback), not
+    silently hand back the legacy row. Proves true exclusion, not just a same-level preference,
+    and that the bank having *some* row at a level must never mask the fallback path."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    await _insert_legacy_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="B2",
+        prompt_text="LEGACY_SHOULD_NOT_BE_SELECTED",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(db, language_id=record.language_id, level_str="B2")
+
+    assert item is None
+
+
+async def test_select_placement_bank_items_require_mvp_marker_excludes_legacy_rows(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Direct service-level proof: select_placement_bank_items(..., require_mvp_marker=True)
+    never returns a legacy speaking_prompt row, while require_mvp_marker=False (the default,
+    used by every other bank skill: reading/listening/grammar_vocab/writing_prompt) is completely
+    unaffected -- the same legacy row IS returned without the flag."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    legacy_id = await _insert_legacy_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="C1",
+        prompt_text="Legacy prompt text.",
+    )
+
+    async with postgres_session_factory() as db:
+        without_flag = await select_placement_bank_items(
+            db, language_id=record.language_id, skill="speaking_prompt", level="C1", count=5,
+        )
+        with_flag = await select_placement_bank_items(
+            db,
+            language_id=record.language_id,
+            skill="speaking_prompt",
+            level="C1",
+            count=5,
+            require_mvp_marker=True,
+        )
+
+    assert legacy_id in {row.id for row in without_flag}
+    assert legacy_id not in {row.id for row in with_flag}
+    assert with_flag == []
 
 
 async def test_old_in_flight_speaking_session_without_pending_bank_item_id_still_works(
