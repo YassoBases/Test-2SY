@@ -1,0 +1,118 @@
+# ---------------------------------------------------------------------------
+# EduSpark Syria - .gitignore
+# ---------------------------------------------------------------------------
+
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+!.env.docker.example
+*.local
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Node / frontend build ---
+node_modules/
+dist/
+dist-ssr/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+.venv/
+venv/
+venv.*/
+env/
+backend/venv/
+backend/venv.*/
+backend/.venv/
+tts_worker/.venv/
+
+# --- Python test / type / lint caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+htmlcov/
+
+# --- Uploads / generated runtime data ---
+uploads/
+backend/uploads/
+backend/tts_output/
+backend/vector_index/
+
+# --- Temp / scratch ---
+temp/
+tmp/
+*.tmp
+*.bak
+*.orig
+
+# --- Local databases ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Archives ---
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.rar
+
+# --- ML / model caches (Hugging Face, SentenceTransformers, Torch, Whisper) ---
+.hf_home/
+hf_cache/
+huggingface/
+.cache/huggingface/
+sentence_transformers/
+torch/
+.torch/
+*.pt
+*.onnx
+*.ckpt
+*.safetensors
+
+# --- Debug / probe output artifacts (never commit generated outputs) ---
+backend/scripts/*.out.json
+backend/scripts/*.out.txt
+backend/scripts/*.err.txt
+backend/scripts/_probe_*
+backend/scripts/_*.txt
+backend/scripts/_claude_qa.png
+backend/scripts/*_results.json
+backend/scripts/*_report.json
+backend/scripts/*runtime_debug*
+backend/scripts/verify_teacher_speech*.wav
+backend/scripts/trace_writing_submission_output.json
+/s17_final.txt
+/test audio/
+
+# --- Stray audio recordings (NOT the shipped language placement assets) ---
+# public/language-assets/**/*.mp3 are real app content and MUST stay tracked.
+recordings/
+*.wav
+
+# --- Editor / OS ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

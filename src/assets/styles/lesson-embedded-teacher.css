@@ -1,0 +1,51 @@
+/**
+ * UI-4.4 — Embedded teacher helper in learn flow
+ */
+
+.teacher-helper-card {
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(34, 211, 238, 0.08) 0%,
+    rgba(0, 0, 0, 0.18) 100%
+  );
+  border: 1px solid rgba(34, 211, 238, 0.22);
+}
+
+.teacher-helper-card__name {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  line-height: 1.3;
+}
+
+.teacher-helper-card__prompt {
+  line-height: 1.5;
+}
+
+.teacher-helper-card__avatar {
+  animation: lesson-avatar-in var(--em-duration-slow) var(--em-ease-spring) 80ms both;
+}
+
+@media (max-width: 600px) {
+  .teacher-helper-card__cta {
+    width: 100%;
+  }
+}
+
+/**
+ * UI-4.4 — Session layout hooks for future split view
+ */
+
+.lesson-session-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.lesson-session-layout__content {
+  min-width: 0;
+}
+
+.lesson-session-layout__assistant {
+  min-width: 0;
+}

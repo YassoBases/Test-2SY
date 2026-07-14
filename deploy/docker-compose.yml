@@ -1,0 +1,6 @@
+# Deprecated: use the root compose file instead.
+#   docker compose up --build
+# See ../DOCKER.md
+
+include:
+  - path: ../docker-compose.yml

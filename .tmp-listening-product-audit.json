@@ -1,0 +1,342 @@
+{
+  "auditedAt": "2026-07-07T19:28:39.449Z",
+  "lessonsAudited": [
+    {
+      "persona": "A",
+      "lessonId": 2841,
+      "title": "QA Playable A1 Lesson 1",
+      "lessonLevel": "A1",
+      "officialCefr": "A1",
+      "memoryGoals": [
+        "Build listening foundations for daily life"
+      ],
+      "coachGoal": "travel",
+      "coachGoalLabel": "Travel",
+      "situation": "travel",
+      "situationLabel": "travel",
+      "coachWhy": "Today's situation is travel — to strengthen main idea — because aligned with travel.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable A1 Lesson 1"
+      ],
+      "coachReward": "Progress toward A2",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "A",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student A\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A1 Lesson 3\nWhy?\n\nToday's situation is daily life — to strengthen main idea — because aligned with daily life.\n\nOfficial level\nA1\nLesson level\nA1\nSituation\ndaily life\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nDaily life\nReward\nProgress toward A2\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable A1 Lesson 1"
+    },
+    {
+      "persona": "B",
+      "lessonId": 2845,
+      "title": "Work Stress — A2 Practice",
+      "lessonLevel": "A2",
+      "officialCefr": "A2",
+      "memoryGoals": [
+        "Understand everyday conversations"
+      ],
+      "coachGoal": "business",
+      "coachGoalLabel": "Business",
+      "situation": "office",
+      "situationLabel": "office",
+      "coachWhy": "Today's situation is office — to strengthen main idea — because aligned with business.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "Work Stress — A2 Practice"
+      ],
+      "coachReward": "Progress toward B1",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "B",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student B\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A2 Lesson 3\nWhy?\n\nToday's situation is daily life — to strengthen main idea — because aligned with daily life.\n\nOfficial level\nA2\nLesson level\nA2\nSituation\ndaily life\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nDaily life\nReward\nProgress toward B1\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "Work Stress — A2 Practice"
+    },
+    {
+      "persona": "C",
+      "lessonId": 2849,
+      "title": "QA Playable A2 Lesson 3",
+      "lessonLevel": "A2",
+      "officialCefr": "A2",
+      "memoryGoals": [
+        "Follow podcasts and group discussions"
+      ],
+      "coachGoal": "daily_life",
+      "coachGoalLabel": "Daily Life",
+      "situation": "daily_life",
+      "situationLabel": "daily life",
+      "coachWhy": "Today's situation is daily life — to strengthen main idea — because aligned with daily life.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable A2 Lesson 3"
+      ],
+      "coachReward": "Progress toward B1",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "C",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student C\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A2 Lesson 1\nWhy?\n\nToday's situation is travel — to strengthen main idea — because aligned with travel.\n\nOfficial level\nA2\nLesson level\nA2\nSituation\ntravel\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nTravel\nReward\nProgress toward B1\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable A2 Lesson 3"
+    },
+    {
+      "persona": "D",
+      "lessonId": 2872,
+      "title": "QA Playable A2 Lesson 3",
+      "lessonLevel": "A2",
+      "officialCefr": "A2",
+      "memoryGoals": [
+        "Prepare for B1 promotion"
+      ],
+      "coachGoal": "daily_life",
+      "coachGoalLabel": "Daily Life",
+      "situation": "daily_life",
+      "situationLabel": "daily life",
+      "coachWhy": "Today's situation is daily life — to strengthen main idea — because aligned with daily life.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable A2 Lesson 3"
+      ],
+      "coachReward": "Progress toward B1",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "D",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student D\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A2 Lesson 3\nWhy?\n\nToday's situation is daily life — to strengthen main idea — because aligned with daily life.\n\nOfficial level\nA2\nLesson level\nA2\nSituation\ndaily life\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nDaily life\nReward\nProgress toward B1\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable A2 Lesson 3"
+    },
+    {
+      "persona": "E",
+      "lessonId": 2935,
+      "title": "QA Playable A2 Lesson 3",
+      "lessonLevel": "A2",
+      "officialCefr": "A2",
+      "memoryGoals": [
+        "Unlock A2 to B1 promotion test"
+      ],
+      "coachGoal": "daily_life",
+      "coachGoalLabel": "Daily Life",
+      "situation": "daily_life",
+      "situationLabel": "daily life",
+      "coachWhy": "Today's situation is daily life — to strengthen main idea — because aligned with daily life.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable A2 Lesson 3"
+      ],
+      "coachReward": "Progress toward B1",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "E",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student E\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A2 Lesson 1\nWhy?\n\nToday's situation is travel — to strengthen main idea — because aligned with travel.\n\nOfficial level\nA2\nLesson level\nA2\nSituation\ntravel\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nTravel\nReward\nProgress toward B1\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable A2 Lesson 3"
+    },
+    {
+      "persona": "F",
+      "lessonId": 2996,
+      "title": "QA Playable A2 Lesson 1",
+      "lessonLevel": "A2",
+      "officialCefr": "A2",
+      "memoryGoals": [
+        "Complete official promotion to B1"
+      ],
+      "coachGoal": "travel",
+      "coachGoalLabel": "Travel",
+      "situation": "travel",
+      "situationLabel": "travel",
+      "coachWhy": "Today's situation is travel — to strengthen main idea — because aligned with travel.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable A2 Lesson 1"
+      ],
+      "coachReward": "Progress toward B1",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "F",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student F\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable A2 Lesson 3\nWhy?\n\nToday's situation is daily life — to strengthen main idea — because aligned with daily life.\n\nOfficial level\nA2\nLesson level\nA2\nSituation\ndaily life\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nDaily life\nReward\nProgress toward B1\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable A2 Lesson 1"
+    },
+    {
+      "persona": "G",
+      "lessonId": 2999,
+      "title": "QA Playable B1 Lesson 1",
+      "lessonLevel": "B1",
+      "officialCefr": "B1",
+      "memoryGoals": [
+        "Reach B2 listening proficiency"
+      ],
+      "coachGoal": "travel",
+      "coachGoalLabel": "Travel",
+      "situation": "travel",
+      "situationLabel": "travel",
+      "coachWhy": "Today's situation is travel — to strengthen main idea — because aligned with travel.",
+      "coachFocus": [
+        "main idea",
+        "detail",
+        "QA Playable B1 Lesson 1"
+      ],
+      "coachReward": "Progress toward B2",
+      "levelMismatch": false,
+      "levelMismatchReason": null,
+      "objectives": [
+        "main_idea",
+        "detail"
+      ],
+      "difficulty": "normal",
+      "challengeLevel": "normal"
+    },
+    {
+      "persona": "G",
+      "source": "browser_practice",
+      "ui": {
+        "hasMission": true,
+        "hasWhy": true,
+        "bodySnippet": "Student hub — Smarter Learning\n\nLEARNING\n\nMy journey\nMessages\nLanguages\nPremium\n\nPLANNING\n\nSubscriptions\nRoutine & commitment\nSmart planner\n\nMY ACCOUNT\n\n🏆 My achievements\nProfile\nSettings\nYour smart teacher\nAsk any question — explanations in your teacher's style and simplified Syrian dialect.\nLog out\nListening\nQ\nQA Listening Student G\nLEARN LANGUAGES\nListening journey\n\nYour official level, practice, and promotion — in one place\n\nHome\n📖 Reading\n🎧 Listen\n📚 Vocabulary\n📖 Dictionary\n✍️ Writing\n🎤 Speaking\n🗺️ Curriculum\n📘 Lessons\n📊 Progress\n🧠 AI Insights\n🕓 History\n🎓 AI Exam\n🏅 Certificates\nJourney\nPractice\nPromotion\nTODAY'S MISSION\nToday we will practice\nmain idea\ndetail\nQA Playable B1 Lesson 3\nWhy?\n\nToday's situation is daily life — to strengthen main idea — because aligned with daily life.\n\nOfficial level\nB1\nLesson level\nB1\nSituation\ndaily life\nDifficulty\nnormal\nEstimated time\n4 min\nGoal\nDaily life\nReward\nProgress toward B2\n\nListen carefully and choose the best answer.\n\n0 / 2 answered\nWhat is the main idea?\nA person plans a trip to the market\nA lecture about ancient history\nInstructions for a science exam\nA weather report from last year\nWhich detail is stated?\nThe shop opens at nine o'clock\nThe shop closed permanently\nThe speaker lives abroad\nNo time is mentioned\nSubmit answers"
+      },
+      "apiTitle": "QA Playable B1 Lesson 1"
+    }
+  ],
+  "apiErrors": [],
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "A",
+      "message": "API goal=travel but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "B",
+      "message": "API goal=business but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "C",
+      "message": "API goal=daily_life but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "E",
+      "message": "API goal=daily_life but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "F",
+      "message": "API goal=travel but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "critical",
+      "category": "ui_goal_mismatch",
+      "persona": "G",
+      "message": "API goal=travel but Practice UI may not show matching goal label",
+      "rootHint": "ListeningPracticePanel / coachLessonMetaRows not using lesson.coach"
+    },
+    {
+      "severity": "major",
+      "category": "coach_template",
+      "persona": "ALL",
+      "message": "Identical coach_why repeated 3 times: \"Today's situation is travel — to strengthen main idea — because aligned with travel....\"",
+      "rootHint": "language_listening_lesson_context.py template formula same for all lessons"
+    },
+    {
+      "severity": "major",
+      "category": "coach_template",
+      "persona": "ALL",
+      "message": "Identical coach_why repeated 3 times: \"Today's situation is daily life — to strengthen main idea — because aligned with daily life....\"",
+      "rootHint": "language_listening_lesson_context.py template formula same for all lessons"
+    }
+  ],
+  "summary": {
+    "critical": 6,
+    "major": 2,
+    "minor": 0
+  }
+}

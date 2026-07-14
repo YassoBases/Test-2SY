@@ -1,0 +1,178 @@
+/**
+
+ * UI-LANDING-2 — Public landing entrance motion
+
+ */
+
+
+
+.welcome-enter {
+
+  animation: welcome-fade-up 0.95s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+
+}
+
+
+
+.welcome-enter--logo {
+
+  animation-name: welcome-logo-in;
+
+  animation-duration: 1.1s;
+
+  animation-delay: 0ms;
+
+}
+
+
+
+.welcome-enter--headline {
+
+  animation-delay: 380ms;
+
+  animation-duration: 1s;
+
+}
+
+
+
+.welcome-enter--desc {
+
+  animation-delay: 580ms;
+
+  animation-duration: 1s;
+
+}
+
+
+
+.welcome-enter--benefits {
+
+  animation-delay: 720ms;
+
+  animation-duration: 0.9s;
+
+}
+
+
+
+.welcome-enter--roles-label {
+
+  animation-delay: 940ms;
+
+  animation-duration: 0.9s;
+
+}
+
+
+
+.welcome-enter--role {
+
+  animation-name: welcome-role-in;
+
+  animation-duration: 0.95s;
+
+}
+
+
+
+.welcome-enter--footer,
+.welcome-enter--trust {
+
+  animation-delay: 1480ms;
+
+  animation-duration: 0.85s;
+
+}
+
+
+
+@keyframes welcome-logo-in {
+
+  0% {
+
+    opacity: 0;
+
+    transform: scale(0.88) translateY(8px);
+
+    filter: blur(6px);
+
+  }
+
+  60% {
+
+    opacity: 1;
+
+    filter: blur(0);
+
+  }
+
+  100% {
+
+    opacity: 1;
+
+    transform: scale(1) translateY(0);
+
+    filter: blur(0);
+
+  }
+
+}
+
+
+
+@keyframes welcome-fade-up {
+
+  0% {
+
+    opacity: 0;
+
+    transform: translateY(22px);
+
+  }
+
+  100% {
+
+    opacity: 1;
+
+    transform: translateY(0);
+
+  }
+
+}
+
+
+
+@keyframes welcome-role-in {
+
+  0% {
+
+    opacity: 0;
+
+    transform: translateY(28px) scale(0.94);
+
+  }
+
+  100% {
+
+    opacity: 1;
+
+    transform: translateY(0) scale(1);
+
+  }
+
+}
+
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .welcome-enter {
+
+    animation: none;
+
+  }
+
+}
+
+

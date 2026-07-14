@@ -1,0 +1,13 @@
+﻿import { chromium } from 'playwright';
+const errors = [];
+const browser = await chromium.launch();
+const page = await browser.newPage();
+page.on('pageerror', (err) => errors.push(err.message));
+await page.goto('http://localhost:5174/', { waitUntil: 'networkidle' });
+await page.locator('.language-switcher').click();
+await page.getByText('English', { exact: false }).click();
+await page.waitForTimeout(1000);
+const headline = await page.locator('.welcome-headline').textContent();
+console.log('HEADLINE:', headline);
+console.log('ERRORS:', errors);
+await browser.close();

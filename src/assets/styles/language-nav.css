@@ -1,0 +1,51 @@
+/**
+ * UI-3.4 — Journey navigation (primary + secondary)
+ */
+
+.lang-nav {
+  margin-bottom: 16px;
+}
+
+.lang-nav__secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--em-border-subtle);
+}
+
+.lang-nav__secondary-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--em-radius-sm);
+  font-size: var(--em-text-caption);
+  font-weight: 600;
+  color: var(--em-text-muted);
+  text-decoration: none;
+  transition: color var(--em-duration-fast), background var(--em-duration-fast);
+}
+
+.lang-nav__secondary-link:hover {
+  color: var(--em-cyan);
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.lang-nav__secondary-link--active {
+  color: var(--em-cyan);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+@media (max-width: 600px) {
+  .lang-nav__secondary {
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lang-nav__secondary-link {
+    transition: none;
+  }
+}

@@ -1,0 +1,426 @@
+/**
+ * TEACHER-TYPOGRAPHY-2.2 + TEACHER-FORM-VISUAL-3.0
+ * Global teacher form typography & visual hierarchy
+ */
+
+/* ═══════════════════════════════════════════
+   SURFACE SCOPE
+   ═══════════════════════════════════════════ */
+
+.teacher-layout,
+.create-course-dialog,
+.add-lesson-workspace,
+.teacher-form-surface,
+.tds-form,
+.tds-dialog {
+  --em-teacher-section-weight: 700;
+  --em-teacher-page-weight: 800;
+  --em-teacher-page-desc-size: 1rem;
+  --em-teacher-page-desc-weight: 500;
+  --em-teacher-page-desc-leading: 1.8;
+  --em-teacher-page-desc-max: 620px;
+  --em-teacher-page-desc-gap: 14px;
+  --em-teacher-label-weight: 600;
+  --em-teacher-label-size: 0.9rem;
+  --em-teacher-label-gap: 8px;
+  --em-teacher-value-weight: 650;
+  --em-teacher-placeholder-weight: 400;
+  --em-teacher-placeholder-size: 0.95rem;
+  --em-teacher-placeholder-spacing: 0.2px;
+  --em-teacher-helper-weight: 550;
+  --em-teacher-helper-size: 0.84rem;
+  --em-teacher-helper-leading: 1.7;
+  --em-teacher-helper-gap: 8px;
+  --em-teacher-helper-note-radius: 10px;
+  --em-teacher-helper-note-padding: 10px 14px;
+  --em-teacher-helper-note-accent: 3px;
+  --em-teacher-input-transition: color 240ms ease, font-weight 240ms ease;
+  --em-teacher-placeholder-transition: opacity 280ms ease, color 280ms ease;
+  --em-teacher-field-shell-transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE TITLE — weight 800, var(--em-text)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .page-header .section-title,
+.create-course-dialog__title,
+.add-lesson-workspace__hero-title,
+.tds-hero__title,
+.tds-dialog__title {
+  font-family: var(--font-display);
+  font-weight: var(--em-teacher-page-weight);
+  color: var(--em-text);
+}
+
+.teacher-layout .page-header .section-title {
+  font-size: clamp(1.5rem, 2.8vw, 1.875rem);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.create-course-dialog__title {
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.add-lesson-workspace__hero-title {
+  font-size: clamp(1.375rem, 2.8vw, 1.75rem);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+/* ═══════════════════════════════════════════
+   PAGE DESCRIPTION — elegant page guidance (not placeholder / not helper)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .page-header .section-subtitle,
+.create-course-dialog__intro,
+.add-lesson-workspace__hero-intro,
+.tds-hero__subtitle,
+.tds-dialog__intro {
+  font-size: var(--em-teacher-page-desc-size);
+  font-weight: var(--em-teacher-page-desc-weight);
+  font-style: normal;
+  line-height: var(--em-teacher-page-desc-leading);
+  color: var(--em-teacher-page-desc);
+  letter-spacing: normal;
+  max-width: var(--em-teacher-page-desc-max);
+  margin-top: var(--em-teacher-page-desc-gap);
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════
+   SECTION TITLES — weight 700, var(--em-text)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .app-section__title,
+.create-course-dialog .create-course-section__title,
+.add-lesson-workspace .add-lesson-section__title,
+.tds-form__section-title,
+.teacher-quiz-form__card-title,
+.teacher-layout .glass-card h3.text-h6,
+.teacher-form-surface h3.text-h6,
+.teacher-layout .teacher-classes-empty__title {
+  font-family: var(--font-display);
+  font-weight: var(--em-teacher-section-weight) !important;
+  color: var(--em-text);
+}
+
+.teacher-layout .app-section__title {
+  font-size: clamp(1.125rem, 2vw, 1.3rem);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.create-course-dialog .create-course-section__title {
+  font-size: clamp(1.125rem, 2vw, 1.3rem);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.teacher-layout .app-section__subtitle,
+.create-course-dialog .create-course-section__desc,
+.tds-form__section-desc,
+.teacher-quiz-form__card-sub {
+  font-weight: var(--em-teacher-helper-weight);
+  font-style: normal;
+  font-size: var(--em-teacher-helper-size);
+  color: var(--em-teacher-helper);
+  line-height: var(--em-teacher-helper-leading);
+}
+
+/* ═══════════════════════════════════════════
+   FIELD LABELS — 600 / 0.9rem / --em-teacher-label
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .v-label,
+.create-course-dialog .create-course-field :deep(.v-label),
+.add-lesson-workspace .add-lesson-field-label,
+.tds-form__field-label,
+.teacher-quiz-form__label,
+.create-course-dialog .course-image-upload__label,
+.teacher-form-surface .v-label {
+  font-size: var(--em-teacher-label-size) !important;
+  font-weight: var(--em-teacher-label-weight) !important;
+  font-style: normal !important;
+  color: var(--em-teacher-label) !important;
+  opacity: 1 !important;
+  margin-bottom: var(--em-teacher-label-gap) !important;
+}
+
+.teacher-layout .v-field--focused .v-label,
+.teacher-layout .v-field--active .v-label,
+.create-course-dialog .create-course-field :deep(.v-field--focused .v-label),
+.create-course-dialog .create-course-field :deep(.v-field--active .v-label),
+.teacher-form-surface .v-field--focused .v-label,
+.teacher-form-surface .v-field--active .v-label {
+  color: var(--em-primary) !important;
+}
+
+/* ═══════════════════════════════════════════
+   INPUT VALUES — weight 650, --em-teacher-value
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .v-field__input,
+.teacher-layout input.v-field__input,
+.teacher-layout textarea.v-field__input,
+.teacher-layout .v-select__selection-text,
+.create-course-dialog .create-course-field :deep(.v-field__input),
+.create-course-dialog .create-course-field :deep(textarea),
+.create-course-dialog .create-course-field :deep(.v-select__selection-text),
+.add-lesson-workspace .add-lesson-field :deep(.v-field__input),
+.add-lesson-workspace .add-lesson-field :deep(textarea),
+.add-lesson-workspace .add-lesson-field :deep(.v-select__selection-text),
+.teacher-layout .teacher-quiz-form__input :deep(.v-field__input),
+.teacher-layout .teacher-quiz-form__input :deep(textarea),
+.teacher-layout .teacher-quiz-form__input :deep(.v-select__selection-text),
+.teacher-quiz-form__input :deep(.v-field__input),
+.teacher-quiz-form__input :deep(textarea),
+.teacher-quiz-form__input :deep(.v-select__selection-text),
+.teacher-form-surface .v-field__input,
+.teacher-form-surface textarea.v-field__input,
+.teacher-form-surface .v-select__selection-text,
+.teacher-layout .teacher-quiz-form__readonly,
+.teacher-quiz-form__readonly {
+  font-weight: var(--em-teacher-value-weight) !important;
+  color: var(--em-teacher-value) !important;
+  font-style: normal !important;
+  transition: var(--em-teacher-input-transition);
+}
+
+.create-course-dialog .create-course-field--hero :deep(.v-field__input) {
+  font-weight: 700 !important;
+  color: var(--em-teacher-value) !important;
+  font-style: normal !important;
+  transition: var(--em-teacher-input-transition);
+}
+
+/* Input shell — see teacher-form-surface.css (TEACHER-FORM-INPUT-SURFACE-2.0) */
+
+/* ═══════════════════════════════════════════
+   PLACEHOLDERS — light italic temporary text (never matches page desc / helper)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout input::placeholder,
+.teacher-layout textarea::placeholder,
+.teacher-layout .v-field__input::placeholder,
+.create-course-dialog .create-course-field :deep(input::placeholder),
+.create-course-dialog .create-course-field :deep(textarea::placeholder),
+.create-course-dialog .create-course-field :deep(.v-field__input::placeholder),
+.add-lesson-workspace .add-lesson-field :deep(.v-field__input::placeholder),
+.add-lesson-workspace .add-lesson-field :deep(textarea::placeholder),
+.teacher-layout .teacher-quiz-form__input :deep(input::placeholder),
+.teacher-layout .teacher-quiz-form__input :deep(textarea::placeholder),
+.teacher-layout .teacher-quiz-form__input :deep(.v-field__input::placeholder),
+.teacher-quiz-form__input :deep(input::placeholder),
+.teacher-quiz-form__input :deep(textarea::placeholder),
+.teacher-quiz-form__input :deep(.v-field__input::placeholder),
+.teacher-form-surface input::placeholder,
+.teacher-form-surface textarea::placeholder,
+.teacher-form-surface .v-field__input::placeholder {
+  font-size: var(--em-teacher-placeholder-size) !important;
+  font-weight: var(--em-teacher-placeholder-weight) !important;
+  font-style: italic !important;
+  letter-spacing: var(--em-teacher-placeholder-spacing) !important;
+  color: var(--em-teacher-placeholder-color) !important;
+  opacity: var(--em-teacher-placeholder-opacity) !important;
+  transition: var(--em-teacher-placeholder-transition) !important;
+}
+
+.teacher-layout .v-field--focused input::placeholder,
+.teacher-layout .v-field--focused textarea::placeholder,
+.teacher-layout .v-field--focused .v-field__input::placeholder,
+.create-course-dialog .create-course-field :deep(.v-field--focused input::placeholder),
+.create-course-dialog .create-course-field :deep(.v-field--focused textarea::placeholder),
+.create-course-dialog .create-course-field :deep(.v-field--focused .v-field__input::placeholder),
+.add-lesson-workspace .add-lesson-field :deep(.v-field--focused .v-field__input::placeholder),
+.add-lesson-workspace .add-lesson-field :deep(.v-field--focused textarea::placeholder),
+.teacher-quiz-form__input :deep(.v-field--focused input::placeholder),
+.teacher-quiz-form__input :deep(.v-field--focused textarea::placeholder),
+.teacher-quiz-form__input :deep(.v-field--focused .v-field__input::placeholder),
+.teacher-form-surface .v-field--focused input::placeholder,
+.teacher-form-surface .v-field--focused textarea::placeholder,
+.teacher-form-surface .v-field--focused .v-field__input::placeholder {
+  opacity: calc(var(--em-teacher-placeholder-opacity) * 0.45) !important;
+}
+
+/* ═══════════════════════════════════════════
+   FIELD HELPER NOTES — informational cards (TEACHER-FORM-VISUAL-3.0)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .teacher-text-helper,
+.teacher-layout .create-course-field-hint,
+.create-course-dialog .create-course-field-hint,
+.add-lesson-workspace .add-lesson-field-helper,
+.teacher-quiz-form__helper,
+.teacher-quiz-form__points-note {
+  display: block;
+  box-sizing: border-box;
+  font-size: var(--em-teacher-helper-size) !important;
+  font-weight: var(--em-teacher-helper-weight) !important;
+  font-style: normal !important;
+  line-height: var(--em-teacher-helper-leading) !important;
+  color: var(--em-teacher-page-desc) !important;
+  margin-top: var(--em-teacher-helper-gap) !important;
+  letter-spacing: normal !important;
+  opacity: 1 !important;
+  background: var(--em-teacher-helper-note-bg) !important;
+  border-inline-start: var(--em-teacher-helper-note-accent) solid var(--em-primary) !important;
+  padding: var(--em-teacher-helper-note-padding) !important;
+  border-radius: var(--em-teacher-helper-note-radius) !important;
+}
+
+.teacher-layout .teacher-text-helper::before,
+.teacher-layout .create-course-field-hint::before,
+.create-course-dialog .create-course-field-hint::before,
+.add-lesson-workspace .add-lesson-field-helper::before,
+.teacher-quiz-form__helper::before,
+.teacher-quiz-form__points-note::before {
+  content: 'ℹ';
+  display: inline-block;
+  margin-inline-end: 8px;
+  font-weight: 700;
+  font-style: normal;
+  font-size: 0.92em;
+  line-height: 1;
+  color: var(--em-primary);
+  vertical-align: baseline;
+}
+
+/* ═══════════════════════════════════════════
+   OTHER HELPER COPY — typography only (not field notes)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .teacher-metric__hint,
+.create-course-dialog .create-course-publish__hint,
+.create-course-dialog .course-image-upload__hint,
+.create-course-dialog .course-image-upload__formats,
+.add-lesson-workspace .add-lesson-publish__hint,
+.teacher-layout .text-caption.text-medium-emphasis,
+.teacher-form-surface .text-caption.text-medium-emphasis {
+  font-size: var(--em-teacher-helper-size) !important;
+  font-weight: var(--em-teacher-helper-weight) !important;
+  font-style: normal !important;
+  line-height: var(--em-teacher-helper-leading) !important;
+  color: var(--em-teacher-helper) !important;
+  margin-top: var(--em-teacher-helper-gap) !important;
+  letter-spacing: normal !important;
+  opacity: 1 !important;
+}
+
+/* ═══════════════════════════════════════════
+   DASHBOARD & LIST ROLES (non-form)
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .page-header .section-eyebrow,
+.teacher-layout .app-section__eyebrow {
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+
+.teacher-layout .teacher-priority__label,
+.teacher-layout .teacher-workspace-card__subject,
+.teacher-layout .teacher-class-workspace__subject {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-priority__detail,
+.teacher-layout .teacher-quick-action__hint,
+.teacher-layout .teacher-workspace-card__meta,
+.teacher-layout .teacher-class-workspace__course-title {
+  font-weight: var(--em-teacher-helper-weight);
+  font-size: 0.8rem;
+  line-height: var(--em-teacher-helper-leading);
+  color: var(--em-teacher-helper);
+}
+
+.teacher-layout .teacher-quick-action__title {
+  font-weight: 600;
+  color: var(--em-teacher-label);
+}
+
+.teacher-layout .teacher-quick-action--primary .teacher-quick-action__title {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-classes-empty__desc {
+  font-weight: var(--em-teacher-helper-weight);
+  font-size: 0.8rem;
+  line-height: var(--em-teacher-helper-leading);
+  color: var(--em-teacher-helper);
+}
+
+.teacher-layout .teacher-metric__value {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-metric__label {
+  font-weight: var(--em-teacher-label-weight);
+  font-size: 0.8125rem;
+  color: var(--em-teacher-label);
+}
+
+.create-course-dialog .create-course-publish__label {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.create-course-dialog .course-image-upload__cta {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-quiz-form__publish-label,
+.teacher-quiz-form__publish-label {
+  font-weight: 700;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-quiz-form__publish-desc,
+.teacher-quiz-form__publish-desc {
+  font-weight: var(--em-teacher-helper-weight);
+  line-height: var(--em-teacher-helper-leading);
+  color: var(--em-teacher-helper);
+}
+
+/* ═══════════════════════════════════════════
+   MORNING — preserve hierarchy above day-mode reductions
+   ═══════════════════════════════════════════ */
+
+[data-theme='morning'] .teacher-layout .app-section__title,
+[data-theme='morning'] .create-course-dialog .create-course-section__title {
+  font-size: clamp(1.125rem, 2vw, 1.3rem);
+  font-weight: var(--em-teacher-section-weight);
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .teacher-layout .app-section__subtitle,
+[data-theme='morning'] .create-course-dialog .create-course-section__desc,
+[data-theme='morning'] .teacher-quiz-form__card-sub {
+  color: var(--em-teacher-helper);
+}
+
+[data-theme='morning'] .teacher-layout .page-header .section-subtitle,
+[data-theme='morning'] .create-course-dialog__intro,
+[data-theme='morning'] .add-lesson-workspace__hero-intro {
+  color: var(--em-teacher-page-desc);
+}
+
+[data-theme='morning'] .teacher-layout .v-label,
+[data-theme='morning'] .create-course-dialog .create-course-field :deep(.v-label),
+[data-theme='morning'] .teacher-form-surface .v-label {
+  color: var(--em-teacher-label) !important;
+}
+
+[data-theme='morning'] .create-course-dialog .create-course-field :deep(.v-field__input),
+[data-theme='morning'] .create-course-dialog .create-course-field :deep(.v-select__selection-text),
+[data-theme='morning'] .teacher-layout .v-field__input,
+[data-theme='morning'] .teacher-form-surface .v-field__input {
+  color: var(--em-teacher-value) !important;
+}

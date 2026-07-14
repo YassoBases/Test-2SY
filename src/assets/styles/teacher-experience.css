@@ -1,0 +1,245 @@
+/**
+ * TEACHER-UI-1.0 — Teacher experience foundation
+ * Scoped to .teacher-layout — mirrors student-experience.css rhythm & tokens.
+ */
+
+/* ═══════════════════════════════════════════
+   SHELL & PAGE RHYTHM
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .page-container {
+  max-width: 1080px;
+}
+
+.teacher-layout .teacher-home,
+.teacher-layout .page-stack {
+  --em-page-gap: var(--em-space-xl);
+}
+
+.teacher-layout .teacher-home,
+.teacher-layout .page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--em-page-gap);
+}
+
+.teacher-layout .page-header {
+  margin-bottom: var(--em-space-xl);
+}
+
+.teacher-layout .page-header--compact {
+  margin-bottom: var(--em-space-lg);
+}
+
+.teacher-layout .section-block,
+.teacher-layout .app-section {
+  margin-bottom: 0;
+}
+
+.teacher-layout .slide-up-enter-active {
+  min-height: 1px;
+}
+
+/* ═══════════════════════════════════════════
+   TYPOGRAPHY — see teacher-typography.css
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .text-caption,
+.teacher-layout .text-body-2.text-medium-emphasis {
+  color: var(--em-text-muted) !important;
+  line-height: 1.45;
+}
+
+.teacher-layout .text-medium-emphasis {
+  color: var(--em-text-muted) !important;
+}
+
+.teacher-layout .v-card-title {
+  line-height: 1.35 !important;
+  letter-spacing: -0.015em;
+}
+
+/* ═══════════════════════════════════════════
+   CARD FAMILY
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .glass-card,
+.teacher-layout .content-card,
+.teacher-layout .app-card {
+  border-radius: var(--em-radius-md) !important;
+}
+
+.teacher-layout .em-hover-lift {
+  transition:
+    transform var(--em-duration-fast) var(--em-ease-out),
+    box-shadow var(--em-duration-fast) var(--em-ease-out),
+    border-color var(--em-duration-fast) var(--em-ease-out);
+}
+
+.teacher-layout .em-hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+/* Quiet dashboard metrics */
+.teacher-layout .teacher-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--em-space-md) var(--em-space-lg);
+  border-radius: var(--em-radius-md);
+  border: 1px solid var(--em-border-subtle);
+  background: var(--em-glass);
+  min-height: 76px;
+}
+
+.teacher-layout .teacher-metric__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--em-text-muted);
+  line-height: 1.35;
+}
+
+.teacher-layout .teacher-metric__value {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--em-text);
+}
+
+.teacher-layout .teacher-metric__hint {
+  font-size: 0.625rem;
+  color: var(--em-text-helper);
+  line-height: 1.35;
+}
+
+.teacher-layout .teacher-metric__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--em-radius-sm);
+  background: var(--em-surface-control);
+  border: 1px solid var(--em-border-subtle);
+  color: var(--em-text-muted);
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* Legacy stat cards — calmer inside teacher shell */
+.teacher-layout .stat-card {
+  padding: var(--em-space-lg) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+.teacher-layout .stat-card__accent {
+  display: none;
+}
+
+.teacher-layout .stat-icon {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  box-shadow: none !important;
+  background: var(--em-surface-control) !important;
+  border: 1px solid var(--em-border-subtle) !important;
+}
+
+.teacher-layout .stat-card .text-h4 {
+  font-size: 1.375rem !important;
+}
+
+.teacher-layout .kpi-card {
+  border: 1px solid var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+.teacher-layout .kpi-card__icon {
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+/* ═══════════════════════════════════════════
+   BUTTONS
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .v-btn {
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.teacher-layout .app-btn,
+.teacher-layout .btn-glow,
+.teacher-layout .btn-glow-outline {
+  border-radius: var(--em-radius-sm) !important;
+}
+
+/* ═══════════════════════════════════════════
+   EMPTY / LOADING
+   ═══════════════════════════════════════════ */
+
+.teacher-layout .app-empty-state__icon,
+.teacher-layout .empty-state__icon {
+  background: var(--em-surface-control);
+  border: 1px solid var(--em-border-subtle);
+}
+
+.teacher-layout .em-skeleton.v-skeleton-loader {
+  border-radius: var(--em-radius-md) !important;
+  border: 1px solid var(--em-border-subtle);
+}
+
+/* ═══════════════════════════════════════════
+   MORNING MODE
+   ═══════════════════════════════════════════ */
+
+[data-theme='morning'] .teacher-layout .page-header .section-eyebrow,
+[data-theme='morning'] .teacher-layout .app-section__eyebrow {
+  color: var(--em-primary-deep);
+}
+
+[data-theme='morning'] .teacher-layout .app-section__subtitle,
+[data-theme='morning'] .teacher-layout .page-header .section-subtitle {
+  color: var(--em-text-helper);
+}
+
+[data-theme='morning'] .teacher-layout .glass-card,
+[data-theme='morning'] .teacher-layout .content-card,
+[data-theme='morning'] .teacher-layout .app-card {
+  background: var(--em-card-l1) !important;
+  border: 1px solid var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-theme='morning'] .teacher-layout .teacher-metric {
+  background: var(--em-card-l1);
+  border-color: var(--em-border-subtle);
+  box-shadow: var(--em-shadow-sm);
+}
+
+[data-theme='morning'] .teacher-layout .teacher-metric__icon {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .teacher-layout .em-hover-lift:hover {
+  border-color: rgba(99, 102, 241, 0.14) !important;
+  box-shadow: var(--em-shadow-md) !important;
+}
+
+[data-theme='morning'] .teacher-layout .stat-icon,
+[data-theme='morning'] .teacher-layout .kpi-card {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle) !important;
+  box-shadow: var(--em-shadow-sm) !important;
+}
+
+[data-theme='morning'] .teacher-layout .em-skeleton.v-skeleton-loader {
+  background: var(--em-card-l1) !important;
+  border-color: var(--em-border-subtle);
+}

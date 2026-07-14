@@ -1,0 +1,86 @@
+from fastapi import APIRouter
+
+from app.api import (
+    activity_tracking,
+    ai_jobs,
+    attendance,
+    audit_admin,
+    auth,
+    catalog,
+    course_quizzes,
+    dev,
+    gamification,
+    language_certificate,
+    language_exam,
+    language_lessons,
+    language_official_promotion,
+    language_promotion_test,
+    language_student,
+    language_speaking_journey,
+    language_speaking_live,
+    language_speaking_promotion_test,
+    language_writing_official_promotion,
+    language_writing_promotion_test,
+    lesson_publish,
+    notifications,
+    onboarding,
+    parent,
+    parent_messaging,
+    planner,
+    payments,
+    routine,
+    speaking_coach,
+    student,
+    student_courses,
+    teacher,
+    teacher_dashboard,
+    teacher_courses,
+    teacher_students,
+    teacher_setup,
+    teacher_voice,
+    messages,
+)
+
+api_router = APIRouter()
+api_router.include_router(auth.router)
+api_router.include_router(notifications.router)
+api_router.include_router(ai_jobs.router)
+api_router.include_router(audit_admin.router)
+api_router.include_router(catalog.router)
+api_router.include_router(onboarding.router)
+api_router.include_router(payments.router)
+api_router.include_router(teacher_setup.router)
+api_router.include_router(teacher_voice.router)
+api_router.include_router(lesson_publish.router)
+api_router.include_router(teacher.router)
+api_router.include_router(teacher_courses.router)
+api_router.include_router(course_quizzes.teacher_router)
+api_router.include_router(course_quizzes.student_router)
+api_router.include_router(teacher_dashboard.router)
+api_router.include_router(teacher_students.router)
+api_router.include_router(student.router)
+api_router.include_router(planner.router)
+api_router.include_router(student_courses.router)
+api_router.include_router(language_promotion_test.router)
+api_router.include_router(language_official_promotion.router)
+api_router.include_router(language_writing_promotion_test.router)
+api_router.include_router(language_writing_official_promotion.router)
+# Journey/live/SPA must register before language_student so static paths like
+# /speaking/journey are not captured by /speaking/{prompt_id}.
+api_router.include_router(language_speaking_journey.router)
+api_router.include_router(language_speaking_live.router)
+api_router.include_router(language_speaking_promotion_test.router)
+api_router.include_router(language_student.router)
+api_router.include_router(language_exam.router)
+api_router.include_router(language_lessons.router)
+api_router.include_router(language_certificate.router)
+api_router.include_router(speaking_coach.router)
+api_router.include_router(parent.router)
+api_router.include_router(routine.router)
+api_router.include_router(parent_messaging.router)
+api_router.include_router(gamification.router)
+api_router.include_router(attendance.router)
+api_router.include_router(activity_tracking.router)
+api_router.include_router(activity_tracking.parent_router)
+api_router.include_router(messages.router)
+api_router.include_router(dev.router)

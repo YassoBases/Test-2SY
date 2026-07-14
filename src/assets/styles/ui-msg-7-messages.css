@@ -1,0 +1,723 @@
+/**
+ * UI-MSG-7 / 7.1 — Desktop-first messaging (WhatsApp Web / Teams)
+ * Two columns only: | Conversations | Chat |
+ * Teacher/course info lives in header + optional in-chat overlay drawer.
+ */
+
+/* ——— Full-bleed within layout container ——— */
+.messages-page.wa-messages-app {
+  --wa-list-width: 300px;
+  --wa-bubble-max-desktop: min(80%, 720px);
+  --wa-bubble-max-media: min(88%, 760px);
+  --wa-timeline-pad-x: 24px;
+  --wa-header-h: 60px;
+
+  margin: -1.5rem;
+  width: calc(100% + 3rem);
+  min-height: calc(100vh - 72px);
+  max-height: calc(100vh - 64px);
+}
+
+@media (min-width: 960px) {
+  .messages-page.wa-messages-app {
+    margin: -1.5rem;
+    width: calc(100% + 3rem);
+    min-height: calc(100vh - 80px);
+    max-height: calc(100vh - 72px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .messages-page.wa-messages-app {
+    --wa-list-width: 320px;
+    --wa-timeline-pad-x: 32px;
+  }
+}
+
+.wa-shell {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+/* Exactly two panes: list sidebar + dominant chat */
+.wa-pane--list {
+  width: var(--wa-list-width);
+  max-width: var(--wa-list-width);
+  flex: 0 0 var(--wa-list-width);
+}
+
+.wa-pane--chat {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ——— Thread header ——— */
+.wa-thread-header {
+  min-height: var(--wa-header-h);
+  padding: 8px 16px;
+  gap: 12px;
+}
+
+.wa-thread-header__avatar-btn {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  line-height: 0;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.wa-thread-header__avatar-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.03);
+}
+
+.wa-thread-header__avatar-btn:focus-visible {
+  outline: 2px solid var(--wa-accent);
+  outline-offset: 2px;
+}
+
+.wa-thread-header__name {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.wa-thread-header__subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--wa-muted);
+  min-width: 0;
+}
+
+.wa-thread-header__subject {
+  color: var(--wa-accent);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.wa-thread-header__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.wa-thread-header__presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wa-muted);
+  flex-shrink: 0;
+}
+
+.wa-thread-header__presence-dot--online {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.25);
+}
+
+.wa-thread-header__sep {
+  opacity: 0.45;
+  user-select: none;
+}
+
+/* ——— Spacious thread ——— */
+.wa-messages-app {
+  --wa-bubble-max-media: min(88%, 760px);
+  --wa-bubble-max: var(--wa-bubble-max-desktop);
+}
+
+.wa-timeline {
+  padding: 16px var(--wa-timeline-pad-x) 12px;
+}
+
+.wa-timeline-inner {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.msg-bubble-wrap {
+  max-width: var(--wa-bubble-max);
+}
+
+.msg-bubble--media .msg-image {
+  max-height: 380px;
+}
+
+.msg-bubble {
+  padding: 8px 12px 6px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.msg-row {
+  margin-bottom: 4px;
+  gap: 10px;
+}
+
+.msg-attach-row {
+  min-width: 240px;
+}
+
+/* ——— Full-width composer ——— */
+.wa-compose-bar {
+  padding: 10px var(--wa-timeline-pad-x) 14px;
+}
+
+.wa-composer-root,
+.wa-composer {
+  width: 100%;
+}
+
+/* TEACHER-MESSAGES-3.3 — premium composer tokens */
+.wa-messages-app {
+  --wa-composer-height: 52px;
+  --wa-composer-radius: 16px;
+  --wa-composer-bg: #1b2238;
+  --wa-composer-border: #374151;
+  --wa-composer-placeholder: #94a3b8;
+  --wa-composer-icon: #94a3b8;
+  --wa-composer-icon-hover: #e2e8f0;
+  --wa-composer-icon-hover-bg: rgba(255, 255, 255, 0.08);
+  --wa-composer-send-idle-bg: rgba(255, 255, 255, 0.06);
+  --wa-composer-send-idle-color: rgba(148, 163, 184, 0.7);
+  --wa-composer-send-gradient: linear-gradient(135deg, #5b4fcf 0%, #3b82a8 100%);
+  --wa-composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='morning'] .wa-messages-app {
+  --wa-composer-bg: #f3f6fb;
+  --wa-composer-border: #d6e1f0;
+  --wa-composer-placeholder: #5a6b85;
+  --wa-composer-icon: #6b7c95;
+  --wa-composer-icon-hover: #334155;
+  --wa-composer-icon-hover-bg: rgba(99, 102, 241, 0.08);
+  --wa-composer-send-idle-bg: rgba(214, 225, 240, 0.65);
+  --wa-composer-send-idle-color: #8b9bb0;
+  --wa-composer-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+/* ——— In-chat info overlay (NOT a shell column) ——— */
+.wa-info-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.wa-info-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.wa-info-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: min(360px, 92vw);
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--wa-list-bg);
+  border-left: 1px solid var(--wa-border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.wa-info-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--wa-border);
+  flex-shrink: 0;
+  direction: rtl;
+}
+
+.wa-info-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--wa-text);
+}
+
+.wa-info-panel .wa-side-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.wa-info-slide-enter-active,
+.wa-info-slide-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.wa-info-slide-enter-active .wa-info-panel,
+.wa-info-slide-leave-active .wa-info-panel {
+  transition: transform 0.24s ease;
+}
+
+.wa-info-slide-enter-from,
+.wa-info-slide-leave-to {
+  opacity: 0;
+}
+
+.wa-info-slide-enter-from .wa-info-panel,
+.wa-info-slide-leave-to .wa-info-panel {
+  transform: translateX(100%);
+}
+
+.wa-side-participant-bar.participant-bar {
+  background: transparent;
+}
+
+.wa-chat-empty {
+  background: var(--wa-thread-bg);
+}
+
+/* ——— Mobile ——— */
+@media (max-width: 959px) {
+  .messages-page.wa-messages-app {
+    --wa-bubble-max: 90%;
+    --wa-timeline-pad-x: 12px;
+    margin: -1rem;
+    width: calc(100% + 2rem);
+    min-height: calc(100vh - 64px);
+    max-height: calc(100vh - 56px);
+  }
+
+  .wa-pane--list {
+    width: 100%;
+    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .wa-compose-bar {
+    padding: 8px 12px 12px;
+  }
+
+  .wa-info-panel {
+    width: min(320px, 100vw);
+  }
+}
+
+[data-theme='morning'] .wa-thread-header__presence-dot--online {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+[data-theme='morning'] .wa-info-panel {
+  background: var(--em-surface-secondary);
+  border-left-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .wa-info-panel__head {
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .wa-info-panel__title {
+  color: var(--em-text);
+}
+
+[data-theme='morning'] .wa-info-backdrop {
+  background: rgba(15, 23, 42, 0.28);
+}
+
+/* ——— Teacher student context header (compact) ——— */
+.teacher-ctx-header {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+  background: var(--wa-header-bg, var(--em-glass));
+}
+
+.teacher-ctx-header--compact {
+  padding: 6px 10px;
+}
+
+.teacher-ctx-header__loading {
+  margin: 0;
+}
+
+.teacher-ctx-header__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 0;
+}
+
+.teacher-ctx-header__back {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.teacher-ctx-header__avatar {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.teacher-ctx-header__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.teacher-ctx-header__aside {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.teacher-ctx-header__utils {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.teacher-ctx-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.teacher-ctx-header__row1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.teacher-ctx-header__name {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  min-width: 0;
+}
+
+.teacher-ctx-header__role-chip {
+  height: 18px !important;
+  font-size: 0.625rem !important;
+}
+
+.teacher-ctx-header__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6875rem;
+  color: var(--wa-muted);
+  flex-shrink: 0;
+}
+
+.teacher-ctx-header__presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wa-muted);
+  flex-shrink: 0;
+}
+
+.teacher-ctx-header__presence-dot--online {
+  background: #22c55e;
+}
+
+.teacher-ctx-header__status {
+  font-size: 0.6875rem;
+  color: var(--wa-muted);
+  flex-shrink: 0;
+}
+
+.teacher-ctx-header__row2 {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.25;
+  color: var(--wa-muted);
+}
+
+.teacher-ctx-header__row3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.teacher-ctx-header__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--wa-text, inherit);
+  background: rgba(124, 108, 240, 0.1);
+  border: 1px solid rgba(124, 108, 240, 0.14);
+  white-space: nowrap;
+}
+
+.teacher-ctx-header__chip-icon {
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.teacher-ctx-header__chip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.teacher-ctx-header__search {
+  padding: 6px 0 0;
+}
+
+@media (min-width: 960px) {
+  .teacher-ctx-header--compact {
+    max-height: 110px;
+  }
+}
+
+@media (max-width: 959px) {
+  .teacher-ctx-header__aside {
+    flex-direction: column;
+  }
+}
+
+[data-theme='morning'] .teacher-ctx-header {
+  background: var(--em-surface-secondary);
+  border-bottom-color: var(--em-border-subtle);
+}
+
+[data-theme='morning'] .teacher-ctx-header__chip {
+  background: var(--em-surface-control);
+  border-color: var(--em-border-subtle);
+}
+
+.teacher-ctx-header__name-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.teacher-ctx-header__linked-line {
+  display: block;
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--em-primary-deep, #6366f1);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: right;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.teacher-ctx-header__linked-line:hover {
+  text-decoration: underline;
+}
+
+.teacher-ctx-header__parents-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--em-border-subtle);
+  background: var(--em-surface-control);
+  color: var(--em-text);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.teacher-ctx-header__parents-chip:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.teacher-linked-parents-menu {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.teacher-linked-parents-menu__title {
+  background: var(--em-surface-control);
+}
+
+.teacher-linked-parents-menu__item {
+  align-items: flex-start !important;
+}
+
+.teacher-linked-parents-menu__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.teacher-linked-parents-menu__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.teacher-linked-parents-menu__presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--em-text-muted);
+}
+
+.teacher-linked-parents-menu__presence-dot--online {
+  background: #22c55e;
+}
+
+.teacher-linked-parents-menu__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+/* ——— Teacher student profile drawer ——— */
+.wa-student-drawer-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+}
+
+.wa-student-drawer-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(400px, 100vw);
+  pointer-events: auto;
+  background: var(--wa-header-bg, var(--em-surface-solid, #111));
+  border-left: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.22);
+  overflow-y: auto;
+  padding: 0 16px 20px;
+}
+
+.wa-student-drawer-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 14px 0 10px;
+  margin-bottom: 4px;
+  background: inherit;
+  border-bottom: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+}
+
+.wa-student-drawer-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.wa-student-drawer-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wa-student-drawer-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.wa-student-drawer-metric {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(124, 108, 240, 0.08);
+  border: 1px solid rgba(124, 108, 240, 0.12);
+}
+
+.wa-student-drawer-metric__label {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--wa-muted);
+}
+
+.wa-student-drawer-metric__value {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.wa-student-drawer-section {
+  margin-bottom: 16px;
+  padding-top: 4px;
+  border-top: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+}
+
+.wa-student-drawer-section__title {
+  margin: 12px 0 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.wa-student-drawer-stats-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.wa-student-drawer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--wa-border, rgba(255, 255, 255, 0.08));
+}
+
+@media (max-width: 599px) {
+  .wa-student-drawer-panel {
+    width: 100vw;
+  }
+}
+
+[data-theme='morning'] .wa-student-drawer-panel {
+  background: var(--em-surface-secondary);
+  border-left-color: var(--em-border-subtle);
+}

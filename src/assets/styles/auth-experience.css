@@ -1,0 +1,167 @@
+/**
+ * UI-AUTH-1 — Authentication experience (landing continuity)
+ */
+
+.auth-experience {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(0.85rem, 2.5vh, 1.25rem);
+}
+
+.auth-experience__toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 440px;
+  width: 100%;
+  margin: 0 auto 0.75rem;
+}
+
+.auth-experience__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: rgba(232, 236, 255, 0.65);
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 12, 24, 0.35);
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+[data-theme='morning'] .auth-experience__back {
+  color: rgba(15, 23, 42, 0.6);
+  border-color: rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.auth-experience__back:hover {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  border-color: rgba(34, 211, 238, 0.28);
+}
+
+.auth-experience__main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  gap: 1rem;
+}
+
+.auth-experience__card {
+  width: 100%;
+  padding: clamp(1.25rem, 3vh, 1.75rem) clamp(1.1rem, 3vw, 1.5rem);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(8, 12, 24, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme='morning'] .auth-experience__card {
+  border-color: rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+.auth-experience__brand {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.auth-experience__intro {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.auth-experience__welcome {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.15rem, 2.5vh, 1.3rem);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.auth-experience__context {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: rgba(220, 228, 255, 0.62);
+}
+
+[data-theme='morning'] .auth-experience__context {
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.auth-experience__role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.65rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+}
+
+[data-theme='morning'] .auth-experience__role-chip {
+  color: rgb(var(--v-theme-primary));
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.18);
+}
+
+.auth-experience__footer {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgba(220, 228, 255, 0.55);
+}
+
+[data-theme='morning'] .auth-experience__footer {
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.auth-experience__link {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-experience__link:hover {
+  text-decoration: underline;
+}
+
+.auth-experience__change-role {
+  display: block;
+  margin-top: 0.75rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: rgba(220, 228, 255, 0.45);
+  text-decoration: none;
+}
+
+.auth-experience__change-role:hover {
+  color: var(--em-cyan, rgb(var(--v-theme-secondary)));
+}
+
+[data-theme='morning'] .auth-experience__change-role {
+  color: var(--em-text-helper);
+}
+
+/* Morning landing — see welcome-morning.css */
