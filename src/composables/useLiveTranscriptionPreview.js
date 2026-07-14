@@ -10,6 +10,13 @@ import { ref } from 'vue'
  * whatever the backend's own post-submit STT pipeline returns after Submit. Every failure path is
  * silent -- a missing/broken live preview must never block recording, submission, grading, or
  * section progression.
+ *
+ * start() is meant to be called twice per question: once to *prewarm* as soon as the question
+ * renders (giving the WebRTC/Realtime handshake a head start while the student is still reading),
+ * and again when the student taps the mic. The second call is cheap -- if the first call already
+ * succeeded (active) or definitively failed (unavailable) it resolves immediately; if the first
+ * call is still in flight, it returns that SAME in-flight promise so a caller can wait on the one
+ * real attempt instead of racing a redundant, conflicting second one.
  */
 export function useLiveTranscriptionPreview() {
   const transcript = ref('')
@@ -24,6 +31,7 @@ export function useLiveTranscriptionPreview() {
   let localStream = null
   let itemText = new Map()
   let currentAttempt = 0
+  let inFlightPromise = null
 
   function updateTranscriptFromItems() {
     transcript.value = Array.from(itemText.values()).join(' ').trim()
@@ -54,6 +62,7 @@ export function useLiveTranscriptionPreview() {
     currentAttempt += 1 // invalidate any in-flight start() so it discards its own late setup
     active.value = false
     connecting.value = false
+    inFlightPromise = null
     try {
       dataChannel?.close()
     } catch { /* best-effort cleanup only */ }
@@ -74,93 +83,100 @@ export function useLiveTranscriptionPreview() {
     unavailable.value = false
   }
 
-  async function start(fetchSessionToken) {
-    if (active.value || connecting.value || unavailable.value) return
-    if (typeof RTCPeerConnection === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      unavailable.value = true
-      return
-    }
+  function start(fetchSessionToken) {
+    if (active.value || unavailable.value) return Promise.resolve()
+    if (connecting.value && inFlightPromise) return inFlightPromise
 
     const myAttempt = ++currentAttempt
     connecting.value = true
-    try {
-      const session = await fetchSessionToken()
-      if (myAttempt !== currentAttempt) return // superseded by a stop()/newer start() meanwhile
-      if (!session?.available || !session?.client_secret) {
-        unavailable.value = true
-        return
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      if (myAttempt !== currentAttempt) {
-        stream.getTracks().forEach((track) => track.stop())
-        return
-      }
-      localStream = stream
-
-      const pc = new RTCPeerConnection()
-      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
-      const dc = pc.createDataChannel('oai-events')
-      // The data channel is the exact path transcript deltas travel over, and it opens in
-      // lockstep with the underlying ICE/DTLS transport that also carries the audio track --
-      // waiting for it here (rather than declaring "active" the instant the SDP answer is
-      // merely accepted) is what actually confirms audio can start being transcribed. Without
-      // this, callers were told the preview was ready before the connection had truly finished
-      // negotiating, so whatever the student said in that gap was never sent for transcription.
-      const dataChannelReady = new Promise((resolve, reject) => {
-        const cleanup = () => {
-          dc.removeEventListener('open', onOpen)
-          dc.removeEventListener('error', onError)
-          pc.removeEventListener('connectionstatechange', onStateChange)
+    inFlightPromise = (async () => {
+      try {
+        if (typeof RTCPeerConnection === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+          unavailable.value = true
+          return
         }
-        const onOpen = () => { cleanup(); resolve() }
-        const onError = () => { cleanup(); reject(new Error('live transcription data channel error')) }
-        const onStateChange = () => {
-          if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            cleanup()
-            reject(new Error(`live transcription connection ${pc.connectionState}`))
+
+        const session = await fetchSessionToken()
+        if (myAttempt !== currentAttempt) return // superseded by a stop()/newer start() meanwhile
+        if (!session?.available || !session?.client_secret) {
+          unavailable.value = true
+          return
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        if (myAttempt !== currentAttempt) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        localStream = stream
+
+        const pc = new RTCPeerConnection()
+        localStream.getTracks().forEach((track) => pc.addTrack(track, localStream))
+        const dc = pc.createDataChannel('oai-events')
+        // The data channel is the exact path transcript deltas travel over, and it opens in
+        // lockstep with the underlying ICE/DTLS transport that also carries the audio track --
+        // waiting for it here (rather than declaring "active" the instant the SDP answer is
+        // merely accepted) is what actually confirms audio can start being transcribed.
+        const dataChannelReady = new Promise((resolve, reject) => {
+          const cleanup = () => {
+            dc.removeEventListener('open', onOpen)
+            dc.removeEventListener('error', onError)
+            pc.removeEventListener('connectionstatechange', onStateChange)
           }
+          const onOpen = () => { cleanup(); resolve() }
+          const onError = () => { cleanup(); reject(new Error('live transcription data channel error')) }
+          const onStateChange = () => {
+            if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+              cleanup()
+              reject(new Error(`live transcription connection ${pc.connectionState}`))
+            }
+          }
+          dc.addEventListener('open', onOpen)
+          dc.addEventListener('error', onError)
+          pc.addEventListener('connectionstatechange', onStateChange)
+        })
+        dc.addEventListener('message', (e) => {
+          if (myAttempt === currentAttempt) handleServerEvent(e.data)
+        })
+        peerConnection = pc
+        dataChannel = dc
+
+        const offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+
+        const response = await fetch('https://api.openai.com/v1/realtime/calls', {
+          method: 'POST',
+          body: offer.sdp,
+          headers: {
+            Authorization: `Bearer ${session.client_secret}`,
+            'Content-Type': 'application/sdp',
+          },
+        })
+        if (myAttempt !== currentAttempt) return
+        if (!response.ok) {
+          unavailable.value = true
+          await stop()
+          return
         }
-        dc.addEventListener('open', onOpen)
-        dc.addEventListener('error', onError)
-        pc.addEventListener('connectionstatechange', onStateChange)
-      })
-      dc.addEventListener('message', (e) => {
-        if (myAttempt === currentAttempt) handleServerEvent(e.data)
-      })
-      peerConnection = pc
-      dataChannel = dc
-
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-
-      const response = await fetch('https://api.openai.com/v1/realtime/calls', {
-        method: 'POST',
-        body: offer.sdp,
-        headers: {
-          Authorization: `Bearer ${session.client_secret}`,
-          'Content-Type': 'application/sdp',
-        },
-      })
-      if (myAttempt !== currentAttempt) return
-      if (!response.ok) {
+        const answerSdp = await response.text()
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+        if (myAttempt !== currentAttempt) return
+        await dataChannelReady
+        if (myAttempt !== currentAttempt) return
+        active.value = true
+      } catch {
+        // Best-effort UX only -- never surface a live-caption failure as a user-facing error.
         unavailable.value = true
         await stop()
-        return
+      } finally {
+        if (myAttempt === currentAttempt) {
+          connecting.value = false
+          inFlightPromise = null
+        }
       }
-      const answerSdp = await response.text()
-      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
-      if (myAttempt !== currentAttempt) return
-      await dataChannelReady
-      if (myAttempt !== currentAttempt) return
-      active.value = true
-    } catch {
-      // Best-effort UX only -- never surface a live-caption failure as a user-facing error.
-      unavailable.value = true
-      await stop()
-    } finally {
-      if (myAttempt === currentAttempt) connecting.value = false
-    }
+    })()
+
+    return inFlightPromise
   }
 
   return { transcript, active, connecting, unavailable, start, stop, reset }

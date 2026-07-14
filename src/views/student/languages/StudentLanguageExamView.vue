@@ -145,26 +145,25 @@
           />
         </div>
 
-        <!-- Live transcript preview: display-only, English-hinted, LTR-forced (this exam is
-             English-only even though the app defaults to an Arabic/RTL UI). Rendered as its own
-             panel below the recorder box -- never nested inside it -- so the recording control
-             stays visually primary. Stays hidden until a first real transcript delta arrives;
-             then stays visible (even after recording stops) so the student can review it before
-             Submit -- it is only cleared by a fresh recording, a successful submit (applyState),
-             or moving on (restart/startFresh/unmount). Styled as a draft-answer card: same
-             rounded/colored family as the submitted-answer chat bubble below, but dashed and
-             muted to read as "not yet submitted" rather than final. -->
-        <div
-          v-if="!liveCaption.unavailable.value && liveCaption.transcript.value"
-          class="live-caption-box mt-3"
-          dir="ltr"
-        >
+        <!-- Transcript preview: display-only, English-hinted, LTR-forced (this exam is
+             English-only even though the app defaults to an Arabic/RTL UI). Always visible in
+             a stable location below the recorder box (never nested inside it, never appearing
+             suddenly) for the current speaking question -- shows a neutral placeholder until
+             real text arrives, then the live transcript as deltas come in. Stays visible after
+             recording stops so the student can review it before Submit; cleared on a fresh/
+             re-recorded take, a new question or successful submit (applyState), or moving on
+             (restart/startFresh/unmount). Styled as a draft-answer card: same rounded/colored
+             family as the submitted-answer chat bubble below, but dashed and muted to read as
+             "not yet submitted" rather than final. -->
+        <div class="live-caption-box mt-3" dir="ltr">
           <div class="live-caption-label text-caption text-medium-emphasis d-flex align-center mb-1">
             <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
-            Live transcript preview
+            Transcript preview
           </div>
-          <div class="live-caption-text">{{ liveCaption.transcript.value }}</div>
-          <div class="live-caption-hint text-caption text-medium-emphasis mt-1">Final submitted transcript may differ</div>
+          <div class="live-caption-text">
+            <span v-if="liveCaption.transcript.value">{{ liveCaption.transcript.value }}</span>
+            <span v-else class="live-caption-placeholder text-medium-emphasis">Your spoken answer will appear here while you record.</span>
+          </div>
         </div>
 
         <div class="d-flex justify-end mt-3">
@@ -677,7 +676,15 @@ function applyState(data) {
     view.value = 'exam'
     if (data.phase === 'preparing') schedulePrepPoll()
     // Append the examiner's current question to the spoken chat log.
-    if (isSpeakingPhase.value) pushExaminer(data.speaking?.examiner_message)
+    if (isSpeakingPhase.value) {
+      pushExaminer(data.speaking?.examiner_message)
+      // Prewarm live captions as soon as this question renders, rather than waiting for the
+      // student to tap the mic -- the WebRTC/Realtime handshake takes noticeably longer than
+      // starting the actual recording, so giving it a head start while the student is still
+      // reading the question is what makes the first spoken words land in the preview reliably.
+      // Cheap/idempotent if a prior attempt for this question is already active or unavailable.
+      liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
+    }
   }
 }
 
@@ -819,23 +826,33 @@ async function handleSpeakingRecordToggle() {
     liveCaption.stop()
     return
   }
-  // Give the live-caption channel a bounded chance to become ready BEFORE showing the
-  // "Recording…" cue that invites the student to speak -- starting that cue first (while the
-  // live-caption WebRTC handshake was still in flight) was exactly why the first words spoken
-  // were missing from the preview. liveCaption.start() itself resolves as soon as the outcome
-  // is known either way (ready or unavailable); the timeout only guards against a slow network,
-  // so a stalled live-caption setup never delays the exam itself.
-  liveCaption.reset()
-  preparingSpeech.value = true
-  try {
-    await Promise.race([
-      liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value)),
-      new Promise((resolve) => setTimeout(resolve, LIVE_CAPTION_READY_TIMEOUT_MS)),
-    ])
-  } finally {
-    preparingSpeech.value = false
+  if (liveCaption.unavailable.value) {
+    // Prewarming this question (see applyState) already determined captions aren't available --
+    // retrying now would very likely fail the same way, so skip straight to recording with no
+    // added wait rather than making the student wait for a retry that probably won't help.
     recorder.toggleRecording()
+    return
   }
+  liveCaption.reset() // clear any transcript left over from an earlier take of this question
+  if (!liveCaption.active.value) {
+    // Not ready yet -- either the prewarm attempt from when this question rendered is still in
+    // flight, or this is a fresh/re-recorded take that needs its own connection. Give it a
+    // bounded chance before showing "Recording…": starting that cue first, before captions can
+    // actually begin, is what caused the first spoken words to be missed. If prewarm already
+    // succeeded this resolves instantly with no "preparing" flash at all; liveCaption.start()
+    // returns the SAME in-flight attempt if one is already running, so this waits on the real
+    // thing rather than racing a redundant second attempt.
+    preparingSpeech.value = true
+    try {
+      await Promise.race([
+        liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value)),
+        new Promise((resolve) => setTimeout(resolve, LIVE_CAPTION_READY_TIMEOUT_MS)),
+      ])
+    } finally {
+      preparingSpeech.value = false
+    }
+  }
+  recorder.toggleRecording()
 }
 
 async function sendSpeaking() {
@@ -1062,11 +1079,12 @@ onUnmounted(() => {
 .live-caption-label { letter-spacing: 0.02em; }
 .live-caption-text {
   /* No text-size utility class on purpose -- inherits the same base size as .exam-msg so it
-     reads as real answer text, not tiny helper copy. */
-  line-height: 1.5; max-height: 4.5em; overflow-y: auto;
+     reads as real answer text, not tiny helper copy. min-height reserves the placeholder's own
+     line so the box doesn't visually jump when the first real delta replaces it. */
+  line-height: 1.5; min-height: 1.5em; max-height: 4.5em; overflow-y: auto;
   white-space: pre-wrap; word-break: break-word; text-align: left;
 }
-.live-caption-hint { opacity: 0.75; }
+.live-caption-placeholder { font-style: italic; }
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
