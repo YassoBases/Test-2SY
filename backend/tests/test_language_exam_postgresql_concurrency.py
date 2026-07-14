@@ -1104,8 +1104,133 @@ async def test_two_concurrent_audio_files_cannot_fill_two_speaking_turns(
     assert len(latest["request_receipts"]) == 1
 
 
+def _fake_assess_ok(next_question: str = "What activity would you like to join next?"):
+    async def fake_assess(**kwargs) -> SpeakingTurnAssessment:
+        return SpeakingTurnAssessment(
+            transcription=kwargs["transcript"],
+            grammar_vocab_feedback="No material issue.",
+            pronunciation_feedback="",
+            fluency_note="Coherent response.",
+            estimated_level=CEFRLevel.A2,
+            next_question=next_question,
+        )
+
+    return fake_assess
+
+
+async def test_stale_speaking_turn_resubmission_is_rejected_safely_and_does_not_corrupt_state(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Direct (non-racing) regression for the QA-observed stale-answer warning: once a turn has
+    been successfully answered and the exam has moved on, a second submission carrying the
+    now-stale state_revision/turn_token (e.g. a delayed upload whose response arrived late, or a
+    leftover browser tab) must be rejected with a clean, structured 409 -- and must not mutate the
+    exam state at all (no extra turn advance, no extra result, no revision bump)."""
+    state = _speaking_state()
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", _fake_assess_ok())
+
+    stale_revision = state["state_revision"]
+    stale_token = state["speaking"]["turn_token"]
+
+    async with postgres_session_factory() as db:
+        await language_exam.speaking_turn(
+            record.session_id,
+            BackgroundTasks(),
+            file=SimpleNamespace(filename="first.webm"),
+            duration_seconds=None,
+            request_id="direct-stale-request-1",
+            state_revision=stale_revision,
+            turn_token=stale_token,
+            student=record.student,
+            db=db,
+        )
+
+    stored_after_first = await _stored_exam(postgres_session_factory, record.session_id)
+    state_after_first = stored_after_first.exam_state
+    assert state_after_first["speaking"]["turn"] == 2
+    assert len(state_after_first["speaking"]["results"]) == 1
+
+    # A second submission arrives late, still carrying the turn-1 (now stale) revision/token --
+    # e.g. a delayed upload whose response the client never saw, retried against stale local state.
+    with pytest.raises(HTTPException) as exc_info:
+        async with postgres_session_factory() as db:
+            await language_exam.speaking_turn(
+                record.session_id,
+                BackgroundTasks(),
+                file=SimpleNamespace(filename="stale-retry.webm"),
+                duration_seconds=None,
+                request_id="direct-stale-request-2",
+                state_revision=stale_revision,
+                turn_token=stale_token,
+                student=record.student,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["code"] == "stale_exam_state"
+
+    stored_after_stale = await _stored_exam(postgres_session_factory, record.session_id)
+    state_after_stale = stored_after_stale.exam_state
+    assert state_after_stale["speaking"]["turn"] == 2, "the rejected stale retry must not advance the turn further"
+    assert len(state_after_stale["speaking"]["results"]) == 1, "the rejected stale retry must not add a second result"
+    assert state_after_stale["state_revision"] == state_after_first["state_revision"], (
+        "the rejected stale retry must not bump the state revision"
+    )
+
+
+async def test_valid_speaking_turn_answer_advances_exactly_once(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """A single, valid, current-state submission must advance the speaking section by exactly
+    one turn, append exactly one result, and bump state_revision by exactly one -- no more, no
+    less. Complements the concurrency test above by isolating the plain, non-racing happy path."""
+    state = _speaking_state()
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", _fake_assess_ok())
+
+    async with postgres_session_factory() as db:
+        response = await language_exam.speaking_turn(
+            record.session_id,
+            BackgroundTasks(),
+            file=SimpleNamespace(filename="only-submission.webm"),
+            duration_seconds=None,
+            request_id="direct-valid-request-1",
+            state_revision=state["state_revision"],
+            turn_token=state["speaking"]["turn_token"],
+            student=record.student,
+            db=db,
+        )
+
+    assert response.state_revision == state["state_revision"] + 1
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    latest = stored.exam_state
+    assert latest["state_revision"] == state["state_revision"] + 1
+    assert latest["speaking"]["turn"] == 2
+    assert len(latest["speaking"]["results"]) == 1
+    assert latest["speaking"]["evidence_status"] == "missing_student_response"
+    assert latest["request_receipts"] and len(latest["request_receipts"]) == 1
+
+
 async def _insert_speaking_bank_item(
-    postgres_session_factory, *, language_id: int, level: str, prompt_text: str, situation: str = ""
+    postgres_session_factory,
+    *,
+    language_id: int,
+    level: str,
+    prompt_text: str,
+    situation: str = "",
+    subskill: str = "self_intro",
 ) -> int:
     """Seed one verified, active speaking_prompt bank item -- MVP items are usable immediately,
     unlike the MCQ/writing bank tests which don't need is_verified toggled explicitly."""
@@ -1117,7 +1242,7 @@ async def _insert_speaking_bank_item(
             question_type="speaking_prompt",
             prompt_text=prompt_text,
             situation=situation or None,
-            subskill="self_intro",
+            subskill=subskill,
             source="draft_seed",
             is_verified=True,
             is_active=True,
@@ -1470,6 +1595,108 @@ async def test_select_placement_bank_items_require_mvp_marker_excludes_legacy_ro
     assert legacy_id in {row.id for row in without_flag}
     assert legacy_id not in {row.id for row in with_flag}
     assert with_flag == []
+
+
+async def test_speaking_bank_prompt_prefers_unused_subskill_over_already_used_one(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """QA observation: prompts can repeat the same subskill/task_type back to back (e.g.
+    self_intro, self_intro) even though bank_item_id itself is never repeated. Given two eligible
+    MVP-marked items at the same level, one whose subskill already appeared this session and one
+    whose subskill is fresh, _speaking_bank_prompt must prefer the fresh one."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    used_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="SELF_INTRO_ALREADY_USED",
+        subskill="self_intro",
+    )
+    fresh_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="ROUTINE_DESCRIPTION_FRESH",
+        subskill="routine_description",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db, language_id=record.language_id, level_str="A2", used_subskills={"self_intro"}
+        )
+
+    assert item is not None
+    assert item["bank_item_id"] == fresh_id
+    assert item["bank_item_id"] != used_id
+    assert item["subskill"] == "routine_description"
+
+
+async def test_speaking_bank_prompt_falls_back_to_used_subskill_when_none_unused_available(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """The diversity rule is a preference, not a hard requirement: if every eligible item at the
+    target level shares an already-used subskill, _speaking_bank_prompt must still return a valid
+    prompt (the same one it would have returned without the preference) rather than failing or
+    falling all the way back to AI generation just because no fresh subskill exists."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    only_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="B1",
+        prompt_text="ONLY_ITEM_AT_THIS_LEVEL",
+        subskill="self_intro",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db, language_id=record.language_id, level_str="B1", used_subskills={"self_intro"}
+        )
+
+    assert item is not None, "a thin bank must still produce a prompt when no unused subskill exists"
+    assert item["bank_item_id"] == only_id
+
+
+async def test_select_placement_bank_items_exclude_subskills_is_a_soft_optional_filter(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Direct service-level proof: exclude_subskills narrows results when passed, and has zero
+    effect when omitted -- confirming the diversity filter is purely additive/opt-in, exactly like
+    require_mvp_marker, and cannot affect any other bank skill since only _speaking_bank_prompt
+    ever passes it."""
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="abandoned",
+    )
+    item_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="C2",
+        prompt_text="Nuanced argument prompt.",
+        subskill="nuanced_argument",
+    )
+
+    async with postgres_session_factory() as db:
+        without_exclusion = await select_placement_bank_items(
+            db, language_id=record.language_id, skill="speaking_prompt", level="C2", count=5,
+            require_mvp_marker=True,
+        )
+        with_exclusion = await select_placement_bank_items(
+            db, language_id=record.language_id, skill="speaking_prompt", level="C2", count=5,
+            require_mvp_marker=True, exclude_subskills=["nuanced_argument"],
+        )
+
+    assert item_id in {row.id for row in without_exclusion}
+    assert item_id not in {row.id for row in with_exclusion}
+    assert with_exclusion == []
 
 
 async def test_old_in_flight_speaking_session_without_pending_bank_item_id_still_works(

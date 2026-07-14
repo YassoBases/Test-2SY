@@ -146,7 +146,7 @@
         <div class="d-flex justify-end mt-3">
           <v-btn
             color="secondary" variant="flat" :loading="busy"
-            :disabled="!recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
+            :disabled="busy || !recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
             prepend-icon="mdi-send" @click="sendSpeaking"
           >
             Submit answer

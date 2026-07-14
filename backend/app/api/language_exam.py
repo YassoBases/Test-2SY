@@ -788,7 +788,12 @@ _SPEAKING_BANK_SCENARIO = {
 
 
 async def _speaking_bank_prompt(
-    db: AsyncSession, *, language_id: int, level_str: str, used_item_ids: set[int] | None = None
+    db: AsyncSession,
+    *,
+    language_id: int,
+    level_str: str,
+    used_item_ids: set[int] | None = None,
+    used_subskills: set[str] | None = None,
 ) -> dict | None:
     """Pull one verified, unused, MVP-marked speaking_prompt bank item at the target level, or
     None if the bank has nothing usable (caller falls back to live scenario/question generation)
@@ -798,11 +803,34 @@ async def _speaking_bank_prompt(
     (body_json.review_status="mvp_approved_pending_full_review"), excluding older/legacy
     speaking_prompt rows seeded by the generic seed_placement_question_bank.py script that
     predate it -- those legacy rows are untouched (not deleted/deactivated), just never
-    selected here."""
+    selected here.
+
+    used_subskills, if given, is a soft diversity preference: a candidate whose subskill/task_type
+    hasn't already appeared in this session is preferred over one that has (e.g. avoids
+    self_intro immediately followed by another self_intro). This is never a hard requirement --
+    if no such candidate exists at this level, selection falls back to the plain
+    used_item_ids-only behavior below, so a thin bank can never fail to produce a prompt just
+    because every remaining item shares an already-seen subskill."""
     try:
         lvl = LanguageLevel(level_str)
     except ValueError:
         lvl = LanguageLevel.A2
+
+    if used_subskills:
+        for row in await select_placement_bank_items(
+            db,
+            language_id=language_id,
+            skill="speaking_prompt",
+            level=lvl,
+            count=1,
+            used_item_ids=used_item_ids,
+            require_mvp_marker=True,
+            exclude_subskills=used_subskills,
+        ):
+            item = bank_item_to_exam_item(row)
+            if str(item.get("question") or "").strip():
+                return item
+
     for row in await select_placement_bank_items(
         db,
         language_id=language_id,
@@ -837,6 +865,15 @@ def _already_used_speaking_bank_item_ids(state: dict, section: str) -> set[int]:
     "results", not "asked"."""
     results = state.get(section, {}).get("results", []) or []
     return {int(r["bank_item_id"]) for r in results if r.get("bank_item_id")}
+
+
+def _already_used_speaking_subskills(state: dict, section: str) -> set[str]:
+    """Subskill/task_type values already asked in this session's speaking-like section -- used
+    only as _speaking_bank_prompt's soft diversity preference (never a hard exclusion), so
+    back-to-back turns avoid repeating the same task type (e.g. self_intro, self_intro) when a
+    fresher one is available at the target level."""
+    results = state.get(section, {}).get("results", []) or []
+    return {str(r["bank_item_subskill"]) for r in results if r.get("bank_item_subskill")}
 
 
 # ---------------------------------------------------------------------------------------
@@ -2020,6 +2057,9 @@ async def initiate_exam(
             # Retained so the turn-1 answer can record which bank item it came from (or None for
             # AI-generated/fallback questions), mirroring bank_item_id retention in MCQ sections.
             "pending_bank_item_id": opening_bank_item.get("bank_item_id") if opening_bank_item is not None else None,
+            # Retained so the next turn's selection can prefer an unseen subskill/task_type (soft
+            # diversity preference) -- never read by scoring.
+            "pending_bank_item_subskill": opening_bank_item.get("subskill") if opening_bank_item is not None else None,
             "turn_token": _new_exam_token(),
             "results": [],
             "done": False,
@@ -2306,6 +2346,7 @@ async def speaking_turn(
 
     sp = state[section]
     answered_bank_item_id = sp.get("pending_bank_item_id")
+    answered_bank_item_subskill = sp.get("pending_bank_item_subskill")
     sp.setdefault("results", []).append(
         {
             "question": question,
@@ -2323,6 +2364,9 @@ async def speaking_turn(
             # Retained so the next turn's bank selection can exclude it via used_item_ids,
             # mirroring MCQ sections' bank_item_id retention (P1.1) -- scoring never reads this.
             "bank_item_id": int(answered_bank_item_id) if answered_bank_item_id else None,
+            # Retained so the next turn's selection can prefer an unseen subskill/task_type (soft
+            # diversity preference) -- never read by scoring.
+            "bank_item_subskill": str(answered_bank_item_subskill) if answered_bank_item_subskill else None,
         }
     )
 
@@ -2337,6 +2381,7 @@ async def speaking_turn(
         sp["done"] = True
         sp["pending_question"] = ""
         sp["pending_bank_item_id"] = None
+        sp["pending_bank_item_subskill"] = None
         sp["turn_token"] = ""
         sp["evidence_status"] = "completed"
     else:
@@ -2352,13 +2397,16 @@ async def speaking_turn(
                 language_id=language_id,
                 level_str=assessment.estimated_level.value,
                 used_item_ids=_already_used_speaking_bank_item_ids(state, section),
+                used_subskills=_already_used_speaking_subskills(state, section),
             )
         if next_bank_item is not None:
             sp["pending_question"] = _speaking_bank_question_text(next_bank_item)
             sp["pending_bank_item_id"] = next_bank_item.get("bank_item_id")
+            sp["pending_bank_item_subskill"] = next_bank_item.get("subskill")
         else:
             sp["pending_question"] = assessment.next_question or "Tell me more about that."
             sp["pending_bank_item_id"] = None
+            sp["pending_bank_item_subskill"] = None
         sp["turn_token"] = _new_exam_token()
         sp["evidence_status"] = "missing_student_response"
 

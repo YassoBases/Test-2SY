@@ -91,6 +91,7 @@ async def select_placement_bank_items(
     subskills: Sequence[str] | None = None,
     require_verified: bool = True,
     require_mvp_marker: bool = False,
+    exclude_subskills: Sequence[str] | None = None,
 ) -> list[LanguagePlacementQuestionBankItem]:
     """Select reviewed placement items, preferring boundary items when requested.
 
@@ -104,6 +105,11 @@ async def select_placement_bank_items(
     older/legacy speaking_prompt rows that predate that bank (seeded by the generic
     seed_placement_question_bank.py script) without deleting or deactivating them. Has no effect
     on reading/listening/grammar_vocab/writing_prompt, which never pass this flag.
+
+    exclude_subskills: speaking-placement-only diversity preference (only ever passed by
+    _speaking_bank_prompt, as a soft preference -- callers re-query without it if this returns
+    nothing). Excludes items whose subskill/task_type is in the given list. Has no effect on
+    reading/listening/grammar_vocab/writing_prompt, which never pass this.
     """
 
     normalized_skill = normalize_bank_skill(skill)
@@ -111,6 +117,7 @@ async def select_placement_bank_items(
     limit = max(1, int(count or 1))
     exclude_ids = {int(x) for x in (used_item_ids or []) if x is not None}
     wanted_subskills = [s for s in (subskills or []) if s]
+    unwanted_subskills = [s for s in (exclude_subskills or []) if s]
 
     boundary_target: BoundaryTarget | None
     if isinstance(boundary, BoundaryTarget) or boundary is None:
@@ -141,6 +148,8 @@ async def select_placement_bank_items(
             stmt = stmt.where(LanguagePlacementQuestionBankItem.id.not_in(exclude_ids))
         if wanted_subskills:
             stmt = stmt.where(LanguagePlacementQuestionBankItem.subskill.in_(wanted_subskills))
+        if unwanted_subskills:
+            stmt = stmt.where(LanguagePlacementQuestionBankItem.subskill.not_in(unwanted_subskills))
 
         if boundary_only and boundary_target:
             stmt = stmt.where(
