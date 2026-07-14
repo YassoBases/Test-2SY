@@ -124,6 +124,35 @@ def _fake_httpx_namespace(*, post_impl):
     return SimpleNamespace(AsyncClient=_FakeAsyncClient, Timeout=httpx.Timeout)
 
 
+async def test_create_live_transcription_session_requests_english_language_hint(monkeypatch):
+    """The English placement exam's live preview must hint the transcription language explicitly
+    -- without this, OpenAI sometimes guesses the script of a spoken name (e.g. transcribing a
+    student's Arabic name in Arabic script) instead of transliterating it, which looks broken in
+    an English-only exam. This is a pure unit test of the service's own payload construction, no
+    DB/ASGI needed."""
+    monkeypatch.setattr(
+        language_live_transcription_service, "get_settings", lambda: _fake_settings()
+    )
+
+    captured_payloads = []
+
+    async def fake_post(url, *, headers=None, json=None):
+        captured_payloads.append(json)
+        return _FakeHttpxResponse(200, {"value": "ek_fake_ephemeral_secret_xyz789", "expires_at": 1999999999})
+
+    monkeypatch.setattr(
+        language_live_transcription_service, "httpx", _fake_httpx_namespace(post_impl=fake_post)
+    )
+
+    result = await language_live_transcription_service.create_live_transcription_session()
+
+    assert result is not None
+    assert len(captured_payloads) == 1
+    transcription = captured_payloads[0]["session"]["audio"]["input"]["transcription"]
+    assert transcription["language"] == "en"
+    assert transcription["model"] == "gpt-realtime-whisper"
+
+
 @pytest.mark.integration
 @pytest.mark.postgresql
 async def test_live_transcription_session_endpoint_never_returns_the_real_api_key(

@@ -53,7 +53,11 @@ async def create_live_transcription_session() -> dict | None:
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcm", "rate": 24000},
-                    "transcription": {"model": model},
+                    # English-only placement exam (matches the official post-submit STT pipeline's
+                    # own hardcoded language="en" in language_transcription_service.py) -- without
+                    # this hint the model sometimes guesses a spoken name's script (e.g. Arabic)
+                    # instead of transliterating it, which looks broken in an English exam preview.
+                    "transcription": {"model": model, "language": "en"},
                 }
             },
         },

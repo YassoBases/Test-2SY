@@ -128,20 +128,6 @@
             <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
-          <div
-            v-if="recorder.recording.value && !liveCaption.unavailable.value"
-            class="live-caption-box mt-3 text-start"
-          >
-            <div class="text-caption text-medium-emphasis mb-1 d-flex align-center">
-              <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
-              Live transcript preview
-            </div>
-            <div class="text-body-2 live-caption-text">
-              <span v-if="liveCaption.transcript.value">{{ liveCaption.transcript.value }}</span>
-              <span v-else class="text-medium-emphasis">Listening…</span>
-            </div>
-            <div class="text-caption text-medium-emphasis mt-1">Final submitted transcript may differ.</div>
-          </div>
           <div class="text-caption text-medium-emphasis mt-3">— or —</div>
           <v-file-input
             v-model="uploadFile"
@@ -155,6 +141,24 @@
             :disabled="busy || recorder.recording.value"
             @update:model-value="onUpload"
           />
+        </div>
+
+        <!-- Live transcript preview: display-only, English-hinted, LTR-forced (this exam is
+             English-only even though the app defaults to an Arabic/RTL UI). Rendered as its own
+             panel below the recorder box -- never nested inside it -- so the recording control
+             stays visually primary. Stays hidden until a first real transcript delta arrives;
+             never shows a "Listening…" placeholder. -->
+        <div
+          v-if="recorder.recording.value && !liveCaption.unavailable.value && liveCaption.transcript.value"
+          class="live-caption-box mt-3"
+          dir="ltr"
+        >
+          <div class="live-caption-label text-caption text-medium-emphasis d-flex align-center">
+            <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
+            Live transcript preview
+          </div>
+          <div class="live-caption-text text-body-2">{{ liveCaption.transcript.value }}</div>
+          <div class="text-caption text-medium-emphasis mt-1">Final submitted transcript may differ</div>
         </div>
 
         <div class="d-flex justify-end mt-3">
@@ -801,7 +805,10 @@ function handleSpeakingRecordToggle() {
     liveCaption.reset()
     liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
   } else {
+    // Clear-on-stop: tearing down the connection alone isn't enough -- the accumulated
+    // transcript text must not linger once recording has ended.
     liveCaption.stop()
+    liveCaption.reset()
   }
 }
 
@@ -809,9 +816,10 @@ async function sendSpeaking() {
   if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
-  // Cleanup-on-submit: normally already stopped when recording ended, but this is a cheap,
+  // Cleanup-on-submit: normally already cleared when recording ended, but this is a cheap,
   // idempotent no-op otherwise -- the live preview must never linger past the answer it was for.
   liveCaption.stop()
+  liveCaption.reset()
   // Identity of the question this submission answers. If a restart/fresh-start happens (a new
   // generation) or the exam otherwise already moved past this turn before the response arrives,
   // this attempt's outcome is obsolete and must be silently ignored -- never applied, never
@@ -1006,6 +1014,7 @@ onUnmounted(() => {
   finishLoading()
   if (rateLimitTimer) clearTimeout(rateLimitTimer)
   liveCaption.stop()
+  liveCaption.reset()
 })
 </script>
 
@@ -1023,10 +1032,14 @@ onUnmounted(() => {
 .exam-msg--ai { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
 .recorder-box { border: 1px dashed rgba(var(--v-theme-secondary), 0.4); border-radius: 14px; }
 .live-caption-box {
-  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px; padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px; padding: 8px 12px; text-align: left;
 }
-.live-caption-text { min-height: 1.4em; line-height: 1.4; }
+.live-caption-label { letter-spacing: 0.02em; }
+.live-caption-text {
+  line-height: 1.45; max-height: 4.35em; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-word; text-align: left;
+}
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
