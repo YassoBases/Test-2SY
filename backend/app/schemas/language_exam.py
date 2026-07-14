@@ -294,6 +294,20 @@ class SpeakingPromptOut(BaseModel):
     turn_token: str
 
 
+class LiveTranscriptionSessionOut(BaseModel):
+    """A short-lived OpenAI Realtime ephemeral client secret for Speaking's live transcript
+    preview (MVP, display-only). Never used for grading; the official transcript remains the
+    backend's own post-submit STT pipeline. `available=False` (fields omitted) is the safe,
+    non-error response whenever live transcription is disabled, misconfigured, or the upstream
+    call fails -- the frontend must fall back to the normal recording UI without surfacing this
+    as an error."""
+
+    available: bool
+    client_secret: str | None = None
+    expires_at: int | None = None
+    model: str | None = None
+
+
 class McqPromptOut(BaseModel):
     """Shared shape for reading (passage) and listening (audio) comprehension items."""
 

@@ -415,6 +415,14 @@ export async function fetchExamState(sessionId) {
   return data
 }
 
+// Speaking's live transcript preview (MVP, display-only) -- mints a short-lived OpenAI Realtime
+// client secret. Never the grading source of truth; callers must treat a thrown/rejected result
+// or `{ available: false }` as "not available right now" and fall back silently.
+export async function createSpeakingLiveTranscriptionSession(sessionId) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/live-transcription-session`)
+  return data
+}
+
 export async function submitSpeakingTurn(
   sessionId,
   blob,

@@ -3146,3 +3146,50 @@ async def test_speaking_assessment_core_does_not_change_final_scoring_or_complet
             )
         ).scalar_one()
     assert profile.placement_completed_at is not None
+
+
+async def test_speaking_turn_result_shape_is_unchanged_by_live_transcription_preview_feature(
+    monkeypatch,
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    """Backend test 5/5 for the live speaking transcript preview (Task K): submitting a speaking
+    turn through the existing, unmodified /speaking/turn flow must still produce exactly the same
+    persisted result shape as before this feature -- proving the new live-caption endpoint is
+    purely additive and never touches the real submit/grading path."""
+    state = _speaking_state()
+    record = await exam_record_factory(state=state)
+    monkeypatch.setattr(language_exam, "check_or_raise", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(language_exam, "_effective_level", lambda *_args, **_kwargs: _async("A2"))
+    await _fake_audio_and_stt(monkeypatch)
+    monkeypatch.setattr(language_exam.ai_engine, "assess_speaking", _fake_assess_ok())
+
+    async with postgres_session_factory() as db:
+        await language_exam.speaking_turn(
+            record.session_id,
+            BackgroundTasks(),
+            file=SimpleNamespace(filename="live-caption-regression.webm"),
+            duration_seconds=None,
+            request_id="live-caption-regression-request-1",
+            state_revision=state["state_revision"],
+            turn_token=state["speaking"]["turn_token"],
+            student=record.student,
+            db=db,
+        )
+
+    stored = await _stored_exam(postgres_session_factory, record.session_id)
+    results = stored.exam_state["speaking"]["results"]
+    assert len(results) == 1
+    turn_result = results[0]
+    assert set(turn_result.keys()) == {
+        "question", "transcription", "grammar_vocab_feedback", "pronunciation_feedback",
+        "pronunciation_status", "fluency_note", "estimated_level", "audio_sha256",
+        "audio_duration_seconds", "audio_mime_type", "stt_engine", "stt_model",
+        "bank_item_id", "bank_item_subskill",
+    }
+    assert turn_result["pronunciation_status"] == "unassessed"
+    assert turn_result["transcription"]
+    # None of the new live-transcription concepts leak anywhere into the persisted, graded turn.
+    serialized = str(turn_result).lower()
+    for forbidden in ("client_secret", "live_transcription", "realtime", "ephemeral"):
+        assert forbidden not in serialized

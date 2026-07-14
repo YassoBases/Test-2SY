@@ -121,12 +121,26 @@
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
-            :disabled="busy" @click="recorder.toggleRecording()"
+            :disabled="busy" @click="handleSpeakingRecordToggle"
           />
           <div class="text-caption text-medium-emphasis mt-2">
             <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
             <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
+          </div>
+          <div
+            v-if="recorder.recording.value && !liveCaption.unavailable.value"
+            class="live-caption-box mt-3 text-start"
+          >
+            <div class="text-caption text-medium-emphasis mb-1 d-flex align-center">
+              <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
+              Live transcript preview
+            </div>
+            <div class="text-body-2 live-caption-text">
+              <span v-if="liveCaption.transcript.value">{{ liveCaption.transcript.value }}</span>
+              <span v-else class="text-medium-emphasis">Listening…</span>
+            </div>
+            <div class="text-caption text-medium-emphasis mt-1">Final submitted transcript may differ.</div>
           </div>
           <div class="text-caption text-medium-emphasis mt-3">— or —</div>
           <v-file-input
@@ -407,10 +421,12 @@ import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import LanguageCorrectionList from '../../../components/language/LanguageCorrectionList.vue'
 import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
+import { useLiveTranscriptionPreview } from '../../../composables/useLiveTranscriptionPreview.js'
 import {
   initiateExam,
   fetchExamState,
   submitSpeakingTurn,
+  createSpeakingLiveTranscriptionSession,
   answerExamMcq,
   submitExamWriting,
   fetchExamReport,
@@ -460,6 +476,9 @@ const examCorrections = computed(() =>
 )
 
 const recorder = useVoiceRecorder({ minSeconds: 1 })
+// Speaking's live transcript preview (UX only -- see useLiveTranscriptionPreview.js). Never sent
+// for grading; the official transcript remains whatever the backend returns after Submit.
+const liveCaption = useLiveTranscriptionPreview()
 const uploadFile = ref(null)
 const choice = ref(null)
 const writingText = ref('')
@@ -627,6 +646,10 @@ function applyState(data) {
   // reset per-section inputs
   choice.value = null
   recorder.reset()
+  // Every freshly-applied state is a new question/section (or a recovery back to the current
+  // one) -- any live caption connection/text from before must not carry over.
+  liveCaption.stop()
+  liveCaption.reset()
   uploadFile.value = null
   listenCount.value = 0
   audioFailed.value = false
@@ -763,16 +786,32 @@ async function startFresh() {
     audioFailed.value = false
     uploadFile.value = null
     recorder.reset()
+    liveCaption.stop()
+    liveCaption.reset()
     prepAttempts = 0
     busy.value = false
   }
   await start()
 }
 
+function handleSpeakingRecordToggle() {
+  const willStart = !recorder.recording.value
+  recorder.toggleRecording()
+  if (willStart) {
+    liveCaption.reset()
+    liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
+  } else {
+    liveCaption.stop()
+  }
+}
+
 async function sendSpeaking() {
   if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
+  // Cleanup-on-submit: normally already stopped when recording ended, but this is a cheap,
+  // idempotent no-op otherwise -- the live preview must never linger past the answer it was for.
+  liveCaption.stop()
   // Identity of the question this submission answers. If a restart/fresh-start happens (a new
   // generation) or the exam otherwise already moved past this turn before the response arrives,
   // this attempt's outcome is obsolete and must be silently ignored -- never applied, never
@@ -946,6 +985,8 @@ async function restart() {
   // screen's Start button isn't left disabled by a request that no longer owns it.
   examGeneration += 1
   busy.value = false
+  liveCaption.stop()
+  liveCaption.reset()
   if (sessionId.value) {
     try { await abandonExam(sessionId.value) } catch { /* ignore */ }
   }
@@ -964,6 +1005,7 @@ async function restart() {
 onUnmounted(() => {
   finishLoading()
   if (rateLimitTimer) clearTimeout(rateLimitTimer)
+  liveCaption.stop()
 })
 </script>
 
@@ -980,6 +1022,11 @@ onUnmounted(() => {
 .exam-msg--user { background: rgba(var(--v-theme-secondary), 0.16); border: 1px solid rgba(var(--v-theme-secondary), 0.3); }
 .exam-msg--ai { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
 .recorder-box { border: 1px dashed rgba(var(--v-theme-secondary), 0.4); border-radius: 14px; }
+.live-caption-box {
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px; padding: 10px 12px;
+}
+.live-caption-text { min-height: 1.4em; line-height: 1.4; }
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);

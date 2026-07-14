@@ -186,6 +186,17 @@ class Settings(BaseSettings):
     SPEAKING_EVI_MAX_TURN_BYTES: int = 25_000_000
     SPEAKING_EVI_TOKEN_TTL_SECONDS: int = 1500
 
+    # Speaking live transcript preview (MVP, display-only) — mints short-lived OpenAI Realtime
+    # ephemeral client secrets so the browser can show partial captions while the student is
+    # still recording. Never the grading source of truth: the official transcript remains
+    # SPEAKING_TRANSCRIPTION_PROVIDER's own post-submit pipeline. Disabled by default; the real
+    # OPENAI_API_KEY (above) is used only server-side to mint each ephemeral secret and never
+    # reaches the frontend.
+    SPEAKING_LIVE_TRANSCRIPTION_ENABLED: bool = False
+    SPEAKING_LIVE_TRANSCRIPTION_PROVIDER: str = "openai_realtime"
+    SPEAKING_LIVE_TRANSCRIPTION_MODEL: str = "gpt-realtime-whisper"
+    SPEAKING_LIVE_TRANSCRIPTION_TOKEN_TTL_SECONDS: int = 60
+
     # Student lesson voice chat STT (Deepgram Nova — not used by Language module)
     DEEPGRAM_API_KEY: str = ""
     DEEPGRAM_STT_MODEL: str = "nova-3"

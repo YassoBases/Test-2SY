@@ -60,6 +60,7 @@ from app.schemas.language_exam import (
     ExamProcessingOut,
     ExamReportOut,
     ExamStateOut,
+    LiveTranscriptionSessionOut,
     McqAnswerIn,
     McqPromptOut,
     MultiSkillReportSchema,
@@ -81,6 +82,7 @@ from app.services.language_exam_service import (
     overall_level,
 )
 from app.services.language_level_utils import primary_focus_and_strength
+from app.services.language_live_transcription_service import create_live_transcription_session
 from app.services.language_placement_policy_service import (
     ensure_placement_retake_allowed,
     next_allowed_retake_at,
@@ -2315,6 +2317,31 @@ async def _verified_server_transcription(audio: ValidatedAudio):
             },
         )
     return stt
+
+
+@router.post("/{session_id}/speaking/live-transcription-session", response_model=LiveTranscriptionSessionOut)
+async def create_speaking_live_transcription_session(
+    session_id: str,
+    student: User = Depends(require_active_language_subscription()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mint a short-lived OpenAI Realtime ephemeral client secret for Speaking's live transcript
+    preview (MVP, display-only). Scoped to transcription only -- never general model access -- and
+    never the server's own OPENAI_API_KEY, which stays server-side.
+
+    This is purely a UX convenience: the returned client_secret is used by the frontend to render
+    a "Live transcript preview" while recording. It is never sent into grade_speaking, never
+    affects final_level/confidence, and is entirely independent of the official post-submit STT
+    pipeline that remains the sole grading source of truth. Fails safely (available=False) rather
+    than raising whenever the feature is disabled, misconfigured, or the upstream call fails --
+    the Speaking flow must continue exactly as before regardless of this endpoint's outcome.
+    """
+    await _load_session(db, session_id, student)
+    check_or_raise("placement_poll", f"{student.id}:{session_id}")
+    result = await create_live_transcription_session()
+    if result is None:
+        return LiveTranscriptionSessionOut(available=False)
+    return LiveTranscriptionSessionOut(available=True, **result)
 
 
 @router.post("/{session_id}/speaking/turn", response_model=ExamStateOut)
