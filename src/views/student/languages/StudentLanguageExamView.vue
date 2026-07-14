@@ -500,6 +500,9 @@ let pollTimer = null
 let prepTimer = null
 let pollRunId = 0
 let rateLimitTimer = null
+// Bumped by every fresh-session action (start/startFresh/restart) so an in-flight speaking
+// submission from a now-abandoned session can recognize itself as obsolete when it settles.
+let examGeneration = 0
 
 const isSpeakingPhase = computed(() => state.value?.phase === 'speaking' || state.value?.phase === 'interview')
 const isMcqPhase = computed(() => ['listening', 'reading', 'grammar_vocab'].includes(state.value?.phase))
@@ -699,6 +702,7 @@ function schedulePrepPoll(delayMs = 2500) {
 
 async function start() {
   if (busy.value || rateLimitBlocked.value) return
+  examGeneration += 1
   busy.value = true
   loadError.value = ''
   try {
@@ -729,6 +733,7 @@ async function retryContent() {
 
 async function startFresh() {
   if (busy.value || rateLimitBlocked.value) return
+  examGeneration += 1
   busy.value = true
   loadError.value = ''
   try {
@@ -757,6 +762,15 @@ async function sendSpeaking() {
   if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
+  // Identity of the question this submission answers. If a restart/fresh-start happens (a new
+  // generation) or the exam otherwise already moved past this turn before the response arrives,
+  // this attempt's outcome is obsolete and must be silently ignored -- never applied, never
+  // shown as a stale-answer banner, since the UI (or a newer attempt) has already moved on.
+  const myGeneration = examGeneration
+  const submittedTurnToken = state.value?.turn_token || state.value?.speaking?.turn_token || ''
+  const isObsolete = () =>
+    myGeneration !== examGeneration
+    || submittedTurnToken !== (state.value?.turn_token || state.value?.speaking?.turn_token || '')
   try {
     const data = await submitSpeakingTurn(
       sessionId.value,
@@ -764,15 +778,19 @@ async function sendSpeaking() {
       recorder.elapsed.value,
       ensureSubmissionRequestId(),
       state.value.state_revision,
-      state.value.turn_token || state.value.speaking?.turn_token,
+      submittedTurnToken,
     )
+    if (isObsolete()) return
     // Show what the student said as a chat bubble (no scoring shown until the final report).
     pushStudent(data.last_feedback?.transcription)
     applyState(data)
   } catch (e) {
+    if (isObsolete()) return
     if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your answer')
   } finally {
-    busy.value = false
+    // Only release busy for the generation that set it -- a stale attempt from an abandoned
+    // session must not clear the busy flag a newer start/restart is currently using.
+    if (myGeneration === examGeneration) busy.value = false
   }
 }
 
@@ -910,7 +928,13 @@ function finishLoading() {
 }
 
 async function restart() {
-  // Best-effort: drop any unfinished attempt so the next start is guaranteed fresh.
+  // Best-effort: drop any unfinished attempt so the next start is guaranteed fresh. Bumping the
+  // generation marks any still-in-flight speaking submission from this abandoned session as
+  // obsolete (see sendSpeaking); resetting busy here (rather than leaving it for that stale
+  // attempt's own finally, which now intentionally no-ops across generations) ensures the intro
+  // screen's Start button isn't left disabled by a request that no longer owns it.
+  examGeneration += 1
+  busy.value = false
   if (sessionId.value) {
     try { await abandonExam(sessionId.value) } catch { /* ignore */ }
   }
