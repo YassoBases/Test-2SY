@@ -54,4 +54,9 @@ def test_apply_teacher_overrides_updates_payload():
     )
     assert lesson.insights_json["teacher_takeaways"] == ["أفكار المعلّم"]
     assert lesson.insights_json["teacher_concepts"] == ["النواة"]
-    assert lesson.insights_json["source"] == "mixed"
+    # Both takeaways and concepts are teacher-provided here (no prior AI insights existed at all,
+    # insights_json started as None) — a complete override, which apply_teacher_insight_overrides
+    # labels "teacher" (matching the same rule applied consistently elsewhere in this module,
+    # e.g. lesson_curated_insights_service.py:171). "mixed" means a *partial* override where the
+    # other field still reflects prior/AI content, which isn't the case here.
+    assert lesson.insights_json["source"] == "teacher"
