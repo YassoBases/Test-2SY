@@ -320,6 +320,9 @@ class McqPromptOut(BaseModel):
     item_index: int
     item_total: int
     question_token: str
+    # Additive, backward-compatible: every current item is "mcq". Lets the frontend/tests
+    # distinguish task types once a non-MCQ type (e.g. gap_fill) is introduced later.
+    question_type: str = "mcq"
 
 
 class WritingPromptOut(BaseModel):
