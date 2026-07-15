@@ -202,6 +202,11 @@ def bank_item_to_exam_item(item: LanguagePlacementQuestionBankItem) -> dict:
         "skill": item.skill,
         "subskill": item.subskill or "",
         "question_type": item.question_type,
+        # Gap Fill only (question_type == "gap_fill"); absent/default for every current MCQ row.
+        # Kept private -- _build_state_out never surfaces these to the public exam state.
+        "accepted_answers": body.get("accepted_answers"),
+        "max_words": body.get("max_words"),
+        "case_sensitive": body.get("case_sensitive", False),
         "passage": item.passage or "",
         "situation": item.situation or "",
         "question": item.prompt_text,

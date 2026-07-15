@@ -81,6 +81,7 @@ from app.services.language_exam_service import (
     cefr_rank,
     overall_level,
 )
+from app.services.language_gap_fill_service import gap_fill_content_error, normalize_gap_fill_text
 from app.services.language_level_utils import primary_focus_and_strength
 from app.services.language_live_transcription_service import create_live_transcription_session
 from app.services.language_placement_policy_service import (
@@ -2627,6 +2628,7 @@ async def answer_mcq(
             "state_revision": body.state_revision,
             "question_token": body.question_token,
             "choice_index": body.choice_index,
+            "answer_text": body.answer_text,
         },
     )
     if _request_receipt(
@@ -2654,21 +2656,87 @@ async def answer_mcq(
         supplied_token=body.question_token,
         expected_token=str(item.get("question_token") or ""),
     )
-    if body.choice_index >= len(item.get("options", [])):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="choice_index out of range")
 
-    correct = body.choice_index == item.get("correct_index")
+    # question_type is resolved from the server-side item only -- never trusted/declared by the
+    # client (McqAnswerIn has no question_type field). A missing/falsy value is an older
+    # in-progress state blob or AI-fallback item predating this field; both were always MCQ.
+    qtype = item.get("question_type") or "mcq"
+    asked_entry: dict = {"level": cur}
+
+    if qtype == "mcq":
+        if body.choice_index is None or body.answer_text is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires choice_index only.",
+            )
+        if body.choice_index >= len(item.get("options", [])):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="choice_index out of range"
+            )
+        correct = body.choice_index == item.get("correct_index")
+        # Exact pre-existing shape -- an existing test asserts equality on this dict, so no
+        # question_type key is added here; only gap_fill entries carry the extra evidence fields.
+        asked_entry["chosen_index"] = body.choice_index
+    elif qtype == "gap_fill":
+        if body.answer_text is None or body.choice_index is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires answer_text only.",
+            )
+        malformed_field = gap_fill_content_error(item)
+        if malformed_field:
+            logger.warning(
+                "Gap fill item content invalid session_id=%s bank_item_id=%s level=%s field=%s",
+                session_id, item.get("bank_item_id"), cur, malformed_field,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "content_unavailable",
+                    "message": "This question is temporarily unavailable. Please retry.",
+                },
+            )
+        max_words = item["max_words"]
+        if len(body.answer_text.split()) > max_words:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Your answer must be no more than {max_words} words.",
+            )
+        case_sensitive = bool(item.get("case_sensitive", False))
+        normalized_answer = normalize_gap_fill_text(body.answer_text, case_sensitive=case_sensitive)
+        normalized_accepted = {
+            normalize_gap_fill_text(a, case_sensitive=case_sensitive)
+            for a in item["accepted_answers"]
+        }
+        correct = normalized_answer in normalized_accepted
+        asked_entry["chosen_index"] = None
+        asked_entry["question_type"] = "gap_fill"
+        # Never exposed publicly -- sec["asked"] is not part of any public response schema
+        # (confirmed: McqPromptOut/ExamStateOut/MultiSkillReportSchema never read it for
+        # MCQ_SECTIONS; unlike Speaking, there is no listening/reading/grammar_vocab per-turn
+        # public detail).
+        asked_entry["answer_text"] = normalized_answer
+    else:
+        logger.warning(
+            "Unknown question_type rejected session_id=%s bank_item_id=%s level=%s question_type=%s",
+            session_id, item.get("bank_item_id"), cur, qtype,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "content_unavailable",
+                "message": "This question is temporarily unavailable. Please retry.",
+            },
+        )
+
     bank_item_id = item.get("bank_item_id")
     if bank_item_id:
         await record_bank_item_answer(db, item_id=int(bank_item_id), correct=correct)
-    sec.setdefault("asked", []).append({
-        "level": cur,
-        "correct": correct,
-        "chosen_index": body.choice_index,
-        # Retained so a later _prepare_content run can exclude it via used_item_ids (P1.1) —
-        # scoring/adaptive logic never reads this key.
-        "bank_item_id": int(bank_item_id) if bank_item_id else None,
-    })
+    asked_entry["correct"] = correct
+    # Retained so a later _prepare_content run can exclude it via used_item_ids (P1.1) —
+    # scoring/adaptive logic never reads this key.
+    asked_entry["bank_item_id"] = int(bank_item_id) if bank_item_id else None
+    sec.setdefault("asked", []).append(asked_entry)
     asked_levels = {a["level"] for a in sec["asked"]}
 
     if sec.pop("_awaiting_boundary_answer", False):

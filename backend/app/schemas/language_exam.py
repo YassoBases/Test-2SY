@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CEFRLevel(str, Enum):
@@ -262,10 +262,27 @@ class WritingGradeSchema(BaseModel):
 # ---------- API: inputs ----------
 
 class McqAnswerIn(BaseModel):
-    choice_index: int = Field(ge=0)
+    """Shared answer submission for both mcq and gap_fill items. The client never declares which
+    type it's answering -- exactly one of choice_index/answer_text is supplied, and the backend
+    decides which is required only after resolving the server-side item via question_token."""
+
+    choice_index: int | None = Field(default=None, ge=0)
+    answer_text: str | None = Field(default=None, max_length=500)
     request_id: str = Field(min_length=8, max_length=100)
     state_revision: int = Field(ge=1)
     question_token: str = Field(min_length=16, max_length=200)
+
+    @model_validator(mode="after")
+    def _check_exactly_one_answer_field(self) -> "McqAnswerIn":
+        if self.answer_text is not None and not self.answer_text.strip():
+            raise ValueError("answer_text cannot be blank or whitespace-only")
+        choice_present = self.choice_index is not None
+        text_present = self.answer_text is not None
+        if choice_present and text_present:
+            raise ValueError("choice_index and answer_text cannot both be provided")
+        if not choice_present and not text_present:
+            raise ValueError("either choice_index or answer_text is required")
+        return self
 
 
 class WritingAnswerIn(BaseModel):
