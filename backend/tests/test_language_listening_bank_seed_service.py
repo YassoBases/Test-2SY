@@ -40,6 +40,7 @@ from app.services.language_listening_bank_seed_service import (
     SeedCandidate,
     apply_seed_batch,
     build_dry_run_summary,
+    parse_draft_file,
 )
 
 REPO_BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -102,6 +103,31 @@ def test_draft_id_never_used_as_a_database_id():
         assert "draft_id" not in candidate.body_json
         # draft_id itself is a plain string identifier, never coerced to/used as an integer id
         assert isinstance(candidate.draft_id, str)
+
+
+# Phase 5C content invariant: Gap Fill must stay explicit/extractable (per the product rule),
+# never used for nuanced inference, speaker attitude, implied meaning, or abstract argument --
+# those listening_skill tags are reserved for MCQ items. Content itself is not modified by this
+# phase; this only proves the already-authored 21 Gap Fill items still respect the rule, so a
+# future content addition that violates it would fail this test rather than going unnoticed.
+_DISALLOWED_GAP_FILL_LISTENING_SKILLS = {
+    "inference",
+    "implied_meaning",
+    "speaker_attitude",
+    "following_argument",
+}
+
+
+@_requires_real_draft
+def test_gap_fill_items_never_use_inappropriate_listening_skill_tags():
+    raw_items = parse_draft_file()
+    gap_fill_items = [r for r in raw_items if r.get("question_type") == "gap_fill"]
+    assert gap_fill_items, "expected at least one gap_fill item in the draft"
+    offending = [
+        r.get("draft_id") for r in gap_fill_items
+        if r.get("listening_skill") in _DISALLOWED_GAP_FILL_LISTENING_SKILLS
+    ]
+    assert offending == []
 
 
 # ---------------------------------------------------------------------------

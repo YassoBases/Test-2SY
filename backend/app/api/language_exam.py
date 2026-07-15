@@ -137,15 +137,31 @@ async def _student_grade(db: AsyncSession, *, student_id: int) -> int | None:
     ).scalar_one_or_none()
 
 
-def _new_adaptive_section(pool: dict[str, dict], start_level: str) -> dict:
-    """Build the adaptive section state. Starts at the nearest available level to the estimate."""
+def _new_adaptive_section(pool: dict[str, dict], start_level: str, *, dual_slot: bool = False) -> dict:
+    """Build the adaptive section state. Starts at the nearest available level to the estimate.
+
+    dual_slot: Listening-only. When True, each pool[level] is {"mcq": item_or_none,
+    "gap_fill": item_or_none} instead of a single flat item -- each present variant gets its own
+    independent question_token. Reading/grammar_vocab/legacy listening never set this."""
     if pool and start_level not in pool:
         # Snap to the closest available rung.
         start_level = min(pool.keys(), key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(start_level))))
-    tokenized_pool = {
-        level: {**item, "question_token": str(item.get("question_token") or _new_exam_token())}
-        for level, item in pool.items()
-    }
+    if dual_slot:
+        tokenized_pool = {
+            level: {
+                variant: (
+                    {**item, "question_token": str(item.get("question_token") or _new_exam_token())}
+                    if item else None
+                )
+                for variant, item in slots.items()
+            }
+            for level, slots in pool.items()
+        }
+    else:
+        tokenized_pool = {
+            level: {**item, "question_token": str(item.get("question_token") or _new_exam_token())}
+            for level, item in pool.items()
+        }
     return {
         "mode": "adaptive",
         "pool": tokenized_pool,
@@ -184,9 +200,18 @@ def _ensure_state_protocol(state: dict) -> bool:
         state["state_revision"] = 1
         changed = True
     for section in MCQ_SECTIONS:
-        for item in (state.get(section, {}).get("pool") or {}).values():
-            if not item.get("question_token"):
-                item["question_token"] = _new_exam_token()
+        for slot in (state.get(section, {}).get("pool") or {}).values():
+            # Listening-only dual-slot shape: {"mcq": item_or_none, "gap_fill": item_or_none}.
+            # A legacy in-flight listening pool (predating this shape) is still a flat item, not
+            # a dict of only "mcq"/"gap_fill" keys -- handled by the isinstance/key check below.
+            if section == "listening" and isinstance(slot, dict) and set(slot.keys()) <= {"mcq", "gap_fill"}:
+                for item in slot.values():
+                    if item and not item.get("question_token"):
+                        item["question_token"] = _new_exam_token()
+                        changed = True
+                continue
+            if not slot.get("question_token"):
+                slot["question_token"] = _new_exam_token()
                 changed = True
     for section in SPEAKING_LIKE:
         spoken = state.get(section, {})
@@ -281,6 +306,47 @@ def _is_valid_mcq_item(item: dict) -> bool:
     options = item.get("options")
     ci = item.get("correct_index")
     return isinstance(options, list) and len(options) >= 2 and isinstance(ci, int) and 0 <= ci < len(options)
+
+
+def _is_valid_gap_fill_item(item: dict) -> bool:
+    return gap_fill_content_error(item) is None
+
+
+# Every 3rd Listening item (0-indexed position 2, 5, 8, ...) prefers Gap Fill; all other
+# positions prefer MCQ. Position-based, not count-based, because the adaptive staircase can end
+# at any point -- this keeps MCQ the majority for any attempt length without needing a fixed
+# batch ratio.
+_GAP_FILL_POSITION_MODULUS = 3
+_GAP_FILL_POSITION_REMAINDER = 2
+
+
+def _resolve_current_exam_item(sec: dict, current_level: str, *, dual_slot: bool = False) -> dict | None:
+    """Resolve the single exam item to serve/score for this section at its current level.
+
+    dual_slot=True (Listening only): sec["pool"][current_level] is
+    {"mcq": item_or_none, "gap_fill": item_or_none}. Chooses a variant by position
+    (len(sec["asked"]) % 3 == 2 prefers gap_fill, else mcq) and falls back to whichever variant
+    is actually present if the preferred one is missing -- never blocks the exam over an absent
+    Gap Fill candidate (e.g. while real Gap Fill rows remain inactive).
+
+    dual_slot=False: unchanged flat-pool lookup (reading/grammar_vocab/legacy listening state).
+
+    _build_state_out and answer_mcq must both call this the same way for the same section/level
+    so the item shown to the student is always the item scored.
+    """
+    slot = (sec.get("pool") or {}).get(current_level)
+    if not dual_slot:
+        return slot
+    if not isinstance(slot, dict):
+        return None
+    if "mcq" not in slot and "gap_fill" not in slot:
+        # Not actually dual-slot shaped (e.g. a legacy in-flight session's flat listening item) --
+        # use it as-is rather than misreading it as an empty dual-slot container.
+        return slot
+    asked_count = len(sec.get("asked") or [])
+    prefer_gap_fill = asked_count % _GAP_FILL_POSITION_MODULUS == _GAP_FILL_POSITION_REMAINDER
+    preferred, other = ("gap_fill", "mcq") if prefer_gap_fill else ("mcq", "gap_fill")
+    return slot.get(preferred) or slot.get(other)
 
 
 def _already_used_bank_item_ids(state: dict, skill: str) -> set[int]:
@@ -427,6 +493,61 @@ async def _question_bank_pool(
     return pool
 
 
+async def _gap_fill_listening_pool(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    levels: list[str],
+    used_item_ids: set[int] | None = None,
+) -> dict[str, dict]:
+    """Listening-only: one internal Gap Fill candidate per requested CEFR level, when available.
+
+    This is the only call site anywhere in the codebase permitted to pass allow_gap_fill=True.
+    Still fully gated by is_active/is_verified like every other bank query -- while the real Gap
+    Fill rows remain is_active=false (pending a separate, later activation phase), this returns
+    nothing for every level and the Listening dual-slot pool degrades to MCQ-only, exactly as
+    Listening behaves today.
+    """
+    pool: dict[str, dict] = {}
+    for lvl in levels:
+        for row in await select_placement_bank_items(
+            db,
+            language_id=language_id,
+            skill="listening",
+            level=lvl,
+            count=4,
+            used_item_ids=used_item_ids,
+            allow_gap_fill=True,
+        ):
+            if row.question_type != "gap_fill":
+                # allow_gap_fill=True also returns mcq rows -- the mcq variant is fetched
+                # separately by _question_bank_pool; this loop only ever keeps gap_fill.
+                continue
+            item = bank_item_to_exam_item(row)
+            if not _is_valid_gap_fill_item(item):
+                continue
+            if not _is_usable_audio_url(item.get("audio_url")):
+                item["audio_url"] = None
+            body = item.get("body") or {}
+            audio_text = _listening_text_from_body(body)
+            if item.get("content_id"):
+                content = await db.get(LanguageContentItem, item["content_id"])
+                body = content.body_json if content else body
+                if not audio_text:
+                    audio_text = _listening_text_from_body(body)
+            audio_url = (body or {}).get("audio_url")
+            if not item.get("audio_url") and audio_text and _is_usable_audio_url(audio_url):
+                item["audio_url"] = str(audio_url)
+            if audio_text:
+                item["audio_text"] = audio_text
+            if not item.get("audio_url") and not item.get("audio_text"):
+                continue
+            item["source"] = "placement_qbank"
+            pool[lvl] = item
+            break
+    return pool
+
+
 async def _generated_pool(
     db: AsyncSession, *, language_id: int, levels: list[str]
 ) -> dict[str, dict]:
@@ -507,6 +628,7 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
     prep_token = ""
     source_revision = 1
     l_pool: dict[str, dict] = {}
+    l_gap_fill_pool: dict[str, dict] = {}
     try:
         # Database-only preparation.  Do not add AI/TTS calls inside this context.
         async with AsyncSessionLocal() as db:
@@ -552,9 +674,14 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 levels=ALL_CEFR_LEVELS,
                 used_item_ids=_already_used_bank_item_ids(source_state, "grammar_vocab"),
             )
+            l_used_item_ids = _already_used_bank_item_ids(source_state, "listening")
             l_pool = await _question_bank_pool(
                 db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS,
-                used_item_ids=_already_used_bank_item_ids(source_state, "listening"),
+                used_item_ids=l_used_item_ids,
+            )
+            l_gap_fill_pool = await _gap_fill_listening_pool(
+                db, language_id=language_id, levels=ALL_CEFR_LEVELS,
+                used_item_ids=l_used_item_ids,
             )
             l_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
             l_seeded = await _seeded_pool(
@@ -632,7 +759,20 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             audio_url, _audio_text, _created = await _materialize_listening_audio(None, item)
             if not audio_url:
                 l_pool.pop(listening_level, None)
-        listening_section = _new_adaptive_section(l_pool, start_level)
+        for gap_fill_level, item in list(l_gap_fill_pool.items()):
+            audio_url, _audio_text, _created = await _materialize_listening_audio(None, item)
+            if not audio_url:
+                l_gap_fill_pool.pop(gap_fill_level, None)
+        # Listening-only dual-slot pool: each level may hold an MCQ candidate, a Gap Fill
+        # candidate, or both. Gap Fill only ever comes from reviewed bank rows (never the
+        # seeded/AI-generated fallback paths, which are MCQ-only) and only appears once
+        # allow_gap_fill=True finds an active+verified row for that level -- inert today since the
+        # real Gap Fill rows are still is_active=false.
+        l_dual_pool = {
+            lvl: {"mcq": l_pool.get(lvl), "gap_fill": l_gap_fill_pool.get(lvl)}
+            for lvl in set(l_pool) | set(l_gap_fill_pool)
+        }
+        listening_section = _new_adaptive_section(l_dual_pool, start_level, dual_slot=True)
 
         writing_prompt = reviewed_writing_prompt
         if not writing_prompt:
@@ -665,7 +805,9 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             prepared=prepared,
         )
     except Exception as exc:
-        _cleanup_exam_audio({"listening": {"pool": l_pool}})
+        _cleanup_exam_audio(
+            {"listening": {"pool": {**l_pool, **{f"gf_{lvl}": item for lvl, item in l_gap_fill_pool.items()}}}}
+        )
         logger.warning(
             "Placement content preparation failed session_id=%s error_type=%s",
             session_id,
@@ -995,7 +1137,7 @@ async def _build_state_out(
         out.turn_token = out.speaking.turn_token
     elif section in MCQ_SECTIONS:
         sec = state[section]
-        item = sec.get("pool", {}).get(sec.get("current_level"))
+        item = _resolve_current_exam_item(sec, sec.get("current_level"), dual_slot=(section == "listening"))
         if item and not sec.get("done"):
             audio_url = None
             passage = item.get("passage") or None if section == "reading" else None
@@ -2040,7 +2182,15 @@ async def _load_session(
 def _cleanup_exam_audio(state: dict) -> None:
     """Delete the edge-tts listening clips generated for this attempt (best-effort)."""
     base = Path(get_settings().UPLOAD_DIR)
-    for item in (state.get("listening", {}).get("pool") or {}).values():
+    items: list[dict] = []
+    for slot in (state.get("listening", {}).get("pool") or {}).values():
+        # Listening-only dual-slot shape: {"mcq": item_or_none, "gap_fill": item_or_none}.
+        # A legacy in-flight session's flat listening item is used as-is.
+        if isinstance(slot, dict) and set(slot.keys()) <= {"mcq", "gap_fill"}:
+            items.extend(v for v in slot.values() if v)
+        elif slot:
+            items.append(slot)
+    for item in items:
         url = item.get("audio_url") or ""
         if not (url.startswith("/uploads/language_exam_audio/") or url.startswith("/uploads/exam_audio/")):
             continue
@@ -2648,7 +2798,7 @@ async def answer_mcq(
 
     sec = state[section]
     cur = sec.get("current_level")
-    item = sec.get("pool", {}).get(cur)
+    item = _resolve_current_exam_item(sec, cur, dual_slot=(section == "listening"))
     if sec.get("done") or not item:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No item awaiting an answer")
     _require_current_state(
