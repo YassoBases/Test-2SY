@@ -211,12 +211,26 @@
         <!-- Listening questions remain hidden until a real audio playback begins. -->
         <template v-if="showMcqQuestion">
           <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
-          <v-radio-group v-model="choice" hide-details class="mb-3">
+
+          <template v-if="isGapFillQuestion">
+            <div v-if="wordBankOptions.length" class="d-flex flex-wrap gap-2 mb-2">
+              <v-chip v-for="(w, i) in wordBankOptions" :key="i" size="small" variant="tonal" color="secondary">{{ w }}</v-chip>
+            </div>
+            <v-text-field
+              v-model="gapFillAnswer"
+              variant="outlined"
+              dir="ltr"
+              hide-details
+              class="mb-3"
+              placeholder="Type your answer…"
+            />
+          </template>
+          <v-radio-group v-else v-model="choice" hide-details class="mb-3">
             <v-radio v-for="(opt, i) in state.mcq.options" :key="i" :value="i" :label="opt" dir="ltr" />
           </v-radio-group>
 
           <div class="d-flex justify-end">
-            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="choice === null || rateLimitBlocked" prepend-icon="mdi-arrow-right" @click="sendMcq">
+            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="!canSubmitMcq || rateLimitBlocked" prepend-icon="mdi-arrow-right" @click="sendMcq">
               Next
             </v-btn>
           </div>
@@ -496,6 +510,18 @@ const LIVE_CAPTION_READY_TIMEOUT_MS = 3000
 const uploadFile = ref(null)
 const choice = ref(null)
 const writingText = ref('')
+// Gap Fill Listening answer (question_type === 'gap_fill'). Separate from `choice` since the two
+// question types are mutually exclusive per item -- never both populated at once.
+const gapFillAnswer = ref('')
+const isGapFillQuestion = computed(() => (state.value?.mcq?.question_type || 'mcq') === 'gap_fill')
+// Display-only (A1/A2 Gap Fill rows always have one, B1+ optional). Never shown for MCQ.
+const wordBankOptions = computed(() => {
+  const wb = state.value?.mcq?.word_bank
+  return Array.isArray(wb) ? wb : []
+})
+const canSubmitMcq = computed(() => (
+  isGapFillQuestion.value ? gapFillAnswer.value.trim().length > 0 : choice.value !== null
+))
 
 function ensureSubmissionRequestId() {
   if (!submissionRequestId.value) {
@@ -659,6 +685,7 @@ function applyState(data) {
   if (data.last_feedback) lastFeedback.value = data.last_feedback
   // reset per-section inputs
   choice.value = null
+  gapFillAnswer.value = ''
   recorder.reset()
   // Every freshly-applied state is a new question/section (or a recovery back to the current
   // one) -- any live caption connection/text from before must not carry over.
@@ -900,16 +927,18 @@ async function sendSpeaking() {
 }
 
 async function sendMcq() {
-  if (choice.value === null || busy.value || rateLimitBlocked.value) return
+  if (!canSubmitMcq.value || busy.value || rateLimitBlocked.value) return
+  const gapFill = isGapFillQuestion.value
   busy.value = true
   loadError.value = ''
   try {
     const data = await answerExamMcq(
       sessionId.value,
-      choice.value,
+      gapFill ? null : choice.value,
       ensureSubmissionRequestId(),
       state.value.state_revision,
       state.value.question_token || state.value.mcq?.question_token,
+      gapFill ? gapFillAnswer.value.trim() : undefined,
     )
     applyState(data)
   } catch (e) {

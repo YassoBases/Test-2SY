@@ -444,13 +444,19 @@ export async function submitSpeakingTurn(
   return data
 }
 
-export async function answerExamMcq(sessionId, choiceIndex, requestId, stateRevision, questionToken) {
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, {
-    choice_index: choiceIndex,
+export async function answerExamMcq(sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText) {
+  const body = {
     request_id: requestId,
     state_revision: stateRevision,
     question_token: questionToken,
-  })
+  }
+  // Exactly one of choice_index/answer_text, matching the backend's McqAnswerIn contract.
+  if (answerText != null) {
+    body.answer_text = answerText
+  } else {
+    body.choice_index = choiceIndex
+  }
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, body)
   return data
 }
 
