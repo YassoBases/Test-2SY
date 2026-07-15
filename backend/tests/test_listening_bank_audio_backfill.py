@@ -50,24 +50,32 @@ async def _insert_listening_item(
     audio_meta_json: dict | None = None,
     content_item_id: int | None = None,
     stray_audio_url: str | None = None,
+    stable_key: str | None = None,
+    source: str = "content_seed",
+    question_type: str = "mcq",
+    raw_body_json: object = None,
 ) -> int:
-    body: dict = {}
-    if transcript is not None:
-        body["audio_transcript"] = transcript
-    if content_item_id is not None:
-        body["content_item_id"] = content_item_id
-    if stray_audio_url is not None:
-        body["audio_url"] = stray_audio_url
+    if raw_body_json is not None:
+        body: object = raw_body_json
+    else:
+        body = {}
+        if transcript is not None:
+            body["audio_transcript"] = transcript
+        if content_item_id is not None:
+            body["content_item_id"] = content_item_id
+        if stray_audio_url is not None:
+            body["audio_url"] = stray_audio_url
     async with postgres_session_factory() as db:
         item = LanguagePlacementQuestionBankItem(
             language_id=language_id,
             skill=skill,
             level=LanguageLevel(level),
-            question_type="mcq",
+            question_type=question_type,
             prompt_text="What is this text mainly about?",
-            options_json=["Daily life", "Space travel", "Ancient history", "Cooking"],
-            correct_index=0,
-            source="content_seed",
+            options_json=["Daily life", "Space travel", "Ancient history", "Cooking"] if question_type == "mcq" else None,
+            correct_index=0 if question_type == "mcq" else None,
+            source=source,
+            stable_key=stable_key,
             is_verified=is_verified,
             is_active=is_active,
             body_json=body,
@@ -498,3 +506,206 @@ async def test_state_api_still_hides_transcript_and_new_metadata_fields(
     assert '"transcript_hash"' not in body_text
     assert '"audio_meta"' not in body_text
     assert row.audio_meta_json["transcript_hash"] not in body_text
+
+
+# ---------------------------------------------------------------------------
+# Phase 3A: scoped targeting (stable_key_prefix / source) for not-yet-active draft batches like
+# the listening_mvp_60 rows. Every test below stays dry-run (apply=False, the default) unless
+# explicitly noted -- no real Supertonic call is required.
+# ---------------------------------------------------------------------------
+
+_MVP60_PREFIX = "listening_mvp_60:"
+_MVP60_SOURCE = "listening_mvp_60_draft"
+
+
+def _mvp60_key(marker: str, suffix: str = "LST-A1-01") -> str:
+    # stable_key has a global-uniqueness DB constraint (not scoped per test), so every test below
+    # mixes in its own uuid marker to guarantee no collision with any other test or real row.
+    return f"{_MVP60_PREFIX}{marker}-{suffix}"
+
+
+# 15. stable_key_prefix finds an inactive/unverified row that the default query would never see.
+@pytest.mark.postgresql
+async def test_stable_key_prefix_targets_inactive_unverified_rows(postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    target_id = await _insert_listening_item(
+        postgres_session_factory,
+        language_id=language_id,
+        transcript="A draft batch passage.",
+        is_active=False,
+        is_verified=False,
+        source=_MVP60_SOURCE,
+        stable_key=_mvp60_key(marker),
+    )
+
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX)
+
+    processed_ids = {r.bank_item_id for r in summary.results}
+    assert target_id in processed_ids
+    result = next(r for r in summary.results if r.bank_item_id == target_id)
+    assert result.status == "would_synthesize"
+
+
+# 16. Scoped targeting excludes unrelated listening rows (a normal active/verified row with no
+# matching stable_key, and an inactive row with an unrelated stable_key).
+@pytest.mark.postgresql
+async def test_scoped_targeting_excludes_unrelated_listening_rows(postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    target_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Target passage.",
+        is_active=False, is_verified=False, source=_MVP60_SOURCE, stable_key=_mvp60_key(marker),
+    )
+    unrelated_active_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Unrelated existing passage.",
+    )
+    unrelated_inactive_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Unrelated inactive passage.",
+        is_active=False, is_verified=False, stable_key=f"some_other_batch:{marker}-ITEM-01",
+    )
+
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX)
+
+    processed_ids = {r.bank_item_id for r in summary.results}
+    assert processed_ids == {target_id}
+    assert unrelated_active_id not in processed_ids
+    assert unrelated_inactive_id not in processed_ids
+
+
+# 17. Source safety check: when both stable_key_prefix and source are supplied, a row matching the
+# prefix but with a different source is excluded.
+@pytest.mark.postgresql
+async def test_scoped_targeting_excludes_rows_with_different_source(postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    matching_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Matches both scope fields.",
+        is_active=False, is_verified=False, source=_MVP60_SOURCE, stable_key=_mvp60_key(marker, "LST-A1-01"),
+    )
+    wrong_source_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Same prefix, different source.",
+        is_active=False, is_verified=False, source="some_other_source", stable_key=_mvp60_key(marker, "LST-A1-02"),
+    )
+
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(
+            db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX, source=_MVP60_SOURCE
+        )
+
+    processed_ids = {r.bank_item_id for r in summary.results}
+    assert processed_ids == {matching_id}
+    assert wrong_source_id not in processed_ids
+
+
+# 18. Default query behavior (no scope flags) is unchanged even when a listening_mvp_60-style
+# inactive row happens to exist -- it must not leak in without an explicit scope.
+@pytest.mark.postgresql
+async def test_default_scope_excludes_inactive_unverified_rows_even_with_matching_prefix(postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    draft_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Draft batch passage.",
+        is_active=False, is_verified=False, source=_MVP60_SOURCE, stable_key=_mvp60_key(marker),
+    )
+
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(db, language_code=language_code)  # no stable_key_prefix/source
+
+    processed_ids = {r.bank_item_id for r in summary.results}
+    assert draft_id not in processed_ids
+
+
+# 19. A broad include_inactive=True with no narrowing scope is rejected outright.
+@pytest.mark.postgresql
+async def test_include_inactive_without_scope_is_rejected(postgres_session_factory):
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+
+    async with postgres_session_factory() as db:
+        with pytest.raises(ValueError, match="requires an explicit stable_key_prefix or source scope"):
+            await run_backfill(db, language_code=language_code, include_inactive=True)
+
+
+# 20. Scoped dry-run never writes an audio file and never updates audio_meta_json.
+@pytest.mark.postgresql
+async def test_scoped_dry_run_does_not_write_audio_or_update_db(monkeypatch, postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    target_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, transcript="Draft batch passage.",
+        is_active=False, is_verified=False, source=_MVP60_SOURCE, stable_key=_mvp60_key(marker),
+    )
+
+    calls: list = []
+    monkeypatch.setattr(backfill_service, "synthesize_language_speech", _fake_synth(calls=calls))
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(
+            db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX, apply=False
+        )
+
+    assert len(calls) == 0  # no synthesis call at all in dry-run
+    result = next(r for r in summary.results if r.bank_item_id == target_id)
+    assert result.status == "would_synthesize"
+    row = await _get_item(postgres_session_factory, target_id)
+    assert row.audio_meta_json is None
+    assert row.is_active is False and row.is_verified is False  # untouched
+
+
+# 21. question_type and CEFR-level distribution are reported correctly for a scoped batch.
+@pytest.mark.postgresql
+async def test_scoped_summary_reports_question_type_and_level_distribution(postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, level="A1", question_type="mcq",
+        transcript="MCQ one.", is_active=False, is_verified=False,
+        source=_MVP60_SOURCE, stable_key=_mvp60_key(marker, "LST-A1-01"),
+    )
+    await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, level="A1", question_type="mcq",
+        transcript="MCQ two.", is_active=False, is_verified=False,
+        source=_MVP60_SOURCE, stable_key=_mvp60_key(marker, "LST-A1-02"),
+    )
+    await _insert_listening_item(
+        postgres_session_factory, language_id=language_id, level="B1", question_type="gap_fill",
+        transcript="Gap fill one.", is_active=False, is_verified=False,
+        source=_MVP60_SOURCE, stable_key=_mvp60_key(marker, "LST-B1-01"),
+    )
+
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX)
+
+    assert summary.by_question_type == {"mcq": 2, "gap_fill": 1}
+    assert summary.by_level == {"A1": 2, "B1": 1}
+
+
+# 22. A row with invalid (non-object) body_json is reported distinctly and left untouched.
+@pytest.mark.postgresql
+async def test_invalid_body_json_is_reported_and_skipped(monkeypatch, postgres_session_factory):
+    marker = uuid.uuid4().hex[:8]
+    language_id = await _make_language(postgres_session_factory)
+    language_code = await _get_language_code(postgres_session_factory, language_id)
+    bad_id = await _insert_listening_item(
+        postgres_session_factory, language_id=language_id,
+        is_active=False, is_verified=False, source=_MVP60_SOURCE, stable_key=_mvp60_key(marker),
+        raw_body_json=["not", "a", "dict"],
+    )
+
+    calls: list = []
+    monkeypatch.setattr(backfill_service, "synthesize_language_speech", _fake_synth(calls=calls))
+    async with postgres_session_factory() as db:
+        summary = await run_backfill(db, language_code=language_code, stable_key_prefix=_MVP60_PREFIX)
+
+    assert len(calls) == 0
+    result = next(r for r in summary.results if r.bank_item_id == bad_id)
+    assert result.status == "invalid_body_json"
+    assert bad_id in {r.bank_item_id for r in summary.invalid_body_json}

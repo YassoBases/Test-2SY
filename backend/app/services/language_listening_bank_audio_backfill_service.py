@@ -6,13 +6,20 @@ is empty today, so the live exam re-synthesizes audio from scratch on every sing
 already prefers `audio_meta_json.public_url` over live synthesis -- this module only needs to
 populate that column; no runtime selection/resolution code changes.
 
-Scope: only bank rows with `skill="listening"`, `is_active=True`, `is_verified=True`, and a
+Default scope: only bank rows with `skill="listening"`, `is_active=True`, `is_verified=True`, and a
 transcript resolvable via the exact same logic the live exam trusts
 (`app.api.language_exam._listening_text_from_body`, imported directly rather than re-implemented,
 so this script and the runtime path can never disagree about which rows are reachable or what
 text they'd read aloud). Six known scaffold rows (real recordings were never authored, and they
 have no transcript either) resolve to no transcript here exactly as they do at runtime, and are
 therefore left untouched -- this is intentional, not a gap.
+
+Scoped targeting (Phase 3A, for not-yet-active draft batches like listening_mvp_60): passing
+`stable_key_prefix` and/or `source` to `run_backfill()` narrows the query to that prefix/source and
+lifts the is_active/is_verified filter for that narrowed query only, so a still-inactive/unverified
+draft batch can have its audio backfilled before a later, separate activation step. There is no way
+to broadly include every inactive/unverified listening row without an explicit narrowing scope --
+`include_inactive=True` with neither `stable_key_prefix` nor `source` set raises immediately.
 
 Cache location: `UPLOAD_DIR/language_placement_bank_audio/{bank_item_id}/{filename}` -- a
 directory that cannot start with `/uploads/language_exam_audio/` or `/uploads/exam_audio/`, the
@@ -74,10 +81,12 @@ MIN_VALID_AUDIO_BYTES = 512
 class BackfillItemResult:
     bank_item_id: int
     level: str
-    status: str  # "synthesized" | "skipped" | "would_synthesize" | "failed" | "no_transcript"
+    # "synthesized" | "skipped" | "would_synthesize" | "failed" | "no_transcript" | "invalid_body_json"
+    status: str
     reason: str = ""
     public_url: str | None = None
     storage_key: str | None = None
+    question_type: str = ""
 
 
 @dataclass
@@ -107,6 +116,24 @@ class BackfillSummary:
     @property
     def no_transcript(self) -> list[BackfillItemResult]:
         return self._by_status("no_transcript")
+
+    @property
+    def invalid_body_json(self) -> list[BackfillItemResult]:
+        return self._by_status("invalid_body_json")
+
+    @property
+    def by_question_type(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for r in self.results:
+            counts[r.question_type or "unknown"] = counts.get(r.question_type or "unknown", 0) + 1
+        return counts
+
+    @property
+    def by_level(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for r in self.results:
+            counts[r.level] = counts.get(r.level, 0) + 1
+        return counts
 
 
 def _sanitize_path_component(value: str) -> str:
@@ -214,10 +241,33 @@ async def run_backfill(
     apply: bool = False,
     force: bool = False,
     item_id: int | None = None,
+    stable_key_prefix: str | None = None,
+    source: str | None = None,
+    include_inactive: bool = False,
 ) -> BackfillSummary:
     """Scan reachable Listening bank rows and (only if apply=True) synthesize+persist audio for
     any that are missing it or whose cached entry is stale/missing-on-disk. Always dry-run unless
-    apply=True. Never raises on a single row's failure -- logs and continues to the next row."""
+    apply=True. Never raises on a single row's failure -- logs and continues to the next row.
+
+    Default scope (stable_key_prefix, source, include_inactive all unset/False) is completely
+    unchanged from before: skill="listening", is_active=True, is_verified=True only.
+
+    Scoped targeting (added for the listening_mvp_60 draft-bank rows, which are intentionally
+    is_active=False/is_verified=False until a separate, later activation step): passing
+    stable_key_prefix and/or source narrows the query to just that prefix/source and, because a
+    real caller only reaches for this when they specifically want to backfill audio for a known,
+    named batch of not-yet-active rows, also lifts the is_active/is_verified filter for that scoped
+    query only. include_inactive=True with neither stable_key_prefix nor source set is rejected
+    outright -- there is no way to broadly pull in every inactive/unverified listening row without
+    an explicit narrowing scope.
+    """
+    if include_inactive and not (stable_key_prefix or source):
+        raise ValueError(
+            "include_inactive=True requires an explicit stable_key_prefix or source scope; "
+            "refusing to broadly include inactive/unverified listening rows."
+        )
+    scoped = bool(stable_key_prefix or source)
+
     settings = get_settings()
     voice = (settings.LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
     upload_dir = Path(settings.UPLOAD_DIR)
@@ -233,25 +283,49 @@ async def run_backfill(
     query = select(LanguagePlacementQuestionBankItem).where(
         LanguagePlacementQuestionBankItem.language_id == language.id,
         LanguagePlacementQuestionBankItem.skill == "listening",
-        LanguagePlacementQuestionBankItem.is_active.is_(True),
-        LanguagePlacementQuestionBankItem.is_verified.is_(True),
     )
+    if stable_key_prefix:
+        query = query.where(LanguagePlacementQuestionBankItem.stable_key.like(f"{stable_key_prefix}%"))
+    if source:
+        query = query.where(LanguagePlacementQuestionBankItem.source == source)
+    if not scoped:
+        # Default (and any use of include_inactive without a scope, which is rejected above) --
+        # exact prior behavior.
+        query = query.where(
+            LanguagePlacementQuestionBankItem.is_active.is_(True),
+            LanguagePlacementQuestionBankItem.is_verified.is_(True),
+        )
     if item_id is not None:
         query = query.where(LanguagePlacementQuestionBankItem.id == item_id)
     rows = (
         await db.execute(query.order_by(LanguagePlacementQuestionBankItem.id))
     ).scalars().all()
 
-    content_ids = {cid for row in rows if (cid := (row.body_json or {}).get("content_item_id"))}
+    content_ids = {
+        cid for row in rows
+        if isinstance(row.body_json, dict) and (cid := row.body_json.get("content_item_id"))
+    }
     content_by_id: dict[int, LanguageContentItem | None] = {}
     for cid in content_ids:
         content_by_id[cid] = await db.get(LanguageContentItem, cid)
 
     for row in rows:
+        if row.body_json is not None and not isinstance(row.body_json, dict):
+            summary.results.append(
+                BackfillItemResult(
+                    row.id, row.level.value, "invalid_body_json", "body_json is not a JSON object",
+                    question_type=row.question_type,
+                )
+            )
+            continue
+
         transcript = _resolve_transcript(row, content_by_id)
         if not transcript:
             summary.results.append(
-                BackfillItemResult(row.id, row.level.value, "no_transcript", "no resolvable transcript")
+                BackfillItemResult(
+                    row.id, row.level.value, "no_transcript", "no resolvable transcript",
+                    question_type=row.question_type,
+                )
             )
             continue
 
@@ -271,6 +345,7 @@ async def run_backfill(
                 BackfillItemResult(
                     row.id, row.level.value, "skipped", "valid cached audio",
                     meta.get("public_url"), meta.get("storage_key"),
+                    question_type=row.question_type,
                 )
             )
             continue
@@ -280,7 +355,7 @@ async def run_backfill(
                 "cached audio missing/stale" if (metadata_current or file_ok) else "no cached audio yet"
             )
             summary.results.append(
-                BackfillItemResult(row.id, row.level.value, "would_synthesize", reason)
+                BackfillItemResult(row.id, row.level.value, "would_synthesize", reason, question_type=row.question_type)
             )
             continue
 
@@ -288,7 +363,10 @@ async def run_backfill(
         if not ok:
             logger.warning("Listening backfill: synthesis failed bank_item_id=%s", row.id)
             summary.results.append(
-                BackfillItemResult(row.id, row.level.value, "failed", "synthesis failed or produced an invalid file")
+                BackfillItemResult(
+                    row.id, row.level.value, "failed", "synthesis failed or produced an invalid file",
+                    question_type=row.question_type,
+                )
             )
             continue
 
@@ -306,7 +384,10 @@ async def run_backfill(
         # Commit this row's success immediately -- a later row's failure must never roll this back.
         await db.commit()
         summary.results.append(
-            BackfillItemResult(row.id, row.level.value, "synthesized", "", public_url, storage_key)
+            BackfillItemResult(
+                row.id, row.level.value, "synthesized", "", public_url, storage_key,
+                question_type=row.question_type,
+            )
         )
 
     return summary
