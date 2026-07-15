@@ -1037,6 +1037,67 @@ async def _build_state_out(
     return out
 
 
+# Persistent Listening bank-audio cache (Phase 1: language_listening_bank_audio_backfill_service.py
+# populates audio_meta_json for reachable rows). Kept as a literal here, not imported from that
+# service module, to avoid a circular import -- that module already imports
+# _listening_text_from_body from this one.
+_LISTENING_BANK_CACHE_URL_PREFIX = "/uploads/language_placement_bank_audio/"
+# Matches MIN_VALID_AUDIO_BYTES in the backfill service -- the same "is this a real clip or a
+# truncated/corrupt write" sanity floor, re-applied here since the file on disk could have been
+# deleted, corrupted, or truncated by something entirely outside the backfill script since then.
+_MIN_VALID_BANK_CACHE_BYTES = 512
+
+
+def _safe_upload_relative_path(relative: str | None) -> Path | None:
+    """Resolve a candidate UPLOAD_DIR-relative path safely, refusing anything that would escape
+    UPLOAD_DIR (parent traversal, an absolute path smuggled in as "relative", etc). Returns None
+    if the input is empty, not a string, or resolves outside UPLOAD_DIR."""
+    if not relative or not isinstance(relative, str):
+        return None
+    upload_root = Path(get_settings().UPLOAD_DIR).resolve()
+    try:
+        candidate = (upload_root / relative).resolve()
+    except (OSError, ValueError):
+        return None
+    if not candidate.is_relative_to(upload_root):
+        return None
+    return candidate
+
+
+def _is_valid_bank_cache_file(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size >= _MIN_VALID_BANK_CACHE_BYTES
+    except OSError:
+        return False
+
+
+def _validate_local_bank_cache_url(
+    url: str, audio_meta: dict | None, *, bank_item_id: int | None
+) -> str | None:
+    """For a persistent Listening bank-cache URL, confirm the underlying local file genuinely
+    exists (and clears a trivial-size floor) before trusting it, so a deleted/corrupted/truncated
+    cache entry falls through to runtime synthesis instead of serving a dead link. Any other URL
+    (remote http(s)://, the source-controlled static listening assets) is returned unchanged --
+    only this specific persistent local cache gets the extra scrutiny. Never logs the transcript,
+    and only ever logs on rejection -- a normal valid cache hit produces no log output."""
+    if not url.startswith(_LISTENING_BANK_CACHE_URL_PREFIX):
+        return url
+
+    relative = (audio_meta or {}).get("storage_key") or url[len("/uploads/") :]
+    path = _safe_upload_relative_path(relative)
+    if path is None:
+        logger.warning(
+            "Listening bank-cache audio rejected: unsafe cache path bank_item_id=%s", bank_item_id
+        )
+        return None
+    if not _is_valid_bank_cache_file(path):
+        logger.warning(
+            "Listening bank-cache audio rejected: missing or invalid file bank_item_id=%s", bank_item_id
+        )
+        return None
+    return url
+
+
 async def _resolve_listening_audio(db: AsyncSession | None, item: dict) -> str | None:
     """Return only audio that is tied to the same transcript as the question.
 
@@ -1046,7 +1107,11 @@ async def _resolve_listening_audio(db: AsyncSession | None, item: dict) -> str |
 
     audio_url = item.get("audio_url")
     if _is_usable_audio_url(audio_url):
-        return str(audio_url)
+        validated = _validate_local_bank_cache_url(
+            str(audio_url), item.get("audio_meta"), bank_item_id=item.get("bank_item_id")
+        )
+        if validated:
+            return validated
 
     content_item_id = item.get("content_id")
     if not content_item_id or db is None:
