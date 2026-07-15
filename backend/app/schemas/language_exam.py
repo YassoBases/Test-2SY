@@ -340,6 +340,9 @@ class McqPromptOut(BaseModel):
     # Additive, backward-compatible: every current item is "mcq". Lets the frontend/tests
     # distinguish task types once a non-MCQ type (e.g. gap_fill) is introduced later.
     question_type: str = "mcq"
+    # Gap Fill only (A1/A2 always have one, B1+ optional). Display-only -- never used for scoring.
+    # accepted_answers/max_words/case_sensitive remain server-side and must never be added here.
+    word_bank: list[str] | None = None
 
 
 class WritingPromptOut(BaseModel):

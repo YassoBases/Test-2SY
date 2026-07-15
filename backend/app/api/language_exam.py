@@ -1025,6 +1025,7 @@ async def _build_state_out(
                 item_total=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
                 question_token=str(item.get("question_token") or ""),
                 question_type=item.get("question_type", "mcq"),
+                word_bank=item.get("word_bank"),
             )
             out.question_token = out.mcq.question_token
     elif section == "writing":

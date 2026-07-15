@@ -92,6 +92,7 @@ async def select_placement_bank_items(
     require_verified: bool = True,
     require_mvp_marker: bool = False,
     exclude_subskills: Sequence[str] | None = None,
+    allow_gap_fill: bool = False,
 ) -> list[LanguagePlacementQuestionBankItem]:
     """Select reviewed placement items, preferring boundary items when requested.
 
@@ -110,6 +111,14 @@ async def select_placement_bank_items(
     _speaking_bank_prompt, as a soft preference -- callers re-query without it if this returns
     nothing). Excludes items whose subskill/task_type is in the given list. Has no effect on
     reading/listening/grammar_vocab/writing_prompt, which never pass this.
+
+    allow_gap_fill: durable, code-level guard -- defaults closed. When False (every existing
+    caller today), question_type="gap_fill" rows are excluded even if is_active/is_verified in the
+    database -- every other question_type (mcq, speaking_prompt, writing_prompt, ...) is
+    unaffected. This is intentionally independent of is_active, since is_active alone was never
+    meant to be the only thing preventing an unsupported question type
+    (e.g. Gap Fill, before frontend rendering exists) from reaching a student. Only pass True once
+    the caller's frontend/answer-handling can actually support the returned question_type.
     """
 
     normalized_skill = normalize_bank_skill(skill)
@@ -138,6 +147,8 @@ async def select_placement_bank_items(
         )
         if require_verified:
             stmt = stmt.where(LanguagePlacementQuestionBankItem.is_verified.is_(True))
+        if not allow_gap_fill:
+            stmt = stmt.where(LanguagePlacementQuestionBankItem.question_type != "gap_fill")
         if require_mvp_marker:
             stmt = stmt.where(
                 LanguagePlacementQuestionBankItem.body_json["review_status"].astext
@@ -207,6 +218,9 @@ def bank_item_to_exam_item(item: LanguagePlacementQuestionBankItem) -> dict:
         "accepted_answers": body.get("accepted_answers"),
         "max_words": body.get("max_words"),
         "case_sensitive": body.get("case_sensitive", False),
+        # Gap Fill only, display-only -- unlike the three fields above, this one IS surfaced to
+        # the public exam state (McqPromptOut.word_bank) since it carries no scoring information.
+        "word_bank": body.get("word_bank"),
         "passage": item.passage or "",
         "situation": item.situation or "",
         "question": item.prompt_text,

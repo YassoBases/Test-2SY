@@ -836,3 +836,58 @@ async def test_public_state_response_never_exposes_gap_fill_accepted_answers(
     assert "max_words" not in encoded
     assert "case_sensitive" not in encoded
     assert out.mcq.question_type == "gap_fill"
+
+
+# 31. word_bank is surfaced in the public state response for a Gap Fill item that has one
+# (A1/A2 rows always author one) -- display-only, safe to expose (unlike accepted_answers/max_words).
+async def test_public_state_response_exposes_word_bank_for_gap_fill_item(
+    postgres_session_factory, gap_fill_exam_record
+):
+    state = _gap_fill_state()
+    state["listening"]["pool"]["A2"]["word_bank"] = ["3pm", "midnight", "noon"]
+    record = await gap_fill_exam_record(state=state)
+    async with postgres_session_factory() as db:
+        sess = (
+            await db.execute(
+                select(LanguageExamSession).where(LanguageExamSession.id == record.session_id)
+            )
+        ).scalar_one()
+        out = await language_exam._build_state_out(db, sess)
+    assert out.mcq.word_bank == ["3pm", "midnight", "noon"]
+
+
+# 32. A Gap Fill item without a word_bank (permitted for B1+) surfaces word_bank=None, not an error.
+async def test_public_state_response_word_bank_is_null_when_absent_for_gap_fill_item(
+    postgres_session_factory, gap_fill_exam_record
+):
+    state = _gap_fill_state()
+    assert "word_bank" not in state["listening"]["pool"]["A2"]
+    record = await gap_fill_exam_record(state=state)
+    async with postgres_session_factory() as db:
+        sess = (
+            await db.execute(
+                select(LanguageExamSession).where(LanguageExamSession.id == record.session_id)
+            )
+        ).scalar_one()
+        out = await language_exam._build_state_out(db, sess)
+    assert out.mcq.word_bank is None
+
+
+# 33. An MCQ item never surfaces a word_bank, even if the field were somehow present internally.
+async def test_public_state_response_word_bank_is_null_for_mcq_item(
+    postgres_session_factory, gap_fill_exam_record
+):
+    state = _mcq_state()
+    # _build_state_out short-circuits to content_unavailable without a usable audio_url
+    # (unrelated to this feature) -- set one so state-building reaches the mcq branch.
+    state["listening"]["pool"]["A2"]["audio_url"] = "/uploads/language_exam_audio/mcq-test-clip.wav"
+    record = await gap_fill_exam_record(state=state)
+    async with postgres_session_factory() as db:
+        sess = (
+            await db.execute(
+                select(LanguageExamSession).where(LanguageExamSession.id == record.session_id)
+            )
+        ).scalar_one()
+        out = await language_exam._build_state_out(db, sess)
+    assert out.mcq.question_type == "mcq"
+    assert out.mcq.word_bank is None
