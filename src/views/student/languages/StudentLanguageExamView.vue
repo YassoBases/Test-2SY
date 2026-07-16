@@ -210,9 +210,34 @@
 
         <!-- Listening questions remain hidden until a real audio playback begins. -->
         <template v-if="showMcqQuestion">
-          <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
+          <p v-if="state.mcq.question" class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
 
-          <template v-if="isGapFillQuestion">
+          <template v-if="isMcqBundle">
+            <div v-for="(sq, sIdx) in state.mcq.subquestions" :key="sIdx" class="mcq-bundle-block mb-4">
+              <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ sIdx + 1 }}. {{ sq.question }}</p>
+              <v-radio-group v-model="bundleChoices[sIdx]" hide-details class="mb-0">
+                <v-radio v-for="(opt, i) in sq.options" :key="i" :value="i" :label="opt" dir="ltr" />
+              </v-radio-group>
+            </div>
+          </template>
+
+          <template v-else-if="isGapFillBundle">
+            <p class="text-caption text-medium-emphasis mb-2">Complete the notes below.</p>
+            <p class="note-completion-box pa-3 mb-3" dir="ltr">
+              <template v-for="(part, pIdx) in noteTemplateParts" :key="pIdx">
+                <span v-if="part.type === 'text'">{{ part.value }}</span>
+                <input
+                  v-else
+                  v-model="bundleAnswers[part.index]"
+                  type="text"
+                  class="note-blank-input"
+                  :aria-label="`Blank ${part.index + 1}`"
+                >
+              </template>
+            </p>
+          </template>
+
+          <template v-else-if="isGapFillQuestion">
             <div v-if="wordBankOptions.length" class="d-flex flex-wrap gap-2 mb-2">
               <v-chip v-for="(w, i) in wordBankOptions" :key="i" size="small" variant="tonal" color="secondary">{{ w }}</v-chip>
             </div>
@@ -228,6 +253,9 @@
           <v-radio-group v-else v-model="choice" hide-details class="mb-3">
             <v-radio v-for="(opt, i) in state.mcq.options" :key="i" :value="i" :label="opt" dir="ltr" />
           </v-radio-group>
+
+          <p v-if="!canSubmitMcq && isMcqBundle" class="text-caption text-warning mb-2">Answer all 3 questions to continue.</p>
+          <p v-else-if="!canSubmitMcq && isGapFillBundle" class="text-caption text-warning mb-2">Fill in all blanks to continue.</p>
 
           <div class="d-flex justify-end">
             <v-btn color="secondary" variant="flat" :loading="busy" :disabled="!canSubmitMcq || rateLimitBlocked" prepend-icon="mdi-arrow-right" @click="sendMcq">
@@ -519,9 +547,44 @@ const wordBankOptions = computed(() => {
   const wb = state.value?.mcq?.word_bank
   return Array.isArray(wb) ? wb : []
 })
-const canSubmitMcq = computed(() => (
-  isGapFillQuestion.value ? gapFillAnswer.value.trim().length > 0 : choice.value !== null
+
+// Listening bundles (Phase 6): one audio, several sub-answers submitted together.
+// bundleChoices[i]/bundleAnswers[i] holds the answer for subquestion/blank i -- resized in
+// applyState() whenever a new item loads. Legacy (non-bundle) items never populate these.
+const bundleChoices = ref([])
+const bundleAnswers = ref([])
+const isMcqBundle = computed(() => Array.isArray(state.value?.mcq?.subquestions) && state.value.mcq.subquestions.length > 0)
+const isGapFillBundle = computed(() => (
+  !!state.value?.mcq?.note_template && Number.isInteger(state.value?.mcq?.blank_count) && state.value.mcq.blank_count > 0
 ))
+// Splits note_template on {{1}}/{{2}}/{{3}} into an ordered list of text/blank segments so the
+// template can render inline inputs interleaved with the surrounding note text.
+const noteTemplateParts = computed(() => {
+  const tpl = state.value?.mcq?.note_template || ''
+  const parts = []
+  let lastIndex = 0
+  const re = /\{\{(\d+)\}\}/g
+  let match
+  while ((match = re.exec(tpl))) {
+    if (match.index > lastIndex) parts.push({ type: 'text', value: tpl.slice(lastIndex, match.index) })
+    parts.push({ type: 'blank', index: Number(match[1]) - 1 })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < tpl.length) parts.push({ type: 'text', value: tpl.slice(lastIndex) })
+  return parts
+})
+
+const canSubmitMcq = computed(() => {
+  if (isMcqBundle.value) {
+    return bundleChoices.value.length === state.value.mcq.subquestions.length
+      && bundleChoices.value.every((c) => c !== null && c !== undefined)
+  }
+  if (isGapFillBundle.value) {
+    return bundleAnswers.value.length === state.value.mcq.blank_count
+      && bundleAnswers.value.every((a) => (a || '').trim().length > 0)
+  }
+  return isGapFillQuestion.value ? gapFillAnswer.value.trim().length > 0 : choice.value !== null
+})
 
 function ensureSubmissionRequestId() {
   if (!submissionRequestId.value) {
@@ -686,6 +749,8 @@ function applyState(data) {
   // reset per-section inputs
   choice.value = null
   gapFillAnswer.value = ''
+  bundleChoices.value = Array.isArray(data?.mcq?.subquestions) ? new Array(data.mcq.subquestions.length).fill(null) : []
+  bundleAnswers.value = Number.isInteger(data?.mcq?.blank_count) ? new Array(data.mcq.blank_count).fill('') : []
   recorder.reset()
   // Every freshly-applied state is a new question/section (or a recovery back to the current
   // one) -- any live caption connection/text from before must not carry over.
@@ -928,17 +993,21 @@ async function sendSpeaking() {
 
 async function sendMcq() {
   if (!canSubmitMcq.value || busy.value || rateLimitBlocked.value) return
+  const mcqBundle = isMcqBundle.value
+  const gapFillBundle = isGapFillBundle.value
   const gapFill = isGapFillQuestion.value
   busy.value = true
   loadError.value = ''
   try {
     const data = await answerExamMcq(
       sessionId.value,
-      gapFill ? null : choice.value,
+      (mcqBundle || gapFillBundle || gapFill) ? null : choice.value,
       ensureSubmissionRequestId(),
       state.value.state_revision,
       state.value.question_token || state.value.mcq?.question_token,
-      gapFill ? gapFillAnswer.value.trim() : undefined,
+      (!mcqBundle && !gapFillBundle && gapFill) ? gapFillAnswer.value.trim() : undefined,
+      mcqBundle ? bundleChoices.value : undefined,
+      gapFillBundle ? bundleAnswers.value.map((a) => a.trim()) : undefined,
     )
     applyState(data)
   } catch (e) {
@@ -1131,6 +1200,17 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px; line-height: 1.6; max-height: 320px; overflow-y: auto;
 }
+.note-completion-box {
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px; line-height: 2.1; white-space: pre-line;
+}
+.note-blank-input {
+  display: inline-block; width: 8em; margin: 0 4px; padding: 1px 4px;
+  border: none; border-bottom: 2px solid rgba(var(--v-theme-secondary), 0.6);
+  background: transparent; font: inherit; color: inherit; text-align: center;
+}
+.note-blank-input:focus { outline: none; border-bottom-color: rgb(var(--v-theme-secondary)); }
+.mcq-bundle-block:not(:last-child) { border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; }
 .feedback-card { border: 1px solid rgba(var(--v-theme-secondary), 0.3); }
 
 .exam-loader { border: 1px solid rgba(var(--v-theme-secondary), 0.25); }

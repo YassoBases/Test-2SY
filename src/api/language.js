@@ -444,14 +444,21 @@ export async function submitSpeakingTurn(
   return data
 }
 
-export async function answerExamMcq(sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText) {
+export async function answerExamMcq(
+  sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText, choiceIndices, answerTexts,
+) {
   const body = {
     request_id: requestId,
     state_revision: stateRevision,
     question_token: questionToken,
   }
-  // Exactly one of choice_index/answer_text, matching the backend's McqAnswerIn contract.
-  if (answerText != null) {
+  // Exactly one of choice_index/answer_text/choice_indices/answer_texts, matching the backend's
+  // McqAnswerIn contract. choiceIndices/answerTexts (Listening bundles) take priority when set.
+  if (choiceIndices != null) {
+    body.choice_indices = choiceIndices
+  } else if (answerTexts != null) {
+    body.answer_texts = answerTexts
+  } else if (answerText != null) {
     body.answer_text = answerText
   } else {
     body.choice_index = choiceIndex
