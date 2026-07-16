@@ -221,6 +221,12 @@ def bank_item_to_exam_item(item: LanguagePlacementQuestionBankItem) -> dict:
         # Gap Fill only, display-only -- unlike the three fields above, this one IS surfaced to
         # the public exam state (McqPromptOut.word_bank) since it carries no scoring information.
         "word_bank": body.get("word_bank"),
+        # Listening bundles only (Phase 6). MCQ bundle: subquestions (each with its own
+        # correct_index, kept private). Gap Fill bundle: note_template (display-only) + blanks
+        # (each with accepted_answers/max_words/case_sensitive, kept private).
+        "subquestions": body.get("subquestions"),
+        "note_template": body.get("note_template"),
+        "blanks": body.get("blanks"),
         "passage": item.passage or "",
         "situation": item.situation or "",
         "question": item.prompt_text,

@@ -268,6 +268,10 @@ class McqAnswerIn(BaseModel):
 
     choice_index: int | None = Field(default=None, ge=0)
     answer_text: str | None = Field(default=None, max_length=500)
+    # Listening bundles only (Phase 6): one entry per subquestion/blank. Never combined with the
+    # singular fields above -- exactly one of the four answer fields may be present.
+    choice_indices: list[int] | None = Field(default=None)
+    answer_texts: list[str] | None = Field(default=None)
     request_id: str = Field(min_length=8, max_length=100)
     state_revision: int = Field(ge=1)
     question_token: str = Field(min_length=16, max_length=200)
@@ -276,12 +280,30 @@ class McqAnswerIn(BaseModel):
     def _check_exactly_one_answer_field(self) -> "McqAnswerIn":
         if self.answer_text is not None and not self.answer_text.strip():
             raise ValueError("answer_text cannot be blank or whitespace-only")
-        choice_present = self.choice_index is not None
-        text_present = self.answer_text is not None
-        if choice_present and text_present:
-            raise ValueError("choice_index and answer_text cannot both be provided")
-        if not choice_present and not text_present:
-            raise ValueError("either choice_index or answer_text is required")
+        if self.choice_indices is not None:
+            if not self.choice_indices:
+                raise ValueError("choice_indices cannot be empty")
+            if any(i < 0 for i in self.choice_indices):
+                raise ValueError("choice_indices entries must be non-negative")
+        if self.answer_texts is not None:
+            if not self.answer_texts:
+                raise ValueError("answer_texts cannot be empty")
+            if any(not t.strip() for t in self.answer_texts):
+                raise ValueError("answer_texts entries cannot be blank or whitespace-only")
+        present = [
+            self.choice_index is not None,
+            self.answer_text is not None,
+            self.choice_indices is not None,
+            self.answer_texts is not None,
+        ]
+        if sum(present) > 1:
+            raise ValueError(
+                "only one of choice_index/answer_text/choice_indices/answer_texts may be provided"
+            )
+        if sum(present) == 0:
+            raise ValueError(
+                "one of choice_index/answer_text/choice_indices/answer_texts is required"
+            )
         return self
 
 
@@ -325,6 +347,13 @@ class LiveTranscriptionSessionOut(BaseModel):
     model: str | None = None
 
 
+class ListeningSubquestionOut(BaseModel):
+    """One MCQ subquestion within a Listening bundle. No correct_index -- never expose the answer."""
+
+    question: str
+    options: list[str]
+
+
 class McqPromptOut(BaseModel):
     """Shared shape for reading (passage) and listening (audio) comprehension items."""
 
@@ -343,6 +372,12 @@ class McqPromptOut(BaseModel):
     # Gap Fill only (A1/A2 always have one, B1+ optional). Display-only -- never used for scoring.
     # accepted_answers/max_words/case_sensitive remain server-side and must never be added here.
     word_bank: list[str] | None = None
+    # Listening bundles only (Phase 6). MCQ bundle: 3 subquestions, no correct_index anywhere.
+    subquestions: list[ListeningSubquestionOut] | None = None
+    # Gap Fill bundle only: note-completion template with {{1}}/{{2}}/{{3}} tokens, and how many
+    # blanks to render. accepted_answers/max_words/case_sensitive remain server-side only.
+    note_template: str | None = None
+    blank_count: int | None = None
 
 
 class WritingPromptOut(BaseModel):

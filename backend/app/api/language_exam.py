@@ -61,6 +61,7 @@ from app.schemas.language_exam import (
     ExamReportOut,
     ExamStateOut,
     LiveTranscriptionSessionOut,
+    ListeningSubquestionOut,
     McqAnswerIn,
     McqPromptOut,
     MultiSkillReportSchema,
@@ -312,6 +313,65 @@ def _is_valid_gap_fill_item(item: dict) -> bool:
     return gap_fill_content_error(item) is None
 
 
+# Phase 6: Listening task bundles. A bundle is still one adaptive-pool item/passage (the
+# staircase moves one CEFR level per passage exactly as before) -- only the *scoring* of that one
+# passage now rolls up from several sub-answers. Strict majority: a 1-1 tie (2 blanks/subquestions)
+# does NOT count as correct, only counts >half.
+_BUNDLE_SUBQUESTION_COUNT = 3
+_BUNDLE_BLANK_COUNT = 3
+_NOTE_TEMPLATE_TOKENS = ("{{1}}", "{{2}}", "{{3}}")
+
+
+def _majority_correct(flags: list[bool]) -> bool:
+    return sum(flags) * 2 > len(flags)
+
+
+def _is_valid_mcq_bundle_item(item: dict) -> bool:
+    subquestions = item.get("subquestions")
+    if not isinstance(subquestions, list) or len(subquestions) != _BUNDLE_SUBQUESTION_COUNT:
+        return False
+    for sq in subquestions:
+        if not isinstance(sq, dict) or not str(sq.get("question") or "").strip():
+            return False
+        options = sq.get("options")
+        ci = sq.get("correct_index")
+        if not isinstance(options, list) or len(options) != 4:
+            return False
+        if not isinstance(ci, int) or isinstance(ci, bool) or not (0 <= ci < len(options)):
+            return False
+    return True
+
+
+def _is_valid_gap_fill_bundle_item(item: dict) -> bool:
+    blanks = item.get("blanks")
+    note_template = item.get("note_template")
+    if not isinstance(blanks, list) or len(blanks) != _BUNDLE_BLANK_COUNT:
+        return False
+    if not isinstance(note_template, str) or not note_template.strip():
+        return False
+    for token in _NOTE_TEMPLATE_TOKENS:
+        if note_template.count(token) != 1:
+            return False
+    for blank in blanks:
+        if not isinstance(blank, dict) or gap_fill_content_error(blank) is not None:
+            return False
+    return True
+
+
+def _is_valid_mcq_pool_item(item: dict, *, skill: str) -> bool:
+    """Accepts either the legacy single-question shape (all skills) or, Listening only, the
+    Phase 6 bundle shape -- so existing single-question rows keep working as a fallback while
+    bundled rows are the new primary content."""
+    if _is_valid_mcq_item(item):
+        return True
+    return skill == "listening" and _is_valid_mcq_bundle_item(item)
+
+
+def _is_valid_gap_fill_pool_item(item: dict) -> bool:
+    """Listening only. Accepts either the legacy single-blank shape or the Phase 6 bundle shape."""
+    return _is_valid_gap_fill_item(item) or _is_valid_gap_fill_bundle_item(item)
+
+
 # Every 3rd Listening item (0-indexed position 2, 5, 8, ...) prefers Gap Fill; all other
 # positions prefer MCQ. Position-based, not count-based, because the adaptive staircase can end
 # at any point -- this keeps MCQ the majority for any attempt length without needing a fixed
@@ -425,7 +485,7 @@ async def _boundary_confirmation_item(
         return None
 
     item = bank_item_to_exam_item(row)
-    if not _is_valid_mcq_item(item):
+    if not _is_valid_mcq_pool_item(item, skill=skill):
         return None
     if skill == "listening":
         if not _is_usable_audio_url(item.get("audio_url")):
@@ -468,7 +528,7 @@ async def _question_bank_pool(
             used_item_ids=used_item_ids,
         ):
             item = bank_item_to_exam_item(row)
-            if not _is_valid_mcq_item(item):
+            if not _is_valid_mcq_pool_item(item, skill=skill):
                 continue
             if skill == "listening":
                 if not _is_usable_audio_url(item.get("audio_url")):
@@ -524,7 +584,7 @@ async def _gap_fill_listening_pool(
                 # separately by _question_bank_pool; this loop only ever keeps gap_fill.
                 continue
             item = bank_item_to_exam_item(row)
-            if not _is_valid_gap_fill_item(item):
+            if not _is_valid_gap_fill_pool_item(item):
                 continue
             if not _is_usable_audio_url(item.get("audio_url")):
                 item["audio_url"] = None
@@ -1156,6 +1216,8 @@ async def _build_state_out(
                 instructions = "Read the passage, then answer."
             elif section == "grammar_vocab":
                 instructions = "Choose the most accurate English option."
+            subquestions = item.get("subquestions")
+            blanks = item.get("blanks")
             out.mcq = McqPromptOut(
                 instructions=instructions,
                 passage=passage,
@@ -1168,6 +1230,13 @@ async def _build_state_out(
                 question_token=str(item.get("question_token") or ""),
                 question_type=item.get("question_type", "mcq"),
                 word_bank=item.get("word_bank"),
+                subquestions=(
+                    [ListeningSubquestionOut(question=sq.get("question", ""), options=sq.get("options", []))
+                     for sq in subquestions]
+                    if isinstance(subquestions, list) else None
+                ),
+                note_template=item.get("note_template"),
+                blank_count=len(blanks) if isinstance(blanks, list) else None,
             )
             out.question_token = out.mcq.question_token
     elif section == "writing":
@@ -2780,6 +2849,8 @@ async def answer_mcq(
             "question_token": body.question_token,
             "choice_index": body.choice_index,
             "answer_text": body.answer_text,
+            "choice_indices": body.choice_indices,
+            "answer_texts": body.answer_texts,
         },
     )
     if _request_receipt(
@@ -2813,8 +2884,35 @@ async def answer_mcq(
     # in-progress state blob or AI-fallback item predating this field; both were always MCQ.
     qtype = item.get("question_type") or "mcq"
     asked_entry: dict = {"level": cur}
+    is_mcq_bundle = qtype == "mcq" and isinstance(item.get("subquestions"), list)
+    is_gap_fill_bundle = qtype == "gap_fill" and isinstance(item.get("blanks"), list)
 
-    if qtype == "mcq":
+    if is_mcq_bundle:
+        subquestions = item["subquestions"]
+        if body.choice_indices is None or body.choice_index is not None or body.answer_text is not None or body.answer_texts is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires choice_indices only.",
+            )
+        if len(body.choice_indices) != len(subquestions):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="choice_indices length must match the number of subquestions",
+            )
+        sub_correct: list[bool] = []
+        for idx, (choice, sq) in enumerate(zip(body.choice_indices, subquestions)):
+            options = sq.get("options") or []
+            if choice >= len(options):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"choice_indices[{idx}] out of range",
+                )
+            sub_correct.append(choice == sq.get("correct_index"))
+        correct = _majority_correct(sub_correct)
+        asked_entry["chosen_indices"] = list(body.choice_indices)
+        asked_entry["sub_correct"] = sub_correct
+        asked_entry["question_type"] = "mcq"
+    elif qtype == "mcq":
         if body.choice_index is None or body.answer_text is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -2828,6 +2926,54 @@ async def answer_mcq(
         # Exact pre-existing shape -- an existing test asserts equality on this dict, so no
         # question_type key is added here; only gap_fill entries carry the extra evidence fields.
         asked_entry["chosen_index"] = body.choice_index
+    elif is_gap_fill_bundle:
+        blanks = item["blanks"]
+        if body.answer_texts is None or body.answer_text is not None or body.choice_index is not None or body.choice_indices is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires answer_texts only.",
+            )
+        if len(body.answer_texts) != len(blanks):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="answer_texts length must match the number of blanks",
+            )
+        for idx, blank in enumerate(blanks):
+            malformed_field = gap_fill_content_error(blank)
+            if malformed_field:
+                logger.warning(
+                    "Gap fill bundle blank content invalid session_id=%s bank_item_id=%s level=%s blank=%s field=%s",
+                    session_id, item.get("bank_item_id"), cur, idx, malformed_field,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "content_unavailable",
+                        "message": "This question is temporarily unavailable. Please retry.",
+                    },
+                )
+        for idx, (answer_text, blank) in enumerate(zip(body.answer_texts, blanks)):
+            max_words = blank["max_words"]
+            if len(answer_text.split()) > max_words:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Your answer for blank {idx + 1} must be no more than {max_words} words.",
+                )
+        sub_correct = []
+        normalized_answers = []
+        for answer_text, blank in zip(body.answer_texts, blanks):
+            case_sensitive = bool(blank.get("case_sensitive", False))
+            normalized_answer = normalize_gap_fill_text(answer_text, case_sensitive=case_sensitive)
+            normalized_accepted = {
+                normalize_gap_fill_text(a, case_sensitive=case_sensitive)
+                for a in blank["accepted_answers"]
+            }
+            normalized_answers.append(normalized_answer)
+            sub_correct.append(normalized_answer in normalized_accepted)
+        correct = _majority_correct(sub_correct)
+        asked_entry["answer_texts"] = normalized_answers
+        asked_entry["sub_correct"] = sub_correct
+        asked_entry["question_type"] = "gap_fill"
     elif qtype == "gap_fill":
         if body.answer_text is None or body.choice_index is not None:
             raise HTTPException(
