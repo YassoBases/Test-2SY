@@ -30,7 +30,7 @@ class GenerationBlueprint(BaseModel):
     inference_depth: str
     number_of_questions: int = Field(ge=1, le=20)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
-    prompt_version: str = "reading_v2_r3"
+    prompt_version: str = "reading_v2_r5_gap_fill"
     known_vocab_items: list[str] = Field(default_factory=list)
     weak_vocab_items: list[str] = Field(default_factory=list)
     grammar_mastery_profile: dict[str, float] = Field(default_factory=dict)
@@ -47,6 +47,9 @@ class GeneratedQuestion(BaseModel):
     type: str
     subskill: str
     stem: str
+    sentence_with_blank: str | None = None
+    display_sentence: str | None = None
+    blank_prompt: str | None = None
     choices: list[GeneratedChoice] = Field(default_factory=list)
     answer_key: dict[str, Any] | None = None
     explanation: str | None = None

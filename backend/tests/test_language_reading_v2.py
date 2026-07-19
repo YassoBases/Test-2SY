@@ -86,7 +86,7 @@ def _blueprint(**overrides) -> GenerationBlueprint:
         "inference_depth": "mixed",
         "number_of_questions": 4,
         "safety_topic_restrictions": ["unsafe topics"],
-        "prompt_version": "reading_v2_r3",
+        "prompt_version": "reading_v2_r5_gap_fill",
     }
     values.update(overrides)
     return GenerationBlueprint(**values)
@@ -256,6 +256,30 @@ def test_validation_rejects_answer_leakage():
     assert any(issue.code == "answer_leakage" for issue in result.issues)
 
 
+def test_validation_rejects_gap_fill_without_visible_blank_sentence():
+    blueprint = _blueprint(question_types=["gap_fill"], number_of_questions=1)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    question = activity["questions"][0]
+    question["stem"] = "Complete the missing word from the passage."
+    question["sentence_with_blank"] = None
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert any(issue.code == "missing_gap_fill_sentence" for issue in result.issues)
+
+
+def test_validation_rejects_gap_fill_with_multiple_blanks():
+    blueprint = _blueprint(question_types=["gap_fill"], number_of_questions=1)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["questions"][0]["sentence_with_blank"] = "Mira checks ____ and writes ____."
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert any(issue.code == "invalid_gap_fill_blank" for issue in result.issues)
+
+
 def test_deterministic_scoring_works_for_mvp_question_types():
     blueprint = _blueprint()
     activity = generate_reading_activity_from_blueprint(blueprint)
@@ -309,6 +333,10 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "inference_depth",
         "number_of_questions",
         "safety_topic_restrictions",
+        "sentence_with_blank",
+        "exactly one visible ____ marker",
+        "For A1 Beginner",
+        "avoid abstract wording",
         "Return valid JSON only",
     ]:
         assert required in prompt_text
@@ -450,6 +478,23 @@ async def test_generation_blueprint_matches_student_level_and_stage(postgres_ses
     assert blueprint.internal_stage == "Beginner"
     assert blueprint.word_count_min < blueprint.word_count_max
     assert set(["mcq", "gap_fill", "true_false", "short_answer"]).issubset(set(blueprint.question_types))
+
+
+async def test_a1_beginner_blueprint_uses_short_simple_constraints(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session, reading_level=LanguageLevel.A1)
+
+    blueprint = await build_generation_blueprint(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+
+    assert blueprint.cefr_level == "A1"
+    assert blueprint.internal_stage == "Beginner"
+    assert blueprint.word_count_min == 55
+    assert blueprint.word_count_max == 80
+    assert "simple_present" in blueprint.sentence_complexity
+    assert "concrete" in blueprint.vocabulary_difficulty
 
 
 async def test_attempt_creation_stores_snapshots_and_strips_student_keys(postgres_session):

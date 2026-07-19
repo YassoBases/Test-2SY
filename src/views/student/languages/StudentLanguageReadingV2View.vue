@@ -3,8 +3,8 @@
     <PageHeader
       eyebrow="Learn languages"
       eyebrow-icon="mdi-book-open-page-variant"
-      title="Reading Practice V2"
-      subtitle="AI-generated reading activities controlled by your level, stage, and recent evidence."
+      title="Reading Practice"
+      subtitle="Practice with reading activities matched to your level and progress."
     />
     <LanguageModuleTabs />
 
@@ -208,7 +208,7 @@
               </div>
             </div>
             <v-alert v-else type="info" variant="tonal" density="comfortable">
-              No Reading V2 attempts yet.
+              No reading practice attempts yet.
             </v-alert>
           </v-card>
 
@@ -560,7 +560,7 @@ async function loadOverview() {
     path.value = pathData
     history.value = historyData
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Unable to load Reading Practice V2')
+    loadError.value = getErrorMessage(e, 'Unable to load Reading Practice')
   } finally {
     loading.value = false
   }
@@ -763,7 +763,7 @@ function friendlyReason(reason, context = {}) {
       remaining > 0
         ? `Complete ${remaining} more Advanced practice ${remaining === 1 ? 'attempt' : 'attempts'} before retaking readiness.`
         : 'Complete more Advanced practice before retaking readiness.',
-    reading_v2_mastered: 'Reading V2 is mastered.',
+    reading_v2_mastered: 'Reading practice is mastered.',
     overall_score_at_least_80: 'Score 80% or higher on readiness.',
     mvp_equivalent_evidence: 'Complete enough readiness evidence.',
     all_mvp_question_types_represented: 'Complete all required question types.',
@@ -793,16 +793,19 @@ function isGenericGapFillStem(value) {
 
 function displayQuestionStem(question) {
   if (question?.type === 'gap_fill') {
-    return hasBlank(question.stem) && !isGenericGapFillStem(question.stem)
-      ? 'Fill in the blank.'
-      : 'Complete the missing word from the passage.'
+    return gapFillPrompt(question) ? 'Fill in the blank.' : 'Complete the sentence.'
   }
   return question?.stem || ''
 }
 
 function gapFillPrompt(question) {
   if (!question || question.type !== 'gap_fill') return ''
-  if (hasBlank(question.stem) && !isGenericGapFillStem(question.stem)) return question.stem
+  const candidate =
+    question.sentence_with_blank ||
+    question.display_sentence ||
+    question.blank_prompt ||
+    (!isGenericGapFillStem(question.stem) ? question.stem : '')
+  if (hasBlank(candidate)) return candidate
   return 'Use one word or phrase that makes the sentence correct.'
 }
 

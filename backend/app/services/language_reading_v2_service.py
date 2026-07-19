@@ -41,7 +41,7 @@ from app.services.ai_service import generate_llm_json
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
-PROMPT_VERSION = "reading_v2_r3"
+PROMPT_VERSION = "reading_v2_r5_gap_fill"
 VALIDATOR_VERSION = "reading_v2_validator_r1"
 MODEL_USED = "local_mock"
 MIN_STAGE_EVIDENCE_ATTEMPTS = 6
@@ -68,8 +68,8 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _WORD_RANGES: dict[str, dict[str, tuple[int, int]]] = {
-    "A1": {"Beginner": (80, 110), "Intermediate": (100, 140), "Advanced": (125, 170)},
-    "A2": {"Beginner": (150, 210), "Intermediate": (190, 260), "Advanced": (240, 320)},
+    "A1": {"Beginner": (55, 80), "Intermediate": (75, 105), "Advanced": (95, 130)},
+    "A2": {"Beginner": (120, 170), "Intermediate": (150, 210), "Advanced": (190, 260)},
     "B1": {"Beginner": (300, 400), "Intermediate": (380, 500), "Advanced": (480, 620)},
     "B2": {"Beginner": (600, 760), "Intermediate": (740, 920), "Advanced": (900, 1100)},
     "C1": {"Beginner": (1050, 1250), "Intermediate": (1200, 1450), "Advanced": (1400, 1650)},
@@ -111,6 +111,8 @@ _SENSITIVE_TERMS = {
     "weapon instructions",
 }
 
+_BLANK_MARKER_RE = re.compile(r"_{2,}|\[[^\]]*blank[^\]]*\]|\(\s*blank\s*\)", re.IGNORECASE)
+
 
 @dataclass(slots=True)
 class ReadingV2GenerationOutcome:
@@ -136,6 +138,26 @@ def next_cefr_level(cefr_level: str | LanguageLevel) -> str | None:
 
 def _enum_value(value: str | LanguageLevel | None) -> str | None:
     return value.value if isinstance(value, LanguageLevel) else value
+
+
+def _sentence_complexity_for(cefr: str, stage: str) -> str:
+    if cefr == "A1" and stage == "Beginner":
+        return "very_short_simple_present_direct_sentences"
+    if cefr == "A1":
+        return "short_simple_sentences_with_basic_connectors"
+    if cefr == "A2":
+        return "short_clear_sentences_simple_present_and_simple_past"
+    return f"{cefr.lower()}_{stage.lower()}_sentences"
+
+
+def _vocabulary_difficulty_for(cefr: str, stage: str) -> str:
+    if cefr == "A1" and stage == "Beginner":
+        return "concrete_daily_words_no_abstract_vocabulary"
+    if cefr == "A1":
+        return "concrete_familiar_words_with_few_new_items"
+    if cefr == "A2":
+        return "familiar_concrete_words_with_basic_school_travel_work_topics"
+    return f"{cefr.lower()}_{stage.lower()}_vocabulary"
 
 
 async def get_or_create_student_state(
@@ -201,8 +223,8 @@ async def build_generation_blueprint(
         mode=mode,
         word_count_min=word_min,
         word_count_max=word_max,
-        sentence_complexity=f"{cefr.lower()}_{stage.lower()}_sentences",
-        vocabulary_difficulty=f"{cefr.lower()}_{stage.lower()}_vocabulary",
+        sentence_complexity=_sentence_complexity_for(cefr, stage),
+        vocabulary_difficulty=_vocabulary_difficulty_for(cefr, stage),
         target_vocab_tags=_VOCAB_BY_LEVEL[cefr],
         required_vocab_items=[],
         target_grammar_tags=_GRAMMAR_BY_LEVEL[cefr],
@@ -258,17 +280,17 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
             ],
         ),
         (
-            "true_false",
-            "scan_detail",
-            "Mira checks context before using a dictionary.",
-            {"correct": True},
-            [],
-        ),
-        (
             "gap_fill",
             "vocab_in_context",
             "The group writes simple notes in the ____.",
             {"accepted_answers": ["margin"]},
+            [],
+        ),
+        (
+            "true_false",
+            "scan_detail",
+            "Mira checks context before using a dictionary.",
+            {"correct": True},
             [],
         ),
         (
@@ -282,14 +304,19 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
             [],
         ),
     ]
+    answer_specs_by_type = {spec[0]: spec for spec in answer_specs}
     for i, question_type in enumerate(blueprint.question_types, start=1):
-        spec = answer_specs[(i - 1) % len(answer_specs)]
-        q_type, subskill, stem, answer_key, choices = spec
-        if question_type != q_type:
+        spec = answer_specs_by_type.get(question_type)
+        if spec:
+            q_type, subskill, stem, answer_key, choices = spec
+        else:
             q_type = question_type
             stem = f"Answer this {question_type.replace('_', ' ')} question about Mira's reading routine."
             answer_key = _fallback_answer_key(question_type)
             choices = _fallback_choices(question_type)
+        sentence_with_blank = _fallback_gap_fill_sentence() if q_type == "gap_fill" and not _has_exactly_one_blank(stem) else None
+        if q_type == "gap_fill" and _has_exactly_one_blank(stem):
+            sentence_with_blank = stem
         subskill = blueprint.reading_subskills[(i - 1) % len(blueprint.reading_subskills)]
         questions.append(
             {
@@ -297,6 +324,7 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
                 "type": q_type,
                 "subskill": subskill,
                 "stem": stem,
+                "sentence_with_blank": sentence_with_blank,
                 "choices": choices,
                 "answer_key": answer_key,
                 "explanation": "The passage directly supports this answer.",
@@ -327,7 +355,7 @@ def _fallback_answer_key(question_type: str) -> dict[str, Any]:
     if question_type == "true_false":
         return {"correct": True}
     if question_type == "gap_fill":
-        return {"accepted_answers": ["title"]}
+        return {"accepted_answers": ["first sentence"]}
     return {"accepted_answers": ["title"], "required_key_terms": ["title"]}
 
 
@@ -339,6 +367,63 @@ def _fallback_choices(question_type: str) -> list[dict[str, str]]:
         {"id": "b", "text": "A cooking instruction."},
         {"id": "c", "text": "A weather report."},
     ]
+
+
+def _fallback_gap_fill_sentence() -> str:
+    return "Before reading every detail, Mira checks the title, pictures, and ____."
+
+
+def _blank_marker_count(value: str | None) -> int:
+    return len(_BLANK_MARKER_RE.findall(str(value or "")))
+
+
+def _has_exactly_one_blank(value: str | None) -> bool:
+    return _blank_marker_count(value) == 1
+
+
+def _gap_fill_display_sentence(question: Any) -> str:
+    for field in ("sentence_with_blank", "display_sentence", "blank_prompt", "stem"):
+        value = getattr(question, field, None)
+        if value is not None and str(value).strip():
+            return str(value)
+    return ""
+
+
+def _sentence_word_counts(text: str) -> list[int]:
+    counts: list[int] = []
+    for sentence in re.split(r"[.!?]+", text):
+        words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", sentence)
+        if words:
+            counts.append(len(words))
+    return counts
+
+
+def _validate_level_readability(passage: str, blueprint: GenerationBlueprint, issues: list[ValidationIssue]) -> None:
+    sentence_counts = _sentence_word_counts(passage)
+    max_sentence_words = max(sentence_counts or [0])
+    if blueprint.cefr_level == "A1" and blueprint.internal_stage == "Beginner":
+        if max_sentence_words > 18:
+            issues.append(
+                ValidationIssue(
+                    code="a1_beginner_sentence_too_long",
+                    message="A1 Beginner passages need very short, clear sentences",
+                )
+            )
+        abstract_terms = {"hypothesis", "policy", "phenomenon", "rhetorical", "nuance", "ideology"}
+        if any(re.search(rf"\b{re.escape(term)}\b", passage, flags=re.IGNORECASE) for term in abstract_terms):
+            issues.append(
+                ValidationIssue(
+                    code="a1_beginner_abstract_wording",
+                    message="A1 Beginner passages need concrete daily vocabulary",
+                )
+            )
+    elif blueprint.cefr_level == "A2" and max_sentence_words > 24:
+        issues.append(
+            ValidationIssue(
+                code="a2_sentence_too_long",
+                message="A2 passages need short, clear sentences",
+            )
+        )
 
 
 def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActivity, blueprint: GenerationBlueprint) -> ValidationResult:
@@ -360,6 +445,7 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
     actual_word_count = len(parsed.passage.split())
     if actual_word_count < blueprint.word_count_min or actual_word_count > blueprint.word_count_max:
         issues.append(ValidationIssue(code="word_count_out_of_range", message="Passage word count is outside blueprint range"))
+    _validate_level_readability(parsed.passage, blueprint, issues)
     if not parsed.grammar_tags:
         issues.append(ValidationIssue(code="missing_grammar_tags", message="Activity must include grammar tags"))
     if not parsed.vocab_tags:
@@ -384,13 +470,33 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
         if not answer_key:
             issues.append(ValidationIssue(code="missing_answer_key", message="Question is missing an answer key", question_id=question.id))
             continue
-        if _leaks_answer(question.stem, answer_key, question.choices, q_type):
+        text_for_leak_check = question.stem
+        if q_type == "gap_fill":
+            text_for_leak_check = f"{question.stem} {_gap_fill_display_sentence(question)}"
+        if _leaks_answer(text_for_leak_check, answer_key, question.choices, q_type):
             issues.append(ValidationIssue(code="answer_leakage", message="Question stem leaks the answer", question_id=question.id))
         if q_type == "mcq":
             _validate_mcq(question, answer_key, issues)
         elif q_type == "gap_fill":
             if not answer_key.get("accepted_answers"):
                 issues.append(ValidationIssue(code="missing_gap_fill_answers", message="Gap Fill needs accepted answers", question_id=question.id))
+            gap_sentence = _gap_fill_display_sentence(question)
+            if not gap_sentence.strip():
+                issues.append(
+                    ValidationIssue(
+                        code="missing_gap_fill_sentence",
+                        message="Gap Fill needs a student-facing sentence with a blank",
+                        question_id=question.id,
+                    )
+                )
+            elif not _has_exactly_one_blank(gap_sentence):
+                issues.append(
+                    ValidationIssue(
+                        code="invalid_gap_fill_blank",
+                        message="Gap Fill sentence must contain exactly one blank marker",
+                        question_id=question.id,
+                    )
+                )
         elif q_type == "true_false":
             if not isinstance(answer_key.get("correct"), bool):
                 issues.append(ValidationIssue(code="invalid_true_false_key", message="True/False answer must be boolean", question_id=question.id))
@@ -436,6 +542,9 @@ def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_e
                 "type": "mcq|true_false|gap_fill|short_answer",
                 "subskill": "one of reading_subskills",
                 "stem": "string",
+                "sentence_with_blank": "required for gap_fill: a natural sentence with exactly one ____ blank marker; null otherwise",
+                "display_sentence": "optional alias for sentence_with_blank",
+                "blank_prompt": "optional alias for sentence_with_blank",
                 "choices": [{"id": "a", "text": "string"}],
                 "answer_key": {
                     "correct_choice_id": "for mcq only",
@@ -488,11 +597,14 @@ Hard requirements:
 - Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
 - Activity cefr_level must be {blueprint.cefr_level}.
 - Activity internal_stage must be {blueprint.internal_stage}.
+- For A1 Beginner, use 55-80 words, very short sentences, simple present, concrete daily vocabulary, and direct literal questions.
+- For A1/A2, avoid abstract wording, long dense sentences, complex clauses, and above-level grammar.
 - Include at least one target grammar tag and one target vocabulary tag.
 - Create exactly {blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
 - MCQ questions need at least three plausible choices and answer_key.correct_choice_id.
 - True/False questions need answer_key.correct as a boolean.
-- Gap Fill questions need deterministic answer_key.accepted_answers.
+- Gap Fill questions need deterministic answer_key.accepted_answers and sentence_with_blank with exactly one visible ____ marker.
+- Gap Fill sentence_with_blank must be a meaningful sentence grounded in the passage and must not reveal the accepted answer.
 - Short Answer questions must be scoreable without AI using accepted_answers or required_key_terms.
 - Question stems must not reveal answer_key values.
 - Explanations and evidence_quote must be grounded in the passage.
