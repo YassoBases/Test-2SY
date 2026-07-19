@@ -314,6 +314,7 @@ async def test_prepare_content_preserves_concurrent_speaking_evidence(
                 request_id="speaking-request-0001",
                 state_revision=state["state_revision"],
                 turn_token=state["speaking"]["turn_token"],
+                section=None,
                 student=record.student,
                 db=db,
             )
@@ -796,6 +797,7 @@ async def test_two_concurrent_mcq_answers_only_apply_one_revision_and_token(
                         state_revision=state["state_revision"],
                         question_token=state["reading"]["pool"]["A2"]["question_token"],
                     ),
+                    BackgroundTasks(),
                     student=record.student,
                     db=db,
                 )
@@ -904,6 +906,7 @@ async def test_mcq_section_keeps_probing_below_minimum_evidence_floor_before_com
                     state_revision=stored.exam_state["state_revision"],
                     question_token=token,
                 ),
+                BackgroundTasks(),
                 student=record.student,
                 db=db,
             )
@@ -1038,6 +1041,7 @@ async def _drive_boundary_prone_state_to_trigger(postgres_session_factory, recor
                     state_revision=stored.exam_state["state_revision"],
                     question_token=token,
                 ),
+                BackgroundTasks(),
                 student=record.student,
                 db=db,
             )
@@ -1091,6 +1095,7 @@ async def test_boundary_confirmation_asks_one_extra_question_when_a_matching_ite
                 state_revision=stored.exam_state["state_revision"],
                 question_token=sec["pool"][boundary_level_key]["question_token"],
             ),
+            BackgroundTasks(),
             student=record.student,
             db=db,
         )
@@ -1139,6 +1144,7 @@ async def test_boundary_confirmation_caps_at_one_question_when_answer_is_correct
                 state_revision=stored.exam_state["state_revision"],
                 question_token=sec["pool"][boundary_level_key]["question_token"],
             ),
+            BackgroundTasks(),
             student=record.student,
             db=db,
         )
@@ -1260,6 +1266,7 @@ async def test_min_evidence_floor_still_applies_before_boundary_confirmation(
                     state_revision=stored.exam_state["state_revision"],
                     question_token=token,
                 ),
+                BackgroundTasks(),
                 student=record.student,
                 db=db,
             )
@@ -1363,6 +1370,7 @@ async def test_two_concurrent_audio_files_cannot_fill_two_speaking_turns(
                     request_id=request_id,
                     state_revision=state["state_revision"],
                     turn_token=state["speaking"]["turn_token"],
+                    section=None,
                     student=record.student,
                     db=db,
                 )
@@ -1437,6 +1445,7 @@ async def test_stale_speaking_turn_resubmission_is_rejected_safely_and_does_not_
             request_id="direct-stale-request-1",
             state_revision=stale_revision,
             turn_token=stale_token,
+            section=None,
             student=record.student,
             db=db,
         )
@@ -1458,6 +1467,7 @@ async def test_stale_speaking_turn_resubmission_is_rejected_safely_and_does_not_
                 request_id="direct-stale-request-2",
                 state_revision=stale_revision,
                 turn_token=stale_token,
+                section=None,
                 student=record.student,
                 db=db,
             )
@@ -1498,6 +1508,7 @@ async def test_valid_speaking_turn_answer_advances_exactly_once(
             request_id="direct-valid-request-1",
             state_revision=state["state_revision"],
             turn_token=state["speaking"]["turn_token"],
+            section=None,
             student=record.student,
             db=db,
         )
@@ -1661,6 +1672,7 @@ async def test_initiate_exam_and_speaking_turns_use_verified_bank_prompts_with_s
                 request_id=request_id,
                 state_revision=stored.exam_state["state_revision"],
                 turn_token=sp["turn_token"],
+                section=None,
                 student=record.student,
                 db=db,
             )
@@ -1749,6 +1761,7 @@ async def test_speaking_uses_ai_fallback_when_no_verified_bank_item_available(
             request_id="fallback-turn-1",
             state_revision=stored.exam_state["state_revision"],
             turn_token=sp["turn_token"],
+            section=None,
             student=record.student,
             db=db,
         )
@@ -2146,6 +2159,7 @@ async def test_old_in_flight_speaking_session_without_pending_bank_item_id_still
             request_id="old-session-turn-1",
             state_revision=state["state_revision"],
             turn_token=state["speaking"]["turn_token"],
+            section=None,
             student=record.student,
             db=db,
         )
@@ -2216,6 +2230,7 @@ async def test_speaking_stt_wait_does_not_hold_the_exam_row_lock(
                 request_id="single-speaking-request-0001",
                 state_revision=state["state_revision"],
                 turn_token=state["speaking"]["turn_token"],
+                section=None,
                 student=record.student,
                 db=db,
             )
@@ -3173,6 +3188,7 @@ async def test_speaking_turn_result_shape_is_unchanged_by_live_transcription_pre
             request_id="live-caption-regression-request-1",
             state_revision=state["state_revision"],
             turn_token=state["speaking"]["turn_token"],
+            section=None,
             student=record.student,
             db=db,
         )

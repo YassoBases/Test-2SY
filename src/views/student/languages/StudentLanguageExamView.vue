@@ -59,8 +59,11 @@
               :key="sec"
               size="small"
               :color="i === state.section_index ? 'secondary' : undefined"
-              :variant="i < state.section_index ? 'flat' : i === state.section_index ? 'flat' : 'tonal'"
-              :prepend-icon="i < state.section_index ? 'mdi-check' : skillIcon(sec)"
+              :variant="isSectionDone(sec) ? 'flat' : i === state.section_index ? 'flat' : 'tonal'"
+              :prepend-icon="isSectionDone(sec) ? 'mdi-check' : skillIcon(sec)"
+              :disabled="busy"
+              class="section-tab-chip"
+              @click="jumpToSection(sec)"
             >
               {{ skillLabel(sec) }}
             </v-chip>
@@ -78,7 +81,7 @@
           </v-btn>
         </div>
         <v-progress-linear
-          :model-value="(100 * state.section_index) / state.section_total"
+          :model-value="(100 * (state.completed_sections || []).length) / state.section_total"
           color="secondary" height="6" rounded class="mt-2"
         />
       </v-card>
@@ -650,6 +653,12 @@ function skillLabel(k) {
 function skillIcon(k) {
   return SECTION_META[k]?.icon || 'mdi-circle-small'
 }
+// Free section navigation: a section's own completion no longer implies every earlier tab is
+// also done, so each tab's checkmark reads its own status from the backend instead of assuming
+// "index < current index" (state.completed_sections) rather than the tab's index.
+function isSectionDone(sec) {
+  return (state.value?.completed_sections || []).includes(sec)
+}
 function audioSrc(url) {
   return mediaUrl(url)
 }
@@ -879,6 +888,24 @@ async function retryContent() {
   }
 }
 
+// Free section navigation: clicking any section tab jumps straight there, without requiring
+// earlier sections to be completed first. Purely a read (GET .../state?section=X) -- never
+// resets the exam, never touches any section's saved answers/progress; applyState() below just
+// swaps which section's already-existing content is being displayed.
+async function jumpToSection(sectionName) {
+  if (!sectionName || busy.value || rateLimitBlocked.value) return
+  if (sectionName === state.value?.phase) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    applyState(await fetchExamState(sessionId.value, sectionName))
+  } catch (e) {
+    handleRequestError(e, 'Could not switch to that section')
+  } finally {
+    busy.value = false
+  }
+}
+
 async function startFresh() {
   if (busy.value || rateLimitBlocked.value) return
   examGeneration += 1
@@ -965,6 +992,9 @@ async function sendSpeaking() {
   // shown as a stale-answer banner, since the UI (or a newer attempt) has already moved on.
   const myGeneration = examGeneration
   const submittedTurnToken = state.value?.turn_token || state.value?.speaking?.turn_token || ''
+  // Free section navigation: which speaking-like section (speaking/interview) is actually being
+  // viewed, since it may differ from the session's internal progress cursor.
+  const submittedSection = state.value?.phase
   const isObsolete = () =>
     myGeneration !== examGeneration
     || submittedTurnToken !== (state.value?.turn_token || state.value?.speaking?.turn_token || '')
@@ -976,6 +1006,7 @@ async function sendSpeaking() {
       ensureSubmissionRequestId(),
       state.value.state_revision,
       submittedTurnToken,
+      submittedSection,
     )
     if (isObsolete()) return
     // Show what the student said as a chat bubble (no scoring shown until the final report).
@@ -983,6 +1014,42 @@ async function sendSpeaking() {
     applyState(data)
   } catch (e) {
     if (isObsolete()) return
+    if (e?.response?.data?.detail?.code === 'stale_exam_state') {
+      // Background content preparation merges into the exam state moments after the exam starts
+      // (all section content is cache-backed now, so the merge lands while the student is still
+      // recording their first answer) and bumps state_revision -- making the revision this
+      // submission carries stale even though the question itself never changed. The turn token
+      // only rotates when a turn is actually answered, so if the fresh state still shows the
+      // SAME token, this is that harmless background bump: retry once with the fresh revision
+      // instead of silently discarding the student's recording.
+      try {
+        const fresh = await fetchExamState(sessionId.value, submittedSection)
+        if (isObsolete()) return
+        const freshToken = fresh?.turn_token || fresh?.speaking?.turn_token || ''
+        if (freshToken && freshToken === submittedTurnToken && fresh?.state_revision) {
+          const retry = await submitSpeakingTurn(
+            sessionId.value,
+            recorder.audioBlob.value,
+            recorder.elapsed.value,
+            ensureSubmissionRequestId(),
+            fresh.state_revision,
+            submittedTurnToken,
+            submittedSection,
+          )
+          if (isObsolete()) return
+          pushStudent(retry.last_feedback?.transcription)
+          applyState(retry)
+          return
+        }
+        // The question genuinely moved on -- same silent resync recoverStaleState performs.
+        applyState(fresh)
+        return
+      } catch (retryError) {
+        if (isObsolete()) return
+        if (!(await recoverStaleState(retryError))) handleRequestError(retryError, 'Could not submit your answer')
+        return
+      }
+    }
     if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your answer')
   } finally {
     // Only release busy for the generation that set it -- a stale attempt from an abandoned
@@ -1008,6 +1075,9 @@ async function sendMcq() {
       (!mcqBundle && !gapFillBundle && gapFill) ? gapFillAnswer.value.trim() : undefined,
       mcqBundle ? bundleChoices.value : undefined,
       gapFillBundle ? bundleAnswers.value.map((a) => a.trim()) : undefined,
+      // Free section navigation: which section (listening/reading/grammar_vocab) is being viewed,
+      // since it may differ from the session's internal progress cursor.
+      state.value.phase,
     )
     applyState(data)
   } catch (e) {
@@ -1167,6 +1237,7 @@ onUnmounted(() => {
 .page-container { max-width: 820px; margin: 0 auto; }
 .exam-intro { border: 1px solid rgba(var(--v-theme-secondary), 0.25); }
 .skill-pill { border: 1px solid rgba(255, 255, 255, 0.08); }
+.section-tab-chip:not(.v-chip--disabled) { cursor: pointer; }
 .examiner-q { line-height: 1.5; }
 .exam-chat { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .exam-msg-row { display: flex; }

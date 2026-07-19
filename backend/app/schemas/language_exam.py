@@ -272,6 +272,10 @@ class McqAnswerIn(BaseModel):
     # singular fields above -- exactly one of the four answer fields may be present.
     choice_indices: list[int] | None = Field(default=None)
     answer_texts: list[str] | None = Field(default=None)
+    # Free section navigation: which MCQ section this answers (listening/reading/grammar_vocab).
+    # Optional and defaults to the session's current cursor section for backward compatibility --
+    # only needed when the student jumped to a section other than the cursor's.
+    section: str | None = Field(default=None, max_length=32)
     request_id: str = Field(min_length=8, max_length=100)
     state_revision: int = Field(ge=1)
     question_token: str = Field(min_length=16, max_length=200)
@@ -411,9 +415,14 @@ class ExamStateOut(BaseModel):
     session_id: str
     state_revision: int = Field(ge=1)
     phase: str  # speaking | listening | reading | writing | evaluating | completed
-    section_index: int  # 0-based index of the current section
+    section_index: int  # 0-based index of the section actually being rendered (may differ from
+    # the session's internal progress cursor once free section navigation is in play)
     section_total: int
     sections: list[str] = Field(default_factory=list)
+    # Free section navigation: names (from `sections`) whose own progress is done=True, regardless
+    # of viewing order -- lets the frontend render per-tab completion indicators independent of
+    # which section is currently being viewed.
+    completed_sections: list[str] = Field(default_factory=list)
     speaking: SpeakingPromptOut | None = None
     mcq: McqPromptOut | None = None
     writing: WritingPromptOut | None = None

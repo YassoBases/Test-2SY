@@ -1130,13 +1130,23 @@ async def _build_state_out(
     *,
     last_feedback: SpeakingTurnFeedbackOut | None = None,
     resumed: bool = False,
+    requested_section: str | None = None,
 ) -> ExamStateOut:
-    """Render a state snapshot without locks or external AI/STT/TTS work."""
+    """Render a state snapshot without locks or external AI/STT/TTS work.
+
+    requested_section: free section navigation. When given and it's a real member of
+    state["sections"], render THAT section instead of the session's internal progress cursor's
+    section -- the cursor itself is never touched by viewing a different section (it still only
+    ever advances past sections that are actually done, see _advance_if_section_done), so this is
+    purely a rendering choice, not a state mutation. Falls back to the cursor's section when
+    omitted or invalid, which is the exact prior behavior.
+    """
     _ = db
     state = sess.exam_state or {}
     sections = state.get("sections", SECTIONS)
     cursor = state.get("cursor", 0)
     revision = _state_revision(state)
+    completed_sections = [s for s in sections if state.get(s, {}).get("done")]
 
     if sess.status in ("evaluating", "completed", "failed") or cursor >= len(sections):
         phase = sess.status if sess.status in ("completed", "failed") else "evaluating"
@@ -1146,13 +1156,15 @@ async def _build_state_out(
         )
         return ExamStateOut(
             session_id=sess.id, state_revision=revision, phase=phase, section_index=len(sections),
-            section_total=len(sections), sections=sections, resumed=resumed,
+            section_total=len(sections), sections=sections, completed_sections=completed_sections,
+            resumed=resumed,
             evidence_status="completed" if sess.status == "completed" else evaluation_status,
             error_code=evaluation.get("error_code"),
             error_message=evaluation.get("error_message"),
         )
 
-    section = sections[cursor]
+    section = requested_section if requested_section in sections else sections[cursor]
+    section_index = sections.index(section)
 
     # Reading/listening/writing content is generated in the background; until it's ready, tell the
     # frontend to show a loader and poll. (Older sessions without the flag are treated as ready.)
@@ -1165,8 +1177,9 @@ async def _build_state_out(
             session_id=sess.id,
             state_revision=revision,
             phase="content_unavailable" if unavailable else "preparing",
-            section_index=cursor,
-            section_total=len(sections), sections=sections, resumed=resumed,
+            section_index=section_index,
+            section_total=len(sections), sections=sections, completed_sections=completed_sections,
+            resumed=resumed,
             evidence_status="content_unavailable" if unavailable else "retry_required",
             error_code="content_unavailable" if unavailable else None,
             error_message=(
@@ -1177,8 +1190,9 @@ async def _build_state_out(
         )
 
     out = ExamStateOut(
-        session_id=sess.id, state_revision=revision, phase=section, section_index=cursor, section_total=len(sections),
-        sections=sections, last_feedback=last_feedback, resumed=resumed,
+        session_id=sess.id, state_revision=revision, phase=section, section_index=section_index,
+        section_total=len(sections),
+        sections=sections, completed_sections=completed_sections, last_feedback=last_feedback, resumed=resumed,
         evidence_status=str(state.get(section, {}).get("evidence_status") or "missing_student_response"),
     )
 
@@ -1522,7 +1536,16 @@ def _audio_hash_already_used(state: dict, audio_sha256: str) -> bool:
 def exam_evidence_statuses(state: dict) -> dict[str, str]:
     """Classify evidence without blaming the student for missing server-side content."""
     statuses: dict[str, str] = {}
-    for section in ("listening", "reading", "grammar_vocab"):
+    # Gated on the section's own key being present in state at all (not just "sections"
+    # membership): a session that never had this section persists no dict for it (e.g. a
+    # narrower exam variant, or an isolated single-section test fixture), and answer_mcq now
+    # reaches this same finalize check that submit_writing/speaking_turn always have (free
+    # navigation's _maybe_finalize fix) -- such a state must not be blocked on evidence for a
+    # section it never had. A session that DOES carry a (possibly incomplete) dict for the
+    # section is still held to the existing requirement regardless of "sections" membership,
+    # preserving the original incomplete-exam guard exactly.
+    session_sections = state.get("sections") or SECTIONS
+    for section in (s for s in ("listening", "reading", "grammar_vocab") if s in state):
         section_state = state.get(section, {})
         declared = str(section_state.get("evidence_status") or "")
         if declared in {"content_unavailable", "retry_required", "unassessed"}:
@@ -1536,30 +1559,38 @@ def exam_evidence_statuses(state: dict) -> dict[str, str]:
             answer
             for answer in asked
             if isinstance(answer.get("correct"), bool)
-            and isinstance(answer.get("chosen_index"), int)
             and bool(answer.get("level"))
+            and (
+                # Legacy single-answer MCQ/Gap-Fill, or a Listening bundle's multi-part answer
+                # (chosen_indices/answer_texts) -- any one of these shapes is a real recorded
+                # student answer; requiring "chosen_index" specifically (pre-bundle behavior)
+                # wrongly reported bundle evidence as missing once a section could complete.
+                isinstance(answer.get("chosen_index"), int)
+                or isinstance(answer.get("chosen_indices"), list)
+                or isinstance(answer.get("answer_text"), str)
+                or isinstance(answer.get("answer_texts"), list)
+            )
         ]
         if not valid or section_state.get("done") is not True:
             statuses[section] = "missing_student_response"
         else:
             statuses[section] = "completed"
 
-    writing = state.get("writing", {})
-    min_words = max(WRITING_MIN_WORDS, int(writing.get("min_words") or WRITING_MIN_WORDS))
-    declared = str(writing.get("evidence_status") or "")
-    if declared in {"content_unavailable", "retry_required", "unassessed"}:
-        statuses["writing"] = declared
-    elif not writing.get("ready", True) or not str(writing.get("prompt") or "").strip():
-        statuses["writing"] = "content_unavailable"
-    elif writing.get("done") is not True or len(str(writing.get("response") or "").split()) < min_words:
-        statuses["writing"] = "missing_student_response"
-    else:
-        statuses["writing"] = "completed"
+    if "writing" in state:
+        writing = state.get("writing", {})
+        min_words = max(WRITING_MIN_WORDS, int(writing.get("min_words") or WRITING_MIN_WORDS))
+        declared = str(writing.get("evidence_status") or "")
+        if declared in {"content_unavailable", "retry_required", "unassessed"}:
+            statuses["writing"] = declared
+        elif not writing.get("ready", True) or not str(writing.get("prompt") or "").strip():
+            statuses["writing"] = "content_unavailable"
+        elif writing.get("done") is not True or len(str(writing.get("response") or "").split()) < min_words:
+            statuses["writing"] = "missing_student_response"
+        else:
+            statuses["writing"] = "completed"
 
-    # Sections-driven: only require evidence for a spoken phase if this session's own persisted
-    # "sections" list actually includes it. New sessions have no "interview" entry and must not
-    # be blocked on it; old sessions that still have "interview" must keep requiring it.
-    session_sections = state.get("sections") or SECTIONS
+    # New sessions have no "interview" entry and must not be blocked on it; old sessions that
+    # still have "interview" must keep requiring it (same session_sections rule as above).
     spoken_defaults = [("speaking", SPEAKING_TURNS), ("interview", INTERVIEW_TURNS)]
     for section, default_turns in [(s, t) for s, t in spoken_defaults if s in session_sections]:
         spoken = state.get(section, {})
@@ -2468,9 +2499,13 @@ async def initiate_exam(
 async def get_state(
     session_id: str,
     background_tasks: BackgroundTasks,
+    section: str | None = None,
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
+    """section: free section navigation -- render a specific section (e.g. after a tab click)
+    instead of the session's internal progress cursor's section. Purely a rendering choice; never
+    mutates the cursor or any section's progress (see _build_state_out)."""
     sess = await _load_session(db, session_id, student, for_update=True)
     check_or_raise("placement_poll", f"{student.id}:{session_id}")
     state = copy.deepcopy(sess.exam_state or {})
@@ -2489,7 +2524,7 @@ async def get_state(
         flag_modified(sess, "exam_state")
     if changed or sess.status in {"in_progress", "evaluating"}:
         await db.commit()
-    return await _build_state_out(db, sess)
+    return await _build_state_out(db, sess, requested_section=section)
 
 
 @router.post("/{session_id}/abandon")
@@ -2640,6 +2675,13 @@ async def speaking_turn(
     request_id: str = Form(..., min_length=8, max_length=100),
     state_revision: int = Form(..., ge=1),
     turn_token: str = Form(..., min_length=16, max_length=200),
+    section: str | None = Form(
+        None,
+        description=(
+            "Free section navigation: which speaking-like section (speaking/interview) this turn "
+            "answers. Optional, defaults to the session's current cursor section."
+        ),
+    ),
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2650,7 +2692,8 @@ async def speaking_turn(
     language_id = int(sess.language_id)
     initial_status = str(sess.status)
     snapshot = copy.deepcopy(sess.exam_state or {})
-    section = _current_section(snapshot)
+    # Free section navigation: falls back to the cursor's section exactly like before when omitted.
+    section = section or _current_section(snapshot)
     spoken_snapshot = snapshot.get(section, {})
     question = str(spoken_snapshot.get("pending_question") or "")
     expected_token = str(spoken_snapshot.get("turn_token") or "")
@@ -2677,6 +2720,7 @@ async def speaking_turn(
             "state_revision": state_revision,
             "turn_token": turn_token,
             "audio_sha256": audio.sha256,
+            "section": section,
         },
     )
     existing_receipt = _request_receipt(
@@ -2689,7 +2733,11 @@ async def speaking_turn(
         current = await _load_session(db, session_id, student_id)
         return await _build_state_out(db, current)
     _require_state_revision(snapshot, supplied_revision=state_revision)
-    if initial_status != "in_progress" or section not in SPEAKING_LIKE:
+    if (
+        initial_status != "in_progress"
+        or section not in SPEAKING_LIKE
+        or section not in snapshot.get("sections", [])
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "stale_exam_state", "current_state_revision": _state_revision(snapshot)},
@@ -2728,15 +2776,21 @@ async def speaking_turn(
     if existing_receipt:
         await db.commit()
         return await _build_state_out(db, sess)
-    current_section = _current_section(state)
-    current_spoken = state.get(current_section or "", {})
+    # Re-validate the SAME (possibly non-cursor) section is still answerable in the freshly
+    # reloaded state -- not whether it still equals the cursor's section, since free section
+    # navigation means those can legitimately differ.
+    current_spoken = state.get(section, {})
     _require_current_state(
         state,
         supplied_revision=state_revision,
         supplied_token=turn_token,
         expected_token=str(current_spoken.get("turn_token") or ""),
     )
-    if sess.status != "in_progress" or current_section != section:
+    if (
+        sess.status != "in_progress"
+        or section not in SPEAKING_LIKE
+        or section not in state.get("sections", [])
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "stale_exam_state", "current_state_revision": _state_revision(state)},
@@ -2835,6 +2889,7 @@ async def speaking_turn(
 async def answer_mcq(
     session_id: str,
     body: McqAnswerIn,
+    background_tasks: BackgroundTasks,
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2851,6 +2906,7 @@ async def answer_mcq(
             "answer_text": body.answer_text,
             "choice_indices": body.choice_indices,
             "answer_texts": body.answer_texts,
+            "section": body.section,
         },
     )
     if _request_receipt(
@@ -2862,8 +2918,15 @@ async def answer_mcq(
         await db.commit()
         return await _build_state_out(db, sess)
     _require_state_revision(state, supplied_revision=body.state_revision)
-    section = _current_section(state)
-    if sess.status != "in_progress" or section not in MCQ_SECTIONS:
+    # Free section navigation: the student may be answering a section other than the session's
+    # internal progress cursor's section (e.g. jumped here via a tab click). Falls back to the
+    # cursor's section, matching the prior (strictly sequential) behavior exactly when omitted.
+    section = body.section or _current_section(state)
+    if (
+        sess.status != "in_progress"
+        or section not in MCQ_SECTIONS
+        or section not in state.get("sections", [])
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in an MCQ section")
     check_or_raise("placement_answer", f"{student.id}:{session_id}")
 
@@ -3090,6 +3153,7 @@ async def answer_mcq(
             sec["evidence_status"] = "missing_student_response"
 
     _advance_if_section_done(state)
+    _maybe_finalize(sess, state, background_tasks)
     result_revision = _bump_state_revision(state)
     _record_request(
         state,
@@ -3136,7 +3200,16 @@ async def submit_writing(
     ):
         return await _build_state_out(db, sess)
     _require_state_revision(snapshot, supplied_revision=body.state_revision)
-    if sess.status != "in_progress" or _current_section(snapshot) != "writing":
+    # Free section navigation: writing is answerable whenever it's a real member of this
+    # session's sections, regardless of the internal progress cursor's position. The explicit
+    # done-check is required here (unlike MCQ sections/speaking, which already fail closed on a
+    # spent question_token/turn_token) since a completed writing prompt_token is never cleared --
+    # without this, a student could jump back and silently overwrite an already-scored response.
+    if (
+        sess.status != "in_progress"
+        or "writing" not in snapshot.get("sections", [])
+        or snapshot.get("writing", {}).get("done")
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in the writing section")
     _require_current_state(
         snapshot,
@@ -3187,7 +3260,11 @@ async def submit_writing(
     ):
         await db.commit()
         return await _build_state_out(db, sess)
-    if sess.status != "in_progress" or _current_section(state) != "writing":
+    if (
+        sess.status != "in_progress"
+        or "writing" not in state.get("sections", [])
+        or state.get("writing", {}).get("done")
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "stale_exam_state", "current_state_revision": _state_revision(state)},

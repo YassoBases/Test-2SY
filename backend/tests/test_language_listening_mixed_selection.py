@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+from fastapi import BackgroundTasks
 from sqlalchemy import delete, select
 
 from app.api import language_exam
@@ -356,7 +357,9 @@ def _dual_slot_state(*, asked_count: int, revision: int = 5) -> dict:
 
 async def _submit(postgres_session_factory, record, body: McqAnswerIn):
     async with postgres_session_factory() as db:
-        return await language_exam.answer_mcq(record.session_id, body, student=record.student, db=db)
+        return await language_exam.answer_mcq(
+            record.session_id, body, BackgroundTasks(), student=record.student, db=db
+        )
 
 
 # 6. _build_state_out and answer_mcq resolve the same current item (mcq at position 0).

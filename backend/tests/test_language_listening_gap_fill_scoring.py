@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from pydantic import ValidationError
 from sqlalchemy import delete, select
 
@@ -359,7 +359,9 @@ def _gap_fill_state(
 
 async def _submit(postgres_session_factory, record, body: McqAnswerIn):
     async with postgres_session_factory() as db:
-        return await language_exam.answer_mcq(record.session_id, body, student=record.student, db=db)
+        return await language_exam.answer_mcq(
+            record.session_id, body, BackgroundTasks(), student=record.student, db=db
+        )
 
 
 # 1-2. Existing MCQ submission (correct / incorrect) still scores correctly.

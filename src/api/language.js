@@ -410,8 +410,10 @@ export async function initiateExam() {
   return data
 }
 
-export async function fetchExamState(sessionId) {
-  const { data } = await api.get(`/student/languages/exam/${sessionId}/state`)
+export async function fetchExamState(sessionId, section) {
+  const { data } = await api.get(`/student/languages/exam/${sessionId}/state`, {
+    params: section ? { section } : undefined,
+  })
   return data
 }
 
@@ -430,6 +432,7 @@ export async function submitSpeakingTurn(
   requestId,
   stateRevision,
   turnToken,
+  section,
 ) {
   const form = new FormData()
   form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
@@ -437,6 +440,8 @@ export async function submitSpeakingTurn(
   form.append('request_id', requestId)
   form.append('state_revision', String(stateRevision))
   form.append('turn_token', turnToken)
+  // Free section navigation: which speaking-like section (speaking/interview) this turn answers.
+  if (section) form.append('section', section)
   const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/turn`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 2 * 60 * 1000,
@@ -445,7 +450,7 @@ export async function submitSpeakingTurn(
 }
 
 export async function answerExamMcq(
-  sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText, choiceIndices, answerTexts,
+  sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText, choiceIndices, answerTexts, section,
 ) {
   const body = {
     request_id: requestId,
@@ -463,6 +468,8 @@ export async function answerExamMcq(
   } else {
     body.choice_index = choiceIndex
   }
+  // Free section navigation: which section (listening/reading/grammar_vocab) this answers.
+  if (section) body.section = section
   const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, body)
   return data
 }
