@@ -440,7 +440,9 @@ const submitting = ref(false)
 
 const cefrLevels = CEFR_LEVELS
 const pathStages = computed(() => path.value?.stages || [])
-const historyItems = computed(() => history.value?.attempts || [])
+const historyItems = computed(() =>
+  (history.value?.attempts || []).filter((item) => isSubmittedHistoryItem(item)),
+)
 const mastery = computed(() => overview.value?.recent_mastery || {})
 const currentStageEvidence = computed(() => mastery.value?.current_stage_evidence || {})
 const readinessGate = computed(() => mastery.value?.readiness || {})
