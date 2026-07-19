@@ -8,6 +8,7 @@
     @update:model-value="onTab"
   >
     <v-tab value="hub" :to="ROUTES.STUDENT_LANGUAGES">Home</v-tab>
+    <v-tab value="reading" :to="ROUTES.STUDENT_LANGUAGES_READING">Reading</v-tab>
     <v-tab value="listening" :to="ROUTES.STUDENT_LANGUAGES_LISTENING">Listen</v-tab>
     <v-tab value="vocabulary" :to="ROUTES.STUDENT_LANGUAGES_VOCABULARY">Vocabulary</v-tab>
     <v-tab value="dictionary" :to="ROUTES.STUDENT_LANGUAGES_DICTIONARY">Dictionary</v-tab>
@@ -35,6 +36,7 @@ const { access } = useLanguageAccess()
 // Per-feature neon accent (R,G,B). Drives the whole Neon Glass theme.
 const NEON = {
   hub: '34, 211, 238',
+  reading: '96, 165, 250',
   listening: '167, 139, 250',
   vocabulary: '52, 211, 153',
   dictionary: '52, 211, 153',
@@ -55,6 +57,7 @@ const showTabs = computed(
 
 const activeTab = computed(() => {
   const path = route.path
+  if (path.includes('/reading')) return 'reading'
   if (path.includes('/listening')) return 'listening'
   if (path.includes('/vocabulary')) return 'vocabulary'
   if (path.includes('/writing')) return 'writing'

@@ -25,6 +25,33 @@ export async function fetchLanguageHub() {
   return data
 }
 
+export async function fetchReadingV2Overview() {
+  const { data } = await api.get('/student/languages/reading-v2/overview')
+  return data
+}
+
+export async function fetchReadingV2Path() {
+  const { data } = await api.get('/student/languages/reading-v2/path')
+  return data
+}
+
+export async function createReadingV2Attempt(mode = 'practice') {
+  const { data } = await api.post('/student/languages/reading-v2/attempts', { mode })
+  return data
+}
+
+export async function submitReadingV2Attempt(attemptId, answers, durationSeconds = null) {
+  const payload = { answers }
+  if (durationSeconds != null) payload.duration_seconds = durationSeconds
+  const { data } = await api.post(`/student/languages/reading-v2/attempts/${attemptId}/submit`, payload)
+  return data
+}
+
+export async function fetchReadingV2History() {
+  const { data } = await api.get('/student/languages/reading-v2/history')
+  return data
+}
+
 // Save a word the learner met (e.g. tapped while reading) to their vocabulary bank.
 export async function saveVocabularyWord(word) {
   const { data } = await api.post('/student/languages/vocabulary/save', { word })

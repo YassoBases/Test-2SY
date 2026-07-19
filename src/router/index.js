@@ -328,7 +328,7 @@ const routes = [
       {
         path: 'languages/reading',
         name: 'student-languages-reading',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageReadingUnavailableView.vue')),
+        component: lazyRoute(() => import('../views/student/languages/StudentLanguageReadingV2View.vue')),
         meta: { title: 'Reading', languageModule: true },
       },
       {
