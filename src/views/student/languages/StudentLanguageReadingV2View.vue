@@ -235,22 +235,26 @@
           <span class="text-caption text-medium-emphasis">{{ answeredCount }} / {{ questions.length }} answered</span>
         </div>
 
-        <v-card class="glass-card pa-6 mb-4" variant="flat">
+        <v-card class="glass-card pa-6 mb-4 reading-v2-text" variant="flat">
           <div class="text-caption text-medium-emphasis mb-1">{{ safeActivity.topic }}</div>
           <h2 class="text-h5 font-weight-bold mb-4">{{ safeActivity.title }}</h2>
-          <p class="reading-passage" dir="ltr">{{ safeActivity.passage }}</p>
+          <p class="reading-passage">{{ safeActivity.passage }}</p>
         </v-card>
 
-        <v-card class="glass-card pa-6" variant="flat">
+        <v-card class="glass-card pa-6 reading-v2-text" variant="flat">
           <h3 class="text-subtitle-1 font-weight-bold mb-4">Questions</h3>
           <div v-for="(question, index) in questions" :key="question.id" class="question-block">
             <div class="d-flex align-start gap-3 mb-3">
               <v-avatar color="secondary" variant="tonal" size="30">{{ index + 1 }}</v-avatar>
               <div>
-                <div class="font-weight-bold" dir="ltr">{{ question.stem }}</div>
+                <div class="font-weight-bold question-stem">{{ displayQuestionStem(question) }}</div>
                 <div class="text-caption text-medium-emphasis">{{ questionTypeLabel(question.type) }} · {{ labelize(question.subskill) }}</div>
               </div>
             </div>
+
+            <p v-if="question.type === 'gap_fill' && gapFillPrompt(question)" class="gap-fill-prompt">
+              {{ gapFillPrompt(question) }}
+            </p>
 
             <v-radio-group
               v-if="question.type === 'mcq'"
@@ -282,6 +286,7 @@
               v-else-if="question.type === 'gap_fill'"
               v-model="answers[question.id]"
               label="Your answer"
+              class="reading-answer-field"
               variant="outlined"
               density="comfortable"
               hide-details
@@ -291,6 +296,7 @@
               v-else-if="question.type === 'short_answer'"
               v-model="answers[question.id]"
               label="Short answer"
+              class="reading-answer-field"
               variant="outlined"
               density="comfortable"
               rows="2"
@@ -319,8 +325,8 @@
       </section>
 
       <section v-else-if="viewMode === 'results' && result" class="results-layout">
-        <v-card class="glass-card pa-6 mb-4" variant="flat">
-          <v-alert :type="result.passed ? 'success' : 'warning'" variant="tonal" class="mb-4">
+        <v-card class="glass-card pa-6 mb-4 reading-v2-text" variant="flat">
+          <v-alert :type="result.passed ? 'success' : 'warning'" variant="tonal" class="mb-4 reading-v2-text">
             Score: <strong>{{ result.score_percent }}%</strong>
             <span v-if="result.next_action"> · {{ labelize(result.next_action) }}</span>
           </v-alert>
@@ -340,7 +346,7 @@
                 <div class="text-caption text-medium-emphasis">
                   {{ questionTypeLabel(item.question_type) }} · {{ labelize(item.subskill) }} · {{ item.correct ? 'Correct' : 'Not quite' }}
                 </div>
-                <div v-if="questionFeedback(item.question_id)" class="text-body-2 mt-1">
+                <div v-if="questionFeedback(item.question_id)" class="text-body-2 mt-1 result-feedback">
                   {{ questionFeedback(item.question_id) }}
                 </div>
               </div>
@@ -649,7 +655,9 @@ function safeChoices(question) {
 }
 
 function stagesFor(level) {
-  return pathStages.value.filter((stage) => stage.cefr_level === level)
+  return pathStages.value
+    .filter((stage) => stage.cefr_level === level)
+    .sort((a, b) => INTERNAL_STAGES.indexOf(a.internal_stage) - INTERNAL_STAGES.indexOf(b.internal_stage))
 }
 
 function stageStatus(stage) {
@@ -736,7 +744,8 @@ function labelize(value) {
 function friendlyReason(reason, context = {}) {
   const weakSubskill = context.weakestSubskill ? `: ${labelize(context.weakestSubskill)}` : ''
   const retake = context.retake || {}
-  const target = context.targetLevel ? `${context.targetLevel} readiness` : 'the readiness test'
+  const target = context.targetLevel ? `${context.targetLevel} readiness test` : 'the readiness test'
+  const currentLevel = overview.value?.current_cefr || 'this level'
   const remaining = Number(retake.remaining_additional_practice || 0)
   const map = {
     min_5_submitted_practice_attempts: 'Complete more practice attempts.',
@@ -748,7 +757,7 @@ function friendlyReason(reason, context = {}) {
     each_core_subskill_at_least_70: `Strengthen weak subskill${weakSubskill}.`,
     no_core_subskill_two_recent_failures_below_60: 'Avoid repeated low scores in core subskills.',
     previous_stage_not_mastered: 'Complete the previous stage first.',
-    advanced_stage_not_mastered: `Master Advanced before ${target} unlocks.`,
+    advanced_stage_not_mastered: `Complete ${currentLevel} Advanced to unlock the ${target}.`,
     current_stage_is_not_advanced: 'Reach Advanced before taking readiness.',
     readiness_retake_requires_more_practice:
       remaining > 0
@@ -774,12 +783,36 @@ function questionTypeLabel(type) {
   return map[type] || labelize(type || 'Question')
 }
 
+function hasBlank(value) {
+  return /_{2,}|\[[^\]]*blank[^\]]*\]|\(\s*blank\s*\)/i.test(String(value || ''))
+}
+
+function isGenericGapFillStem(value) {
+  return /^answer this gap fill question/i.test(String(value || '').trim())
+}
+
+function displayQuestionStem(question) {
+  if (question?.type === 'gap_fill') {
+    return hasBlank(question.stem) && !isGenericGapFillStem(question.stem)
+      ? 'Fill in the blank.'
+      : 'Complete the missing word from the passage.'
+  }
+  return question?.stem || ''
+}
+
+function gapFillPrompt(question) {
+  if (!question || question.type !== 'gap_fill') return ''
+  if (hasBlank(question.stem) && !isGenericGapFillStem(question.stem)) return question.stem
+  return 'Use one word or phrase that makes the sentence correct.'
+}
+
 function questionById(questionId) {
   return questions.value.find((question) => question.id === questionId) || null
 }
 
 function questionTitle(questionId) {
-  return questionById(questionId)?.stem || `Question ${questionId}`
+  const question = questionById(questionId)
+  return question ? displayQuestionStem(question) : `Question ${questionId}`
 }
 
 function questionFeedback(questionId) {
@@ -801,6 +834,28 @@ function formatDate(iso) {
 .reading-v2-page {
   max-width: 1180px;
   margin: 0 auto;
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
+.reading-v2-text,
+.reading-v2-text :deep(*) {
+  direction: ltr;
+  text-align: left;
+}
+
+.reading-v2-page :deep(.v-alert),
+.reading-v2-page :deep(.v-chip),
+.reading-v2-page :deep(.v-label),
+.reading-v2-page :deep(.v-field__input),
+.reading-v2-page :deep(.v-radio),
+.reading-v2-page :deep(.v-selection-control),
+.reading-v2-page :deep(.v-selection-control__wrapper),
+.reading-v2-page :deep(.v-selection-control__input),
+.reading-v2-page :deep(.v-selection-control__label) {
+  direction: ltr;
+  text-align: left;
 }
 
 .reading-grid {
@@ -823,6 +878,8 @@ function formatDate(iso) {
   gap: 8px;
   color: rgba(var(--v-theme-on-surface), 0.72);
   font-size: 0.875rem;
+  direction: ltr;
+  text-align: left;
 }
 
 .evidence-list {
@@ -840,6 +897,8 @@ function formatDate(iso) {
   border-radius: 8px;
   padding: 12px;
   background: rgba(var(--v-theme-surface), 0.42);
+  direction: ltr;
+  text-align: left;
 }
 
 .reason-list {
@@ -850,6 +909,8 @@ function formatDate(iso) {
 .readiness-detail {
   display: grid;
   gap: 10px;
+  direction: ltr;
+  text-align: left;
 }
 
 .readiness-detail > div {
@@ -863,6 +924,8 @@ function formatDate(iso) {
 .path-map {
   display: grid;
   gap: 12px;
+  direction: ltr;
+  text-align: left;
 }
 
 .path-row {
@@ -881,6 +944,7 @@ function formatDate(iso) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  direction: ltr;
 }
 
 .stage-pill {
@@ -893,6 +957,8 @@ function formatDate(iso) {
   justify-content: flex-start;
   gap: 4px;
   background: rgba(var(--v-theme-surface), 0.52);
+  direction: ltr;
+  text-align: left;
 }
 
 .stage-pill__top {
@@ -965,6 +1031,22 @@ function formatDate(iso) {
   white-space: pre-wrap;
   line-height: 1.85;
   font-size: 1rem;
+  direction: ltr;
+  text-align: left;
+}
+
+.question-stem,
+.gap-fill-prompt,
+.result-feedback {
+  direction: ltr;
+  text-align: left;
+}
+
+.gap-fill-prompt {
+  margin: -4px 0 12px 42px;
+  color: rgba(var(--v-theme-on-surface), 0.76);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .question-block {
@@ -972,6 +1054,18 @@ function formatDate(iso) {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
+  direction: ltr;
+  text-align: left;
+}
+
+.question-block :deep(.v-radio),
+.question-block :deep(.v-selection-control),
+.question-block :deep(.v-selection-control__label),
+.reading-answer-field :deep(.v-field__input),
+.reading-answer-field :deep(textarea),
+.reading-answer-field :deep(input) {
+  direction: ltr;
+  text-align: left;
 }
 
 .result-item {
