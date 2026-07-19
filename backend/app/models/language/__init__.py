@@ -30,6 +30,11 @@ from app.models.language.placement import (
 )
 from app.models.language.profile import LanguageStudentProfile
 from app.models.language.question_bank import LanguagePlacementQuestionBankItem
+from app.models.language.reading_v2 import (
+    LanguageReadingV2Attempt,
+    LanguageReadingV2StageProgress,
+    LanguageReadingV2StudentState,
+)
 from app.models.language.progress import (
     LanguageCurriculumProgress,
     LanguageListeningProgress,
@@ -53,6 +58,9 @@ __all__ = [
     "LanguagePlacementSection",
     "LanguagePlacementQuestion",
     "LanguagePlacementQuestionBankItem",
+    "LanguageReadingV2Attempt",
+    "LanguageReadingV2StageProgress",
+    "LanguageReadingV2StudentState",
     "LanguagePlacementAttempt",
     "LanguagePlacementResponse",
     "LanguageAssessment",

@@ -55,6 +55,15 @@ from app.schemas.language_placement import (
     PlacementHistoryListOut,
     PlacementSpeakingUploadOut,
 )
+from app.schemas.language_reading_v2 import (
+    ReadingV2AttemptOut,
+    ReadingV2GenerateAttemptIn,
+    ReadingV2HistoryOut,
+    ReadingV2OverviewOut,
+    ReadingV2PathOut,
+    ReadingV2SubmitAttemptIn,
+    ReadingV2SubmitAttemptOut,
+)
 from app.schemas.language_certificate import LanguageCertificateListOut
 from app.services.language_access_service import (
     build_language_access,
@@ -112,6 +121,13 @@ from app.services.language_transcription_service import transcribe_english_audio
 from app.services.language_adaptive_service import get_adaptive_state_overview
 from app.services.language_learner_model_service import LanguageLearnerModelService
 from app.services.language_practice_service import generate_practice_set, submit_practice
+from app.services.language_reading_v2_service import (
+    build_reading_v2_history,
+    build_reading_v2_overview,
+    build_reading_v2_path,
+    create_reading_v2_attempt,
+    submit_reading_v2_attempt,
+)
 from app.services.language_subscription_service import get_default_language, get_default_product, subscribe_language
 from app.services.language_vocabulary_service import (
     analyze_word,
@@ -309,6 +325,70 @@ async def language_adaptive_state(
     result = await get_adaptive_state_overview(db, student_id=student.id, language_id=language.id)
     await db.commit()
     return result
+
+
+@router.get("/reading-v2/overview", response_model=ReadingV2OverviewOut)
+async def reading_v2_overview(
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    result = await build_reading_v2_overview(db, student_id=student.id, language_id=language.id)
+    await db.commit()
+    return result
+
+
+@router.get("/reading-v2/path", response_model=ReadingV2PathOut)
+async def reading_v2_path(
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    result = await build_reading_v2_path(db, student_id=student.id, language_id=language.id)
+    await db.commit()
+    return result
+
+
+@router.post("/reading-v2/attempts", response_model=ReadingV2AttemptOut)
+async def reading_v2_create_attempt(
+    body: ReadingV2GenerateAttemptIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    result = await create_reading_v2_attempt(db, student_id=student.id, language_id=language.id, mode=body.mode)
+    await db.commit()
+    return result
+
+
+@router.post("/reading-v2/attempts/{attempt_id}/submit", response_model=ReadingV2SubmitAttemptOut)
+async def reading_v2_submit_attempt(
+    attempt_id: int,
+    body: ReadingV2SubmitAttemptIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    result = await submit_reading_v2_attempt(
+        db,
+        student_id=student.id,
+        language_id=language.id,
+        attempt_id=attempt_id,
+        answers=body.answers,
+        duration_seconds=body.duration_seconds,
+    )
+    await db.commit()
+    return result
+
+
+@router.get("/reading-v2/history", response_model=ReadingV2HistoryOut)
+async def reading_v2_history(
+    limit: int = 30,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    return await build_reading_v2_history(db, student_id=student.id, language_id=language.id, limit=limit)
 
 
 @router.get("/listening", response_model=LessonListOut)
