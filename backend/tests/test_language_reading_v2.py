@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
+import app.services.language_reading_v2_service as reading_service
 from app.models.language.analytics import LanguageAnalytics
 from app.models.language.catalog import Language
 from app.models.language.enums import LanguageLevel
@@ -18,8 +21,11 @@ from app.services.language_reading_v2_service import (
     build_reading_v2_overview,
     build_reading_v2_path,
     create_reading_v2_attempt,
+    generate_activity_with_ai_provider,
     generate_reading_activity_from_blueprint,
+    reading_v2_generation_prompt,
     score_generated_activity,
+    select_reading_v2_generation_provider,
     submit_reading_v2_attempt,
     validate_generated_activity,
 )
@@ -75,7 +81,7 @@ def _blueprint(**overrides) -> GenerationBlueprint:
         "inference_depth": "mixed",
         "number_of_questions": 4,
         "safety_topic_restrictions": ["unsafe topics"],
-        "prompt_version": "reading_v2_r1",
+        "prompt_version": "reading_v2_r3",
     }
     values.update(overrides)
     return GenerationBlueprint(**values)
@@ -150,6 +156,105 @@ def test_deterministic_scoring_works_for_mvp_question_types():
     assert all(result.correct for result in results)
 
 
+def test_provider_selection_defaults_to_safe_local_mock(monkeypatch):
+    monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "local_mock")
+
+    assert select_reading_v2_generation_provider() == "local_mock"
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "ai")
+    assert select_reading_v2_generation_provider() == "ai"
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "unknown")
+    assert select_reading_v2_generation_provider() == "local_mock"
+
+
+def test_ai_prompt_contains_required_blueprint_controls():
+    prompt = reading_v2_generation_prompt(_blueprint())
+    prompt_text = f"{prompt['system']}\n{prompt['user']}"
+
+    for required in [
+        "cefr_level",
+        "internal_stage",
+        "word_count_min",
+        "word_count_max",
+        "sentence_complexity",
+        "vocabulary_difficulty",
+        "target_vocab_tags",
+        "required_vocab_items",
+        "target_grammar_tags",
+        "banned_above_level_grammar",
+        "reading_subskills",
+        "question_types",
+        "student_interest",
+        "difficulty_score",
+        "inference_depth",
+        "number_of_questions",
+        "safety_topic_restrictions",
+        "Return valid JSON only",
+    ]:
+        assert required in prompt_text
+
+
+async def test_valid_ai_json_becomes_usable_generation(monkeypatch):
+    blueprint = _blueprint()
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+
+    async def fake_generate_llm_json(*_args, **_kwargs):
+        return json.dumps(activity)
+
+    monkeypatch.setattr(reading_service, "generate_llm_json", fake_generate_llm_json)
+
+    outcome = await generate_activity_with_ai_provider(blueprint)
+
+    assert outcome.validation.valid is True
+    assert outcome.provider_name == "ai"
+    assert outcome.model_used == reading_service.reading_v2_ai_model_name()
+    assert outcome.retry_count == 0
+    assert outcome.activity
+    assert outcome.activity["validation_metadata"]["provider"] == "ai"
+
+
+async def test_invalid_ai_json_triggers_retry_then_valid_generation(monkeypatch):
+    blueprint = _blueprint()
+    valid_activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    calls = []
+
+    async def fake_generate_llm_json(prompt, **kwargs):
+        calls.append({"prompt": prompt, "kwargs": kwargs})
+        if len(calls) == 1:
+            invalid = dict(valid_activity)
+            invalid["cefr_level"] = "B1"
+            return json.dumps(invalid)
+        return json.dumps(valid_activity)
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_AI_MAX_RETRIES", 2)
+    monkeypatch.setattr(reading_service, "generate_llm_json", fake_generate_llm_json)
+
+    outcome = await generate_activity_with_ai_provider(blueprint)
+
+    assert outcome.validation.valid is True
+    assert outcome.retry_count == 1
+    assert len(calls) == 2
+    assert "Validation errors from the previous generated JSON" in calls[1]["prompt"]
+
+
+async def test_invalid_ai_json_after_max_retries_fails_gracefully(monkeypatch):
+    blueprint = _blueprint()
+
+    async def fake_generate_llm_json(*_args, **_kwargs):
+        return "not json"
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(reading_service, "generate_llm_json", fake_generate_llm_json)
+
+    outcome = await generate_activity_with_ai_provider(blueprint)
+
+    assert outcome.validation.valid is False
+    assert outcome.retry_count == 1
+    assert outcome.activity is None
+    assert any(issue.code == "invalid_json" for issue in outcome.validation.issues)
+
+
 async def test_initial_overview_creates_safe_state(postgres_session):
     student_id, language_id = await _student_and_language(postgres_session)
 
@@ -206,11 +311,68 @@ async def test_attempt_creation_stores_snapshots_and_strips_student_keys(postgre
         )
     ).scalar_one()
     assert stored.generation_blueprint_json["cefr_level"] == "A2"
+    assert stored.generation_blueprint_json["generation_provider"] == "local_mock"
+    assert stored.generation_blueprint_json["generation_retry_count"] == 0
     assert stored.generated_activity_json["questions"]
     assert stored.validation_result_json["valid"] is True
+    assert stored.validation_result_json["generation_provider"] == "local_mock"
+    assert stored.model_used == "local_mock"
     assert all("answer_key" not in question for question in out.activity["questions"])
     assert "accepted_answers" not in str(out.activity)
     assert "required_key_terms" not in str(out.activity)
+
+
+async def test_attempt_creation_uses_configured_ai_provider_with_mocked_ai(monkeypatch, postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session, reading_level=LanguageLevel.A2)
+    blueprint = await build_generation_blueprint(postgres_session, student_id=student_id, language_id=language_id)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+
+    async def fake_generate_llm_json(*_args, **_kwargs):
+        return json.dumps(activity)
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "ai")
+    monkeypatch.setattr(reading_service.settings, "READING_V2_AI_MAX_RETRIES", 1)
+    monkeypatch.setattr(reading_service.settings, "READING_V2_AI_MODEL", "test-ai-model")
+    monkeypatch.setattr(reading_service, "generate_llm_json", fake_generate_llm_json)
+
+    out = await create_reading_v2_attempt(postgres_session, student_id=student_id, language_id=language_id)
+
+    stored = (
+        await postgres_session.execute(
+            select(LanguageReadingV2Attempt).where(LanguageReadingV2Attempt.id == out.attempt_id)
+        )
+    ).scalar_one()
+    assert stored.status == "ready"
+    assert stored.model_used == "test-ai-model"
+    assert stored.generation_blueprint_json["generation_provider"] == "ai"
+    assert stored.validation_result_json["generation_provider"] == "ai"
+    assert all("answer_key" not in question for question in out.activity["questions"])
+
+
+async def test_failed_generation_does_not_create_usable_attempt(monkeypatch, postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session, reading_level=LanguageLevel.A2)
+
+    async def fake_generate_llm_json(*_args, **_kwargs):
+        return "not json"
+
+    monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "ai")
+    monkeypatch.setattr(reading_service.settings, "READING_V2_AI_MAX_RETRIES", 0)
+    monkeypatch.setattr(reading_service, "generate_llm_json", fake_generate_llm_json)
+
+    with pytest.raises(HTTPException):
+        await create_reading_v2_attempt(postgres_session, student_id=student_id, language_id=language_id)
+
+    rows = (
+        await postgres_session.execute(
+            select(LanguageReadingV2Attempt).where(
+                LanguageReadingV2Attempt.student_id == student_id,
+                LanguageReadingV2Attempt.language_id == language_id,
+            )
+        )
+    ).scalars().all()
+    assert rows
+    assert all(row.status == "generation_failed" for row in rows)
+    assert all(row.submitted_at is None for row in rows)
 
 
 async def test_xp_alone_does_not_progress_stage(postgres_session):

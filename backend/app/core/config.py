@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
     LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
     LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0
+    READING_V2_GENERATION_PROVIDER: str = "local_mock"  # local_mock | ai
+    READING_V2_AI_MODEL: str = ""
+    READING_V2_AI_MAX_RETRIES: int = 2
+    READING_V2_AI_MAX_OUTPUT_TOKENS: int = 8192
 
     # Speaking assessment evidence pipeline — config only, no runtime wired yet (see
     # backend/.env.example for placeholder values; real secrets belong only in an ignored local
@@ -268,6 +272,13 @@ class Settings(BaseSettings):
         if language_stt_provider not in {"openai", "whisper"}:
             language_stt_provider = "openai"
         self.LANGUAGE_STT_PROVIDER = language_stt_provider
+
+        reading_v2_provider = (self.READING_V2_GENERATION_PROVIDER or "local_mock").strip().lower()
+        if reading_v2_provider not in {"local_mock", "ai"}:
+            reading_v2_provider = "local_mock"
+        self.READING_V2_GENERATION_PROVIDER = reading_v2_provider
+        self.READING_V2_AI_MAX_RETRIES = max(0, min(int(self.READING_V2_AI_MAX_RETRIES or 0), 5))
+        self.READING_V2_AI_MAX_OUTPUT_TOKENS = max(1024, int(self.READING_V2_AI_MAX_OUTPUT_TOKENS or 8192))
 
         in_docker = os.getenv("DOCKER_COMPOSE", "").lower() in ("1", "true", "yes")
         host = (self.POSTGRES_HOST or "localhost").strip()

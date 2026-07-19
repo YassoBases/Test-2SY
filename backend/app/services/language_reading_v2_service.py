@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+import logging
 from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.language.analytics import LanguageAnalytics
 from app.models.language.enums import LanguageLevel
 from app.models.language.reading_v2 import (
@@ -30,17 +34,23 @@ from app.schemas.language_reading_v2 import (
     ValidationIssue,
     ValidationResult,
 )
+from app.services.ai_service import generate_llm_json
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
-PROMPT_VERSION = "reading_v2_r1"
+PROMPT_VERSION = "reading_v2_r3"
 VALIDATOR_VERSION = "reading_v2_validator_r1"
 MODEL_USED = "local_mock"
 MIN_STAGE_EVIDENCE_ATTEMPTS = 6
 MASTERY_THRESHOLD = 80.0
 PRACTICE_PASS_THRESHOLD = 70.0
 READINESS_PASS_THRESHOLD = 80.0
+AI_PROVIDER_NAME = "ai"
+LOCAL_MOCK_PROVIDER_NAME = "local_mock"
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 _WORD_RANGES: dict[str, dict[str, tuple[int, int]]] = {
     "A1": {"Beginner": (80, 110), "Intermediate": (100, 140), "Advanced": (125, 170)},
@@ -85,6 +95,17 @@ _SENSITIVE_TERMS = {
     "illegal drugs",
     "weapon instructions",
 }
+
+
+@dataclass(slots=True)
+class ReadingV2GenerationOutcome:
+    activity: dict[str, Any] | None
+    validation: ValidationResult
+    provider_name: str
+    model_used: str
+    prompt_version: str
+    retry_count: int = 0
+    prompt: dict[str, str] | None = None
 
 
 def stage_rank(cefr_level: str | LanguageLevel, internal_stage: str) -> int:
@@ -272,6 +293,7 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
         topic=blueprint.topic,
         questions=questions,
         safety_tags=["education", "low_risk"],
+        validation_metadata={"provider": LOCAL_MOCK_PROVIDER_NAME, "prompt_version": blueprint.prompt_version, "retry_count": 0},
     )
 
 
@@ -359,6 +381,215 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
                 )
 
     return ValidationResult(valid=not issues, issues=issues)
+
+
+def select_reading_v2_generation_provider() -> str:
+    provider = (settings.READING_V2_GENERATION_PROVIDER or LOCAL_MOCK_PROVIDER_NAME).strip().lower()
+    return provider if provider in {LOCAL_MOCK_PROVIDER_NAME, AI_PROVIDER_NAME} else LOCAL_MOCK_PROVIDER_NAME
+
+
+def reading_v2_ai_model_name() -> str:
+    return (settings.READING_V2_AI_MODEL or settings.CLAUDE_MODEL or "claude-sonnet-5").strip()
+
+
+def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_errors: list[str] | None = None) -> dict[str, str]:
+    schema = {
+        "title": "string",
+        "passage": "string",
+        "word_count": "integer",
+        "cefr_level": blueprint.cefr_level,
+        "internal_stage": blueprint.internal_stage,
+        "grammar_tags": ["string"],
+        "vocab_tags": ["string"],
+        "skill_tags": ["string"],
+        "difficulty_score": "number",
+        "topic": "string",
+        "safety_tags": ["string"],
+        "validation_metadata": {"notes": "optional object"},
+        "questions": [
+            {
+                "id": "q1",
+                "type": "mcq|true_false|gap_fill|short_answer",
+                "subskill": "one of reading_subskills",
+                "stem": "string",
+                "choices": [{"id": "a", "text": "string"}],
+                "answer_key": {
+                    "correct_choice_id": "for mcq only",
+                    "correct": "boolean for true_false only",
+                    "accepted_answers": ["for gap_fill or short_answer"],
+                    "required_key_terms": ["for short_answer when useful"],
+                },
+                "explanation": "string",
+                "evidence_quote": "short quote from passage when applicable",
+            }
+        ],
+    }
+    blueprint_payload = blueprint.model_dump()
+    repair_block = ""
+    if validation_errors:
+        repair_block = (
+            "\nValidation errors from the previous generated JSON. Regenerate or repair the JSON so all issues are fixed:\n"
+            + json.dumps(validation_errors, ensure_ascii=False)
+        )
+
+    system = """You generate English reading practice activities for CEFR learners.
+The Generation Blueprint is authoritative. Do not change level, stage, word count range, question count, question types, tags, safety limits, or deterministic answer-key rules.
+Return valid JSON only. Do not use markdown fences, commentary, or extra prose outside JSON.
+Avoid unsafe, sensitive, graphic, sexual, hateful, self-harm, extremist, illegal, or weapon-instruction topics."""
+
+    user = f"""Create one personalized Reading Practice V2 activity from this strict Generation Blueprint.
+
+Generation Blueprint JSON:
+{json.dumps(blueprint_payload, ensure_ascii=False, indent=2)}
+
+Must include these control fields from the blueprint:
+- cefr_level
+- internal_stage
+- word_count_min / word_count_max
+- sentence_complexity
+- vocabulary_difficulty
+- target_vocab_tags
+- required_vocab_items
+- target_grammar_tags
+- banned_above_level_grammar
+- reading_subskills
+- question_types
+- student_interest or topic
+- difficulty_score
+- inference_depth
+- number_of_questions
+- safety_topic_restrictions
+
+Hard requirements:
+- Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
+- Activity cefr_level must be {blueprint.cefr_level}.
+- Activity internal_stage must be {blueprint.internal_stage}.
+- Include at least one target grammar tag and one target vocabulary tag.
+- Create exactly {blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
+- MCQ questions need at least three plausible choices and answer_key.correct_choice_id.
+- True/False questions need answer_key.correct as a boolean.
+- Gap Fill questions need deterministic answer_key.accepted_answers.
+- Short Answer questions must be scoreable without AI using accepted_answers or required_key_terms.
+- Question stems must not reveal answer_key values.
+- Explanations and evidence_quote must be grounded in the passage.
+- Do not include any answer keys inside passage text, title, or stems in a way that leaks answers.
+
+Return JSON matching this schema:
+{json.dumps(schema, ensure_ascii=False, indent=2)}
+{repair_block}"""
+    return {"system": system, "user": user}
+
+
+def _validation_issue_messages(validation: ValidationResult) -> list[str]:
+    return [
+        f"{issue.code}{f' ({issue.question_id})' if issue.question_id else ''}: {issue.message}"
+        for issue in validation.issues
+    ]
+
+
+def parse_ai_activity_json(raw: str) -> dict[str, Any]:
+    cleaned = (raw or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+        if start < 0 or end <= start:
+            raise
+        parsed = json.loads(cleaned[start:end])
+    if not isinstance(parsed, dict):
+        raise ValueError("AI generation returned JSON that is not an object")
+    return parsed
+
+
+async def generate_activity_with_local_mock_provider(blueprint: GenerationBlueprint) -> ReadingV2GenerationOutcome:
+    activity = generate_reading_activity_from_blueprint(blueprint)
+    validation = validate_generated_activity(activity, blueprint)
+    return ReadingV2GenerationOutcome(
+        activity=activity.model_dump(),
+        validation=validation,
+        provider_name=LOCAL_MOCK_PROVIDER_NAME,
+        model_used=MODEL_USED,
+        prompt_version=blueprint.prompt_version,
+        retry_count=0,
+    )
+
+
+async def generate_activity_with_ai_provider(blueprint: GenerationBlueprint) -> ReadingV2GenerationOutcome:
+    max_retries = max(0, int(settings.READING_V2_AI_MAX_RETRIES or 0))
+    max_attempts = max_retries + 1
+    model_name = reading_v2_ai_model_name()
+    last_activity: dict[str, Any] | None = None
+    last_validation = ValidationResult(
+        valid=False,
+        issues=[ValidationIssue(code="generation_not_attempted", message="AI generation did not run")],
+    )
+    validation_errors: list[str] | None = None
+    last_prompt: dict[str, str] | None = None
+
+    for attempt_index in range(max_attempts):
+        last_prompt = reading_v2_generation_prompt(blueprint, validation_errors=validation_errors)
+        try:
+            raw = await generate_llm_json(
+                last_prompt["user"],
+                system=last_prompt["system"],
+                temperature=0.4,
+                max_output_tokens=settings.READING_V2_AI_MAX_OUTPUT_TOKENS,
+                model_name=model_name,
+            )
+            last_activity = parse_ai_activity_json(raw)
+        except Exception as exc:
+            logger.warning("Reading V2 AI generation parse failed: %s", exc)
+            last_activity = None
+            last_validation = ValidationResult(
+                valid=False,
+                issues=[ValidationIssue(code="invalid_json", message="AI returned invalid JSON")],
+            )
+            validation_errors = _validation_issue_messages(last_validation)
+            continue
+
+        last_activity.setdefault("validation_metadata", {})
+        if isinstance(last_activity["validation_metadata"], dict):
+            last_activity["validation_metadata"].update(
+                {
+                    "provider": AI_PROVIDER_NAME,
+                    "model_used": model_name,
+                    "prompt_version": blueprint.prompt_version,
+                    "retry_count": attempt_index,
+                }
+            )
+        last_validation = validate_generated_activity(last_activity, blueprint)
+        if last_validation.valid:
+            return ReadingV2GenerationOutcome(
+                activity=last_activity,
+                validation=last_validation,
+                provider_name=AI_PROVIDER_NAME,
+                model_used=model_name,
+                prompt_version=blueprint.prompt_version,
+                retry_count=attempt_index,
+                prompt=last_prompt,
+            )
+        validation_errors = _validation_issue_messages(last_validation)
+
+    return ReadingV2GenerationOutcome(
+        activity=last_activity,
+        validation=last_validation,
+        provider_name=AI_PROVIDER_NAME,
+        model_used=model_name,
+        prompt_version=blueprint.prompt_version,
+        retry_count=max_retries,
+        prompt=last_prompt,
+    )
+
+
+async def generate_activity_for_blueprint(blueprint: GenerationBlueprint) -> ReadingV2GenerationOutcome:
+    provider = select_reading_v2_generation_provider()
+    if provider == AI_PROVIDER_NAME:
+        return await generate_activity_with_ai_provider(blueprint)
+    return await generate_activity_with_local_mock_provider(blueprint)
 
 
 def _contains_sensitive_topic(activity: GeneratedReadingActivity) -> bool:
@@ -476,9 +707,19 @@ async def create_reading_v2_attempt(
     db: AsyncSession, *, student_id: int, language_id: int, mode: ReadingV2Mode = "practice"
 ) -> ReadingV2AttemptOut:
     blueprint = await build_generation_blueprint(db, student_id=student_id, language_id=language_id, mode=mode)
-    activity = generate_reading_activity_from_blueprint(blueprint)
-    validation = validate_generated_activity(activity, blueprint)
+    outcome = await generate_activity_for_blueprint(blueprint)
+    activity = outcome.activity
+    validation = outcome.validation
     target_next = next_cefr_level(blueprint.cefr_level) if mode == "readiness" else None
+    blueprint_snapshot = blueprint.model_dump()
+    blueprint_snapshot["generation_provider"] = outcome.provider_name
+    blueprint_snapshot["generation_retry_count"] = outcome.retry_count
+    if outcome.prompt:
+        blueprint_snapshot["generation_prompt"] = outcome.prompt
+    validation_snapshot = validation.model_dump()
+    validation_snapshot["generation_provider"] = outcome.provider_name
+    validation_snapshot["generation_retry_count"] = outcome.retry_count
+    validation_snapshot["model_used"] = outcome.model_used
     attempt = LanguageReadingV2Attempt(
         student_id=student_id,
         language_id=language_id,
@@ -487,11 +728,11 @@ async def create_reading_v2_attempt(
         mode=mode,
         status="ready" if validation.valid else "generation_failed",
         target_next_cefr=LanguageLevel(target_next) if target_next else None,
-        generation_blueprint_json=blueprint.model_dump(),
-        generated_activity_json=activity.model_dump(),
-        validation_result_json=validation.model_dump(),
-        model_used=MODEL_USED,
-        prompt_version=blueprint.prompt_version,
+        generation_blueprint_json=blueprint_snapshot,
+        generated_activity_json=activity,
+        validation_result_json=validation_snapshot,
+        model_used=outcome.model_used,
+        prompt_version=outcome.prompt_version,
         validator_version=validation.validator_version,
     )
     db.add(attempt)

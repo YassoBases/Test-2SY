@@ -30,7 +30,7 @@ class GenerationBlueprint(BaseModel):
     inference_depth: str
     number_of_questions: int = Field(ge=1, le=20)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
-    prompt_version: str = "reading_v2_r1"
+    prompt_version: str = "reading_v2_r3"
     known_vocab_items: list[str] = Field(default_factory=list)
     weak_vocab_items: list[str] = Field(default_factory=list)
     grammar_mastery_profile: dict[str, float] = Field(default_factory=dict)
@@ -66,6 +66,7 @@ class GeneratedReadingActivity(BaseModel):
     topic: str
     questions: list[GeneratedQuestion] = Field(default_factory=list)
     safety_tags: list[str] = Field(default_factory=list)
+    validation_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ValidationIssue(BaseModel):
