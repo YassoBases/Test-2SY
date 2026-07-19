@@ -204,9 +204,12 @@
           </v-card>
 
           <v-card class="glass-card pa-5 mb-4" variant="flat">
-            <h3 class="text-subtitle-1 font-weight-bold mb-3">Recent history</h3>
-            <div v-if="historyItems.length" class="history-list">
-              <div v-for="item in historyItems" :key="item.attempt_id" class="history-item">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
+              <h3 class="text-subtitle-1 font-weight-bold">Recent history</h3>
+              <v-chip size="small" color="primary" variant="tonal">{{ currentStageLabel }}</v-chip>
+            </div>
+            <div v-if="currentStageHistoryItems.length" class="history-list">
+              <div v-for="item in currentStageHistoryItems" :key="item.attempt_id" class="history-item">
                 <div>
                   <div class="font-weight-bold">{{ labelize(item.mode) }} · {{ item.cefr_level }} {{ item.internal_stage }}</div>
                   <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
@@ -217,8 +220,22 @@
               </div>
             </div>
             <v-alert v-else type="info" variant="tonal" density="comfortable">
-              No reading practice attempts yet.
+              No {{ currentStageLabel }} attempts yet. Start practice to build evidence for this stage.
             </v-alert>
+            <div v-if="previousStageHistoryItems.length" class="previous-history mt-4 pt-4">
+              <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Previous stage history</div>
+              <div class="history-list history-list--compact">
+                <div v-for="item in previousStageHistoryItems" :key="item.attempt_id" class="history-item history-item--compact">
+                  <div>
+                    <div class="font-weight-medium">{{ labelize(item.mode) }} - {{ item.cefr_level }} {{ item.internal_stage }}</div>
+                    <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
+                  </div>
+                  <v-chip size="x-small" :color="historyChipColor(item)" variant="tonal">
+                    {{ historyStatusLabel(item) }}
+                  </v-chip>
+                </div>
+              </div>
+            </div>
           </v-card>
 
           <v-card class="glass-card pa-5" variant="flat">
@@ -464,6 +481,15 @@ const cefrLevels = CEFR_LEVELS
 const pathStages = computed(() => path.value?.stages || [])
 const historyItems = computed(() =>
   (history.value?.attempts || []).filter((item) => isSubmittedHistoryItem(item)),
+)
+const currentStageLabel = computed(() =>
+  `${overview.value?.current_cefr || 'A1'} ${overview.value?.current_stage || 'Beginner'}`,
+)
+const currentStageHistoryItems = computed(() =>
+  historyItems.value.filter((item) => isCurrentStageHistoryItem(item)),
+)
+const previousStageHistoryItems = computed(() =>
+  historyItems.value.filter((item) => !isCurrentStageHistoryItem(item)),
 )
 const mastery = computed(() => overview.value?.recent_mastery || {})
 const currentStageEvidence = computed(() => mastery.value?.current_stage_evidence || {})
@@ -929,6 +955,13 @@ function isSubmittedHistoryItem(item) {
   return item?.status === 'submitted' && item.score_percent != null
 }
 
+function isCurrentStageHistoryItem(item) {
+  return (
+    item?.cefr_level === (overview.value?.current_cefr || 'A1')
+    && item?.internal_stage === (overview.value?.current_stage || 'Beginner')
+  )
+}
+
 function historyStatusLabel(item) {
   if (isSubmittedHistoryItem(item)) return `${item.score_percent}%`
   return 'Not submitted'
@@ -1124,6 +1157,10 @@ function historyDateLabel(item) {
   gap: 10px;
 }
 
+.history-list--compact {
+  gap: 8px;
+}
+
 .history-item,
 .result-item {
   display: flex;
@@ -1133,6 +1170,14 @@ function historyDateLabel(item) {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 8px;
   padding: 12px;
+}
+
+.history-item--compact {
+  padding: 10px;
+}
+
+.previous-history {
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.1);
 }
 
 .practice-layout,
