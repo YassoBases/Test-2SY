@@ -223,9 +223,22 @@
               No {{ currentStageLabel }} attempts yet. Start practice to build evidence for this stage.
             </v-alert>
             <div v-if="previousStageHistoryItems.length" class="previous-history mt-4 pt-4">
-              <div class="text-caption font-weight-bold text-medium-emphasis mb-2">Previous stage history</div>
-              <div class="history-list history-list--compact">
-                <div v-for="item in previousStageHistoryItems" :key="item.attempt_id" class="history-item history-item--compact">
+              <v-btn
+                class="previous-history__toggle"
+                color="primary"
+                size="small"
+                variant="text"
+                :append-icon="showPreviousStageHistory ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                @click="showPreviousStageHistory = !showPreviousStageHistory"
+              >
+                {{ previousStageHistoryLabel }}
+              </v-btn>
+              <div v-if="showPreviousStageHistory" class="history-list history-list--compact mt-2">
+                <div
+                  v-for="item in previousStageHistoryItems"
+                  :key="item.attempt_id"
+                  class="history-item history-item--compact"
+                >
                   <div>
                     <div class="font-weight-medium">{{ labelize(item.mode) }} - {{ item.cefr_level }} {{ item.internal_stage }}</div>
                     <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
@@ -476,6 +489,7 @@ const viewMode = ref('overview')
 const startingPractice = ref(false)
 const startingReadiness = ref(false)
 const submitting = ref(false)
+const showPreviousStageHistory = ref(false)
 
 const cefrLevels = CEFR_LEVELS
 const pathStages = computed(() => path.value?.stages || [])
@@ -491,6 +505,10 @@ const currentStageHistoryItems = computed(() =>
 const previousStageHistoryItems = computed(() =>
   historyItems.value.filter((item) => !isCurrentStageHistoryItem(item)),
 )
+const previousStageHistoryLabel = computed(() => {
+  const count = previousStageHistoryItems.value.length
+  return `Previous stage history - ${count} ${count === 1 ? 'attempt' : 'attempts'}`
+})
 const mastery = computed(() => overview.value?.recent_mastery || {})
 const currentStageEvidence = computed(() => mastery.value?.current_stage_evidence || {})
 const readinessGate = computed(() => mastery.value?.readiness || {})
@@ -1178,6 +1196,10 @@ function historyDateLabel(item) {
 
 .previous-history {
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+}
+
+.previous-history__toggle {
+  padding-inline: 0;
 }
 
 .practice-layout,
