@@ -11,14 +11,6 @@ export const LANGUAGE_PRACTICE_SKILLS = [
     to: ROUTES.STUDENT_LANGUAGES_SPEAKING,
   },
   {
-    key: 'reading',
-    label: '',
-    description: '',
-    icon: 'mdi-book-open-variant',
-    color: 'primary',
-    to: ROUTES.STUDENT_LANGUAGES_READING,
-  },
-  {
     key: 'listening',
     label: '',
     description: '',
@@ -54,7 +46,6 @@ export const LANGUAGE_PRACTICE_SKILLS = [
 
 const PRACTICE_PATH_SEGMENTS = [
   '/practice',
-  '/reading',
   '/listening',
   '/vocabulary',
   '/writing',

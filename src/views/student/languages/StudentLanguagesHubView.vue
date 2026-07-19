@@ -265,7 +265,6 @@ const growthStats = computed(() => {
 })
 
 const featureTiles = [
-  { label: 'Reading', sub: 'Texts & comprehension', icon: 'mdi-book-open-page-variant', to: ROUTES.STUDENT_LANGUAGES_READING, color: 'blue' },
   { label: 'Listening', sub: 'Audio & dialogues', icon: 'mdi-headphones', to: ROUTES.STUDENT_LANGUAGES_LISTENING, color: 'deep-purple' },
   { label: 'Vocabulary', sub: 'Cards & spaced review', icon: 'mdi-cards-outline', to: ROUTES.STUDENT_LANGUAGES_VOCABULARY, color: 'teal' },
   { label: 'Writing', sub: 'Guided prompts', icon: 'mdi-pencil-outline', to: ROUTES.STUDENT_LANGUAGES_WRITING, color: 'orange' },

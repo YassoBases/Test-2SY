@@ -25,80 +25,9 @@ export async function fetchLanguageHub() {
   return data
 }
 
-export async function fetchReadingLessons() {
-  const { data } = await api.get('/student/languages/reading')
-  return data
-}
-
-export async function fetchReadingLesson(contentId) {
-  const { data } = await api.get(`/student/languages/reading/${contentId}`)
-  return data
-}
-
-export async function submitReadingLesson(contentId, answers, durationSeconds = null) {
-  const { data } = await api.post(`/student/languages/reading/${contentId}/submit`, {
-    answers,
-    duration_seconds: durationSeconds,
-  })
-  return data
-}
-
-// Adaptive reading: the next passage at the student's level (generates content on demand).
-// `length` (short|medium|long) controls how long a freshly generated passage is.
-export async function fetchNextReading(length = '') {
-  const { data } = await api.get('/student/languages/reading/next', { params: length ? { length } : {} })
-  return data
-}
-
-// Pre-computed definitions for every hard word in a passage (so taps are instant).
-export async function fetchReadingGlossary(contentId) {
-  const { data } = await api.get(`/student/languages/reading/${contentId}/glossary`)
-  return data
-}
-
-// Explain one sentence from a passage (meaning + a grammar note) for the learner's level.
-export async function explainReadingSentence(sentence, level = 'A2') {
-  const { data } = await api.post('/student/languages/reading/explain-sentence', { sentence, level })
-  return data
-}
-
-// Narration audio for a passage (read-along), synthesized + cached server-side on first request.
-export async function fetchReadingAudio(contentId) {
-  const { data } = await api.get(`/student/languages/reading/${contentId}/audio`)
-  return data
-}
-
-// Grade the student's own-words summary of a passage for comprehension.
-export async function submitReadingSummary(contentId, summary) {
-  const { data } = await api.post(`/student/languages/reading/${contentId}/summary`, { summary })
-  return data
-}
-
 // Save a word the learner met (e.g. tapped while reading) to their vocabulary bank.
 export async function saveVocabularyWord(word) {
   const { data } = await api.post('/student/languages/vocabulary/save', { word })
-  return data
-}
-
-// Reading interests: curated options + the learner's picks (drives generated-passage topics).
-export async function fetchReadingTopics() {
-  const { data } = await api.get('/student/languages/reading/topics')
-  return data
-}
-export async function saveReadingTopics(topics) {
-  const { data } = await api.put('/student/languages/reading/topics', { topics })
-  return data
-}
-
-// Reading library: passages the learner has completed (for re-reading).
-export async function fetchReadingHistory() {
-  const { data } = await api.get('/student/languages/reading/history')
-  return data
-}
-
-// Reading analytics: WPM trend, comprehension, and per-skill strengths/gaps.
-export async function fetchReadingInsights() {
-  const { data } = await api.get('/student/languages/reading/insights')
   return data
 }
 

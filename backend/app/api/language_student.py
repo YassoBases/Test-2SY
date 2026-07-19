@@ -4,7 +4,6 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_student_actor
@@ -21,7 +20,6 @@ from app.schemas.language_learning import (
     LessonSubmitIn,
     LessonSubmitOut,
     ListeningLessonOut,
-    ReadingLessonOut,
     SpeakingListOut,
     SpeakingPromptOut,
     SpeakingConversationProgressOut,
@@ -38,15 +36,6 @@ from app.schemas.language_learning import (
     LearnerPracticeSetOut,
     LearnerPracticeSubmitIn,
     LearnerPracticeSubmitOut,
-    ReadingAudioOut,
-    ReadingExplainIn,
-    ReadingExplainOut,
-    ReadingHistoryItemOut,
-    ReadingInsightsOut,
-    ReadingSummaryIn,
-    ReadingSummaryOut,
-    ReadingTopicsIn,
-    ReadingTopicsOut,
     VocabularyChallengeOut,
     VocabularyChallengeSubmitIn,
     VocabularyChallengeSubmitOut,
@@ -74,7 +63,6 @@ from app.services.language_access_service import (
 )
 from app.services.language_content_service import (
     get_listening_lesson,
-    get_reading_lesson,
     lesson_body_for_student,
     list_lessons,
     resolve_listening_audio,
@@ -83,7 +71,6 @@ from app.services.language_curriculum_service import build_curriculum_overview, 
 from app.services.language_microlesson_service import get_micro_lesson
 from app.services.language_placement_history_service import list_placement_history
 from app.services.language_xp_service import award_daily_mission_xp, get_xp_overview
-from app.services.language_daily_plan_service import build_daily_plan
 from app.services.language_daily_mission_service import build_daily_mission, renew_daily_mission
 from app.services.language_rate_limit_service import check_or_raise
 from app.services.language_hub_service import build_language_hub, build_language_progress
@@ -94,18 +81,8 @@ from app.schemas.language_curriculum import (
     ObjectivePracticeIn,
     ObjectivePracticeOut,
 )
-from app.services.language_reading_service import (
-    explain_sentence,
-    grade_summary,
-    get_reading_topics,
-    next_reading,
-    reading_glossary,
-    reading_history,
-    reading_insights,
-    set_reading_topics,
-)
 from app.services.language_listening_service import next_listening
-from app.services.language_skill_progress_service import submit_listening, submit_reading
+from app.services.language_skill_progress_service import submit_listening
 from app.services.language_tts_service import get_lesson_audio
 from app.services.language_speaking_service import (
     get_speaking_prompt,
@@ -334,31 +311,6 @@ async def language_adaptive_state(
     return result
 
 
-@router.get("/reading", response_model=LessonListOut)
-async def reading_list(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    student_level, lesson_level, items, progress_map = await list_lessons(
-        db, student_id=student.id, skill=LanguageSkill.reading
-    )
-    lessons = [
-        LessonListItemOut(
-            id=item.id,
-            title=item.title,
-            level=item.level.value if item.level else (lesson_level.value if lesson_level else ""),
-            sort_order=item.sort_order,
-            progress=_progress_out(progress_map.get(item.id)),
-        )
-        for item in items
-    ]
-    return LessonListOut(
-        student_level=student_level.value,
-        lesson_level=lesson_level.value if lesson_level else None,
-        lessons=lessons,
-    )
-
-
 @router.get("/listening", response_model=LessonListOut)
 async def listening_list(
     student: User = Depends(require_language_learning_ready()),
@@ -387,157 +339,13 @@ async def listening_list(
     )
 
 
-@router.get("/reading/next")
-async def reading_next(
-    length: str = "",
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Adaptive reading: the next passage at the student's level (generates content on demand).
-
-    Optional ``length`` (short|medium|long) controls how long a freshly generated passage is.
-    """
-    lesson = await next_reading(db, student_id=student.id, length=length)
-    if not lesson:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No reading content available yet")
-    return lesson
-
-
-@router.post("/reading/explain-sentence", response_model=ReadingExplainOut)
-async def reading_explain_sentence(
-    body: ReadingExplainIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Explain one sentence (meaning + a grammar note) for the learner's level."""
-    return await explain_sentence(sentence=body.sentence, level=body.level)
-
-
-@router.get("/reading/topics", response_model=ReadingTopicsOut)
-async def reading_topics_get(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Curated reading interests + the ones this learner picked."""
-    return await get_reading_topics(db, student_id=student.id)
-
-
-@router.put("/reading/topics", response_model=ReadingTopicsOut)
-async def reading_topics_set(
-    body: ReadingTopicsIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Save the learner's reading interests (drives generated-passage topics)."""
-    result = await set_reading_topics(db, student_id=student.id, topics=body.topics)
-    await db.commit()
-    return result
-
-
-@router.get("/reading/history", response_model=list[ReadingHistoryItemOut])
-async def reading_history_list(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """The learner's reading library — passages they've completed, newest first."""
-    return await reading_history(db, student_id=student.id)
-
-
-@router.get("/reading/insights", response_model=ReadingInsightsOut)
-async def reading_insights_get(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Reading analytics: WPM trend, comprehension, and per-skill strengths/gaps."""
-    return await reading_insights(db, student_id=student.id)
-
-
-@router.get("/reading/{content_id}/glossary")
-async def reading_glossary_get(
-    content_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Pre-computed definitions for the passage's words (so tapping any word is instant)."""
-    result = await reading_glossary(db, student_id=student.id, content_id=content_id)
-    await db.commit()
-    return result
-
-
-@router.get("/reading/{content_id}", response_model=ReadingLessonOut)
-async def reading_detail(
-    content_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    item, progress = await get_reading_lesson(db, student_id=student.id, content_id=content_id)
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
-    body = lesson_body_for_student(item)
-    return ReadingLessonOut(
-        id=item.id,
-        title=item.title,
-        level=item.level.value if item.level else "A1",
-        passage=body.get("passage") or "",
-        passage_ar=body.get("passage_ar"),
-        glossary=body.get("glossary") or [],
-        questions=body.get("questions") or [],
-        progress=_progress_out(progress),
-    )
-
-
-@router.post("/reading/{content_id}/submit", response_model=LessonSubmitOut)
-async def reading_submit(
-    content_id: int,
-    body: LessonSubmitIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await submit_reading(
-        db, student_id=student.id, content_id=content_id, answers=body.answers,
-        duration_seconds=body.duration_seconds,
-    )
-    await db.commit()
-    return LessonSubmitOut(**result)
-
-
-@router.get("/reading/{content_id}/audio", response_model=ReadingAudioOut)
-async def reading_audio(
-    content_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Narration audio for a passage (read-along) — synthesized + cached on first request."""
-    # Validate it's a reading lesson for this student before synthesizing — otherwise this would
-    # voice (and thus leak) any content item, e.g. a listening clip's hidden transcript.
-    item, _progress = await get_reading_lesson(db, student_id=student.id, content_id=content_id)
-    if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
-    tts = await get_lesson_audio(db, content_item_id=content_id)
-    await db.commit()
-    return ReadingAudioOut(public_url=(tts or {}).get("public_url"), available=bool(tts and tts.get("public_url")))
-
-
-@router.post("/reading/{content_id}/summary", response_model=ReadingSummaryOut)
-async def reading_summary(
-    content_id: int,
-    body: ReadingSummaryIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Grade the student's own-words summary of a passage for comprehension (AI)."""
-    result = await grade_summary(db, student_id=student.id, content_id=content_id, summary=body.summary)
-    await db.commit()
-    return ReadingSummaryOut(**result)
-
-
 @router.post("/vocabulary/save", response_model=VocabularySaveOut)
 async def vocabulary_save(
     body: VocabularySaveIn,
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Save a word the learner met (e.g. tapped while reading) to their vocabulary bank."""
+    """Save a word the learner met during practice to their vocabulary bank."""
     result = await save_word(db, student_id=student.id, word=body.word)
     await db.commit()
     return VocabularySaveOut(**result)
