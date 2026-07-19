@@ -41,7 +41,7 @@ from app.services.ai_service import generate_llm_json
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
-PROMPT_VERSION = "reading_v2_r6_answer_ux"
+PROMPT_VERSION = "reading_v2_r7_topic_diversity"
 VALIDATOR_VERSION = "reading_v2_validator_r1"
 MODEL_USED = "local_mock"
 MIN_STAGE_EVIDENCE_ATTEMPTS = 6
@@ -146,6 +146,43 @@ _VOCAB_BY_LEVEL = {
     "B2": ["culture", "environment", "workplace"],
     "C1": ["policy", "research", "abstract_ideas"],
     "C2": ["critique", "specialized_discourse", "nuance"],
+}
+
+_A1_BEGINNER_TOPIC_ROTATION = [
+    "family meal",
+    "classroom object",
+    "simple shopping trip",
+    "pet care",
+    "weekend morning",
+    "park visit",
+    "school bag",
+    "birthday card",
+    "simple house routine",
+    "bus ride",
+]
+
+_A2_TOPIC_ROTATION = [
+    "market visit",
+    "lost item at a station",
+    "simple travel plan",
+    "doctor appointment",
+    "work break",
+    "neighborhood event",
+    "library card",
+    "weather plan",
+    "sports practice",
+    "cafe order",
+]
+
+_STUDY_ROUTINE_TERMS = {
+    "daily study",
+    "study routine",
+    "english study",
+    "reading routine",
+    "school routine",
+    "library",
+    "new words",
+    "study group",
 }
 
 _SENSITIVE_TERMS = {
@@ -253,6 +290,137 @@ async def get_or_create_student_state(
     return state_row
 
 
+def _dedupe_keep_order(values: list[str], *, limit: int = 12) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        clean = " ".join(str(value or "").strip().split())
+        key = clean.lower()
+        if not clean or key in seen:
+            continue
+        seen.add(key)
+        out.append(clean)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _tagify(value: str) -> str:
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", value.lower())).strip("_")
+
+
+def _activity_topic_tags(activity: dict[str, Any], blueprint: GenerationBlueprint | None = None) -> list[str]:
+    explicit = _as_str_list(activity.get("topic_tags"))
+    if explicit:
+        return _dedupe_keep_order([_tagify(item) for item in explicit if _tagify(item)], limit=6)
+    metadata = activity.get("diversity_metadata") if isinstance(activity.get("diversity_metadata"), dict) else {}
+    metadata_tags = _as_str_list(metadata.get("topic_tags"))
+    if metadata_tags:
+        return _dedupe_keep_order([_tagify(item) for item in metadata_tags if _tagify(item)], limit=6)
+    topic_value = activity.get("topic") or (blueprint.topic if blueprint else "")
+    topic = str(topic_value or "").strip()
+    derived = [_tagify(topic)] if topic else []
+    derived.extend(_tagify(tag) for tag in _as_str_list(activity.get("vocab_tags"))[:2])
+    return _dedupe_keep_order([tag for tag in derived if tag], limit=6)
+
+
+def _passage_summary(activity: dict[str, Any]) -> str:
+    metadata = activity.get("diversity_metadata") if isinstance(activity.get("diversity_metadata"), dict) else {}
+    summary = str(metadata.get("passage_summary") or "").strip()
+    if summary:
+        return summary[:240]
+    passage = " ".join(str(activity.get("passage") or "").split())
+    first_sentence = re.split(r"(?<=[.!?])\s+", passage, maxsplit=1)[0]
+    words = first_sentence.split()
+    return " ".join(words[:20]).strip()
+
+
+def _extract_character_names(activity: dict[str, Any]) -> list[str]:
+    metadata = activity.get("diversity_metadata") if isinstance(activity.get("diversity_metadata"), dict) else {}
+    names = _as_str_list(metadata.get("character_names"))
+    if names:
+        return _dedupe_keep_order(names, limit=8)
+    text = " ".join([str(activity.get("title") or ""), str(activity.get("passage") or "")])
+    excluded = {
+        "A1",
+        "A2",
+        "B1",
+        "B2",
+        "C1",
+        "C2",
+        "Beginner",
+        "Intermediate",
+        "Advanced",
+        "English",
+        "The",
+        "This",
+        "When",
+        "After",
+        "Before",
+        "True",
+        "False",
+    }
+    candidates = re.findall(r"\b[A-Z][a-z]{2,}\b", text)
+    return _dedupe_keep_order([name for name in candidates if name not in excluded], limit=8)
+
+
+def _question_stems(activity: dict[str, Any]) -> list[str]:
+    stems = []
+    for question in activity.get("questions") or []:
+        if isinstance(question, dict):
+            stem = str(question.get("stem") or "").strip()
+            if stem:
+                stems.append(stem)
+    return _dedupe_keep_order(stems, limit=10)
+
+
+async def _recent_generation_context(
+    db: AsyncSession, *, student_id: int, language_id: int, cefr_level: str, internal_stage: str, limit: int = 6
+) -> dict[str, Any]:
+    rows = (
+        await db.execute(
+            select(LanguageReadingV2Attempt)
+            .where(
+                LanguageReadingV2Attempt.student_id == student_id,
+                LanguageReadingV2Attempt.language_id == language_id,
+                LanguageReadingV2Attempt.cefr_level == LanguageLevel(cefr_level),
+                LanguageReadingV2Attempt.internal_stage == internal_stage,
+                LanguageReadingV2Attempt.status.in_(["ready", "submitted"]),
+            )
+            .order_by(LanguageReadingV2Attempt.created_at.desc(), LanguageReadingV2Attempt.id.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    activities = [row.generated_activity_json for row in rows if isinstance(row.generated_activity_json, dict)]
+    topic_tag_sets = [_activity_topic_tags(activity) for activity in activities]
+    return {
+        "recent_titles": _dedupe_keep_order([str(activity.get("title") or "") for activity in activities], limit=limit),
+        "recent_topics": _dedupe_keep_order([str(activity.get("topic") or "") for activity in activities], limit=limit),
+        "recent_topic_tags": [tags for tags in topic_tag_sets if tags][:limit],
+        "recent_passage_summaries": _dedupe_keep_order([_passage_summary(activity) for activity in activities], limit=limit),
+        "recent_character_names": _dedupe_keep_order(
+            [name for activity in activities for name in _extract_character_names(activity)], limit=12
+        ),
+        "recent_question_stems": _dedupe_keep_order(
+            [stem for activity in activities for stem in _question_stems(activity)], limit=12
+        ),
+    }
+
+
+def _preferred_topic_rotation(cefr: str, stage: str) -> list[str]:
+    if cefr == "A1" and stage == "Beginner":
+        return list(_A1_BEGINNER_TOPIC_ROTATION)
+    if cefr in {"A1", "A2"}:
+        return list(_A1_BEGINNER_TOPIC_ROTATION if cefr == "A1" else _A2_TOPIC_ROTATION)
+    return []
+
+
 async def build_generation_blueprint(
     db: AsyncSession, *, student_id: int, language_id: int, mode: ReadingV2Mode = "practice"
 ) -> GenerationBlueprint:
@@ -264,6 +432,13 @@ async def build_generation_blueprint(
     question_types = (QUESTION_TYPES * ((question_count // len(QUESTION_TYPES)) + 1))[:question_count]
     target_next = next_cefr_level(cefr) if mode == "readiness" else None
     topic = "everyday learning habits" if mode == "practice" else f"{target_next or cefr} readiness"
+    recent_context = await _recent_generation_context(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=cefr,
+        internal_stage=stage,
+    )
 
     return GenerationBlueprint(
         cefr_level=cefr,
@@ -294,6 +469,8 @@ async def build_generation_blueprint(
         weak_vocab_items=[],
         grammar_mastery_profile={},
         vocab_review_due_items=[],
+        preferred_topic_rotation=_preferred_topic_rotation(cefr, stage),
+        **recent_context,
     )
 
 
@@ -391,8 +568,16 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
         skill_tags=blueprint.reading_subskills,
         difficulty_score=blueprint.difficulty_score,
         topic=blueprint.topic,
+        topic_tags=_activity_topic_tags({"topic": blueprint.topic, "vocab_tags": blueprint.target_vocab_tags}, blueprint),
         questions=questions,
         safety_tags=["education", "low_risk"],
+        diversity_metadata={
+            "topic_tags": _activity_topic_tags({"topic": blueprint.topic, "vocab_tags": blueprint.target_vocab_tags}, blueprint),
+            "character_names": ["Mira"],
+            "passage_summary": _passage_summary({"passage": passage}),
+            "recent_titles_considered": blueprint.recent_titles,
+            "recent_topics_considered": blueprint.recent_topics,
+        },
         validation_metadata={"provider": LOCAL_MOCK_PROVIDER_NAME, "prompt_version": blueprint.prompt_version, "retry_count": 0},
     )
 
@@ -430,10 +615,13 @@ def _has_exactly_one_blank(value: str | None) -> bool:
 
 
 def _gap_fill_display_sentence(question: Any) -> str:
-    for field in ("sentence_with_blank", "display_sentence", "blank_prompt", "stem"):
+    for field in ("sentence_with_blank", "display_sentence", "blank_prompt"):
         value = getattr(question, field, None)
         if value is not None and str(value).strip():
             return str(value)
+    stem = getattr(question, "stem", None)
+    if _has_exactly_one_blank(stem):
+        return str(stem)
     return ""
 
 
@@ -474,8 +662,68 @@ def _validate_level_readability(passage: str, blueprint: GenerationBlueprint, is
         )
 
 
+def _token_set(value: str) -> set[str]:
+    return {token for token in _normalize_text(value).split() if token}
+
+
+def _title_similarity_score(left: str, right: str) -> float:
+    left_tokens = _token_set(left)
+    right_tokens = _token_set(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
+def _contains_study_routine_pattern(value: str) -> bool:
+    normalized = _normalize_text(value)
+    return any(_normalize_text(term) in normalized for term in _STUDY_ROUTINE_TERMS)
+
+
+def _diversity_warnings(parsed: GeneratedReadingActivity, blueprint: GenerationBlueprint) -> list[ValidationIssue]:
+    warnings: list[ValidationIssue] = []
+    title = parsed.title.strip()
+    for recent_title in blueprint.recent_titles:
+        score = _title_similarity_score(title, recent_title)
+        if _normalize_text(title) == _normalize_text(recent_title) or score >= 0.6:
+            warnings.append(
+                ValidationIssue(
+                    code="repeated_or_similar_title",
+                    message="Generated title is identical or highly similar to a recent Reading V2 title",
+                )
+            )
+            break
+
+    current_tags = set(_activity_topic_tags(parsed.model_dump(), blueprint))
+    repeated_tag_sets = 0
+    for recent_tags in blueprint.recent_topic_tags:
+        if current_tags and current_tags == set(_tagify(tag) for tag in recent_tags if _tagify(tag)):
+            repeated_tag_sets += 1
+    if repeated_tag_sets:
+        warnings.append(
+            ValidationIssue(
+                code="repeated_topic_tags",
+                message="Generated topic tags repeat recent Reading V2 topic tags",
+            )
+        )
+
+    recent_context_text = " ".join(
+        [*blueprint.recent_titles, *blueprint.recent_topics, *blueprint.recent_passage_summaries]
+    )
+    generated_context_text = " ".join([parsed.title, parsed.topic, parsed.passage])
+    if _contains_study_routine_pattern(generated_context_text) and _contains_study_routine_pattern(recent_context_text):
+        warnings.append(
+            ValidationIssue(
+                code="repeated_study_routine_pattern",
+                message="Generated passage appears to repeat a recent school/study/library routine pattern",
+            )
+        )
+
+    return warnings
+
+
 def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActivity, blueprint: GenerationBlueprint) -> ValidationResult:
     issues: list[ValidationIssue] = []
+    warnings: list[ValidationIssue] = []
     raw = activity.model_dump() if isinstance(activity, GeneratedReadingActivity) else activity
     parsed: GeneratedReadingActivity | None = None
     try:
@@ -506,6 +754,7 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
         issues.append(ValidationIssue(code="question_count_mismatch", message="Activity question count does not match blueprint"))
     if _contains_sensitive_topic(parsed):
         issues.append(ValidationIssue(code="unsafe_topic", message="Activity contains a restricted topic"))
+    warnings.extend(_diversity_warnings(parsed, blueprint))
 
     for question in parsed.questions:
         q_type = question.type
@@ -558,7 +807,7 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
                     )
                 )
 
-    return ValidationResult(valid=not issues, issues=issues)
+    return ValidationResult(valid=not issues, issues=issues, warnings=warnings)
 
 
 def select_reading_v2_generation_provider() -> str:
@@ -582,7 +831,14 @@ def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_e
         "skill_tags": ["string"],
         "difficulty_score": "number",
         "topic": "string",
+        "topic_tags": ["short_topic_tag"],
         "safety_tags": ["string"],
+        "diversity_metadata": {
+            "topic_tags": ["short_topic_tag"],
+            "character_names": ["names used in the passage"],
+            "passage_summary": "one short sentence summary",
+            "anti_repetition_notes": "brief note about how this differs from recent activities",
+        },
         "validation_metadata": {"notes": "optional object"},
         "questions": [
             {
@@ -606,6 +862,30 @@ def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_e
         ],
     }
     blueprint_payload = blueprint.model_dump()
+    diversity_block = ""
+    if (
+        blueprint.recent_titles
+        or blueprint.recent_topics
+        or blueprint.recent_topic_tags
+        or blueprint.recent_character_names
+        or blueprint.recent_question_stems
+    ):
+        diversity_block = f"""
+
+Recent generated activity context for this same student/language/stage:
+- Recent titles: {json.dumps(blueprint.recent_titles, ensure_ascii=False)}
+- Recent topics: {json.dumps(blueprint.recent_topics, ensure_ascii=False)}
+- Recent topic_tags: {json.dumps(blueprint.recent_topic_tags, ensure_ascii=False)}
+- Recent passage summaries: {json.dumps(blueprint.recent_passage_summaries, ensure_ascii=False)}
+- Recent character names: {json.dumps(blueprint.recent_character_names, ensure_ascii=False)}
+- Recent question stems: {json.dumps(blueprint.recent_question_stems, ensure_ascii=False)}
+"""
+    topic_rotation_block = ""
+    if blueprint.preferred_topic_rotation:
+        topic_rotation_block = (
+            "\nAllowed simple topic rotation for this level/stage. Prefer one that is not present in recent context:\n"
+            + json.dumps(blueprint.preferred_topic_rotation, ensure_ascii=False)
+        )
     repair_block = ""
     if validation_errors:
         repair_block = (
@@ -622,6 +902,8 @@ Avoid unsafe, sensitive, graphic, sexual, hateful, self-harm, extremist, illegal
 
 Generation Blueprint JSON:
 {json.dumps(blueprint_payload, ensure_ascii=False, indent=2)}
+{diversity_block}
+{topic_rotation_block}
 
 Must include these control fields from the blueprint:
 - cefr_level
@@ -640,6 +922,8 @@ Must include these control fields from the blueprint:
 - inference_depth
 - number_of_questions
 - safety_topic_restrictions
+- recent_titles / recent_topics / recent_topic_tags / recent_passage_summaries / recent_character_names / recent_question_stems
+- preferred_topic_rotation
 
 Hard requirements:
 - Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
@@ -647,7 +931,15 @@ Hard requirements:
 - Activity internal_stage must be {blueprint.internal_stage}.
 - For A1 Beginner, use 55-80 words, very short sentences, simple present, concrete daily vocabulary, and direct literal questions.
 - For A1/A2, avoid abstract wording, long dense sentences, complex clauses, and above-level grammar.
+- For A1/A2, vary the setting and situation while preserving the same CEFR/stage simplicity.
+- Do not repeat recent topics, titles, topic_tags, character names, or passage patterns from the recent context.
+- Do not reuse the same character names listed in recent_character_names.
+- Do not generate another school/study/library/new-words routine if recent attempts already used that pattern.
+- If recent activities are about daily English study, choose a different simple situation such as a family meal, classroom object, simple shopping trip, pet care, weekend morning, park visit, school bag, birthday card, simple house routine, or bus ride.
 - Include at least one target grammar tag and one target vocabulary tag.
+- Include topic_tags and diversity_metadata.topic_tags.
+- Include diversity_metadata.character_names and diversity_metadata.passage_summary.
+- Include diversity_metadata.anti_repetition_notes explaining how this activity differs from recent attempts.
 - Create exactly {blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
 - MCQ questions need at least three plausible choices and answer_key.correct_choice_id.
 - True/False questions need answer_key.correct as a boolean.
@@ -746,6 +1038,24 @@ async def generate_activity_with_ai_provider(blueprint: GenerationBlueprint) -> 
                     "retry_count": attempt_index,
                 }
             )
+        topic_tags = _activity_topic_tags(last_activity, blueprint)
+        if not _as_str_list(last_activity.get("topic_tags")):
+            last_activity["topic_tags"] = topic_tags
+        diversity_metadata = last_activity.setdefault("diversity_metadata", {})
+        if isinstance(diversity_metadata, dict):
+            diversity_metadata.setdefault("topic_tags", topic_tags)
+            diversity_metadata.setdefault("character_names", _extract_character_names(last_activity))
+            diversity_metadata.setdefault("passage_summary", _passage_summary(last_activity))
+            diversity_metadata.setdefault("recent_titles_considered", blueprint.recent_titles)
+            diversity_metadata.setdefault("recent_topics_considered", blueprint.recent_topics)
+        else:
+            last_activity["diversity_metadata"] = {
+                "topic_tags": topic_tags,
+                "character_names": _extract_character_names(last_activity),
+                "passage_summary": _passage_summary(last_activity),
+                "recent_titles_considered": blueprint.recent_titles,
+                "recent_topics_considered": blueprint.recent_topics,
+            }
         last_validation = validate_generated_activity(last_activity, blueprint)
         if last_validation.valid:
             return ReadingV2GenerationOutcome(

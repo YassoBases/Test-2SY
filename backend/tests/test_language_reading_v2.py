@@ -86,7 +86,7 @@ def _blueprint(**overrides) -> GenerationBlueprint:
         "inference_depth": "mixed",
         "number_of_questions": 4,
         "safety_topic_restrictions": ["unsafe topics"],
-        "prompt_version": "reading_v2_r6_answer_ux",
+        "prompt_version": reading_service.PROMPT_VERSION,
     }
     values.update(overrides)
     return GenerationBlueprint(**values)
@@ -280,6 +280,28 @@ def test_validation_rejects_gap_fill_with_multiple_blanks():
     assert any(issue.code == "invalid_gap_fill_blank" for issue in result.issues)
 
 
+def test_validation_warns_for_repeated_recent_title_and_topic_tags():
+    blueprint = _blueprint(
+        recent_titles=["Anna's Daily Study Routine"],
+        recent_topics=["daily English study"],
+        recent_topic_tags=[["daily_study"]],
+        recent_passage_summaries=["Anna studies English in the library and writes new words."],
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["title"] = "Anna Daily Study Routine"
+    activity["topic"] = "daily English study"
+    activity["topic_tags"] = ["daily_study"]
+    activity["diversity_metadata"]["topic_tags"] = ["daily_study"]
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is True
+    warning_codes = {warning.code for warning in result.warnings}
+    assert "repeated_or_similar_title" in warning_codes
+    assert "repeated_topic_tags" in warning_codes
+    assert "repeated_study_routine_pattern" in warning_codes
+
+
 def test_deterministic_scoring_works_for_mvp_question_types():
     blueprint = _blueprint()
     activity = generate_reading_activity_from_blueprint(blueprint)
@@ -334,7 +356,17 @@ def test_provider_selection_defaults_to_safe_local_mock(monkeypatch):
 
 
 def test_ai_prompt_contains_required_blueprint_controls():
-    prompt = reading_v2_generation_prompt(_blueprint())
+    prompt = reading_v2_generation_prompt(
+        _blueprint(
+            recent_titles=["Mia's Daily English Study"],
+            recent_topics=["daily English study"],
+            recent_topic_tags=[["school_study_routine"]],
+            recent_passage_summaries=["Mia studies English in the library."],
+            recent_character_names=["Mia"],
+            recent_question_stems=["Where does Mia study English?"],
+            preferred_topic_rotation=["family meal", "bus ride"],
+        )
+    )
     prompt_text = f"{prompt['system']}\n{prompt['user']}"
 
     for required in [
@@ -360,6 +392,18 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "For A1 Beginner",
         "avoid abstract wording",
         "common natural variants",
+        "recent_titles",
+        "recent_topics",
+        "recent_topic_tags",
+        "recent_character_names",
+        "preferred_topic_rotation",
+        "Do not repeat recent topics",
+        "Do not reuse the same character names",
+        "Do not generate another school/study/library/new-words routine",
+        "family meal",
+        "bus ride",
+        "topic_tags",
+        "diversity_metadata",
         "Return valid JSON only",
     ]:
         assert required in prompt_text
@@ -518,6 +562,56 @@ async def test_a1_beginner_blueprint_uses_short_simple_constraints(postgres_sess
     assert blueprint.word_count_max == 80
     assert "simple_present" in blueprint.sentence_complexity
     assert "concrete" in blueprint.vocabulary_difficulty
+    assert "family meal" in blueprint.preferred_topic_rotation
+
+
+async def test_generation_blueprint_includes_recent_activity_context(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session, reading_level=LanguageLevel.A1)
+    await reading_service.get_or_create_student_state(postgres_session, student_id=student_id, language_id=language_id)
+    activity = generate_reading_activity_from_blueprint(_blueprint(cefr_level="A1", internal_stage="Beginner")).model_dump()
+    activity.update(
+        {
+            "title": "Mia's Daily English Study",
+            "topic": "daily English study",
+            "topic_tags": ["school_study_routine"],
+            "diversity_metadata": {
+                "topic_tags": ["school_study_routine"],
+                "character_names": ["Mia"],
+                "passage_summary": "Mia studies English at school and writes new words.",
+            },
+        }
+    )
+    activity["questions"][0]["stem"] = "Where does Mia study English?"
+    postgres_session.add(
+        LanguageReadingV2Attempt(
+            student_id=student_id,
+            language_id=language_id,
+            cefr_level=LanguageLevel.A1,
+            internal_stage="Beginner",
+            mode="practice",
+            status="submitted",
+            generation_blueprint_json={"cefr_level": "A1", "internal_stage": "Beginner"},
+            generated_activity_json=activity,
+            validation_result_json={"valid": True, "issues": [], "warnings": []},
+            model_used="test",
+            prompt_version=reading_service.PROMPT_VERSION,
+            validator_version="reading_v2_validator_r1",
+            score_percent=80,
+        )
+    )
+    await postgres_session.flush()
+
+    blueprint = await build_generation_blueprint(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+
+    assert "Mia's Daily English Study" in blueprint.recent_titles
+    assert "daily English study" in blueprint.recent_topics
+    assert ["school_study_routine"] in blueprint.recent_topic_tags
+    assert "Mia" in blueprint.recent_character_names
+    assert "Where does Mia study English?" in blueprint.recent_question_stems
 
 
 async def test_attempt_creation_stores_snapshots_and_strips_student_keys(postgres_session):

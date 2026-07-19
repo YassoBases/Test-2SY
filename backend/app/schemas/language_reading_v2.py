@@ -30,11 +30,18 @@ class GenerationBlueprint(BaseModel):
     inference_depth: str
     number_of_questions: int = Field(ge=1, le=20)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
-    prompt_version: str = "reading_v2_r6_answer_ux"
+    prompt_version: str = "reading_v2_r7_topic_diversity"
     known_vocab_items: list[str] = Field(default_factory=list)
     weak_vocab_items: list[str] = Field(default_factory=list)
     grammar_mastery_profile: dict[str, float] = Field(default_factory=dict)
     vocab_review_due_items: list[str] = Field(default_factory=list)
+    recent_titles: list[str] = Field(default_factory=list)
+    recent_topics: list[str] = Field(default_factory=list)
+    recent_topic_tags: list[list[str]] = Field(default_factory=list)
+    recent_passage_summaries: list[str] = Field(default_factory=list)
+    recent_character_names: list[str] = Field(default_factory=list)
+    recent_question_stems: list[str] = Field(default_factory=list)
+    preferred_topic_rotation: list[str] = Field(default_factory=list)
 
 
 class GeneratedChoice(BaseModel):
@@ -67,8 +74,10 @@ class GeneratedReadingActivity(BaseModel):
     skill_tags: list[str] = Field(default_factory=list)
     difficulty_score: float = Field(ge=0.0, le=100.0)
     topic: str
+    topic_tags: list[str] = Field(default_factory=list)
     questions: list[GeneratedQuestion] = Field(default_factory=list)
     safety_tags: list[str] = Field(default_factory=list)
+    diversity_metadata: dict[str, Any] = Field(default_factory=dict)
     validation_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -82,6 +91,7 @@ class ValidationResult(BaseModel):
     valid: bool
     validator_version: str = "reading_v2_validator_r1"
     issues: list[ValidationIssue] = Field(default_factory=list)
+    warnings: list[ValidationIssue] = Field(default_factory=list)
 
 
 class ReadingV2GenerateAttemptIn(BaseModel):
