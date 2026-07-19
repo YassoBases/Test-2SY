@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -401,6 +402,39 @@ async def test_path_returns_all_cefr_levels_and_stages(postgres_session):
     assert {(stage.cefr_level, stage.internal_stage) for stage in path.stages} == {
         (level, internal_stage) for level in CEFR_LEVELS for internal_stage in INTERNAL_STAGES
     }
+
+
+async def test_parallel_overview_and_path_create_initial_state_once(postgres_session_factory):
+    async with postgres_session_factory() as setup:
+        student_id, language_id = await _student_and_language(setup)
+        await setup.commit()
+
+    async def load_overview():
+        async with postgres_session_factory() as db:
+            result = await build_reading_v2_overview(db, student_id=student_id, language_id=language_id)
+            await db.commit()
+            return result
+
+    async def load_path():
+        async with postgres_session_factory() as db:
+            result = await build_reading_v2_path(db, student_id=student_id, language_id=language_id)
+            await db.commit()
+            return result
+
+    overview, path = await asyncio.gather(load_overview(), load_path())
+
+    assert overview.current_cefr == "A1"
+    assert len(path.stages) == len(CEFR_LEVELS) * len(INTERNAL_STAGES)
+    async with postgres_session_factory() as db:
+        rows = (
+            await db.execute(
+                select(LanguageReadingV2StudentState).where(
+                    LanguageReadingV2StudentState.student_id == student_id,
+                    LanguageReadingV2StudentState.language_id == language_id,
+                )
+            )
+        ).scalars().all()
+    assert len(rows) == 1
 
 
 async def test_generation_blueprint_matches_student_level_and_stage(postgres_session):

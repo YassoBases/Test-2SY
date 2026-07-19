@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -159,17 +160,26 @@ async def get_or_create_student_state(
         )
     ).scalar_one_or_none()
     initial_level = analytics.reading_level if analytics and analytics.reading_level else LanguageLevel.A1
-    state_row = LanguageReadingV2StudentState(
-        student_id=student_id,
-        language_id=language_id,
-        current_cefr=initial_level,
-        current_stage="Beginner",
-        status="active",
-        unlocked_rank=stage_rank(initial_level, "Beginner"),
-        recent_mastery_json={},
+    await db.execute(
+        pg_insert(LanguageReadingV2StudentState)
+        .values(
+            student_id=student_id,
+            language_id=language_id,
+            current_cefr=initial_level,
+            current_stage="Beginner",
+            status="active",
+            unlocked_rank=stage_rank(initial_level, "Beginner"),
+            recent_mastery_json={},
+        )
+        .on_conflict_do_nothing(constraint="uq_language_reading_v2_student_state")
     )
-    db.add(state_row)
-    await db.flush()
+    result = await db.execute(
+        select(LanguageReadingV2StudentState).where(
+            LanguageReadingV2StudentState.student_id == student_id,
+            LanguageReadingV2StudentState.language_id == language_id,
+        )
+    )
+    state_row = result.scalar_one()
     return state_row
 
 
