@@ -102,14 +102,27 @@ _SHORT_ANSWER_GENERIC_TOKENS = {
     "learn",
     "learns",
     "passage",
-    "read",
-    "reads",
     "says",
     "student",
     "students",
-    "study",
-    "studies",
     "text",
+}
+_SHORT_ANSWER_INFLECTIONS = {
+    "ate": "eat",
+    "eats": "eat",
+    "eat": "eat",
+    "go": "go",
+    "goes": "go",
+    "going": "go",
+    "help": "help",
+    "helps": "help",
+    "read": "read",
+    "reads": "read",
+    "rest": "rest",
+    "rests": "rest",
+    "study": "study",
+    "studies": "study",
+    "studying": "study",
 }
 
 logger = logging.getLogger(__name__)
@@ -947,6 +960,8 @@ Hard requirements:
 - Gap Fill sentence_with_blank must be a meaningful sentence grounded in the passage and must not reveal the accepted answer.
 - Short Answer questions must be scoreable without AI using accepted_answers or required_key_terms.
 - Short Answer answer keys must include common natural variants when the answer is a short phrase. For example, if the passage says the student studies English at home, include accepted_answers like "home", "at home", "the student studies at home", and "she studies at home", or required_key_terms like "home".
+- For Short Answer, include required_key_terms as base-form meaning concepts when useful, not only one full sentence. For example, if the answer is "eat a snack and rest", include accepted_answers like "eat a snack and rest", "they eat a snack and rest", "eat a snack", and required_key_terms like "eat snack" and "rest" so deterministic scoring can accept "the family eats a snack and rests".
+- Include common A1 natural variants for simple verbs: eat/eats, rest/rests, study/studies, read/reads, go/goes, help/helps.
 - Question stems must not reveal answer_key values.
 - Explanations and evidence_quote must be grounded in the passage.
 - Do not include any answer keys inside passage text, title, or stems in a way that leaks answers.
@@ -1206,16 +1221,29 @@ def _short_answer_matches(candidate: str, answer_key: dict[str, Any]) -> bool:
     required = [_normalize_text(str(item)) for item in answer_key.get("required_key_terms") or [] if str(item).strip()]
     if required:
         return all(
-            _meaningful_tokens_match(candidate_tokens, _meaningful_short_answer_tokens(term))
+            _required_term_matches(candidate_tokens, _meaningful_short_answer_tokens(term))
             for term in required
         )
     return False
 
 
+def _canonical_short_answer_token(token: str) -> str:
+    clean = token.lower().strip()
+    if clean in _SHORT_ANSWER_INFLECTIONS:
+        return _SHORT_ANSWER_INFLECTIONS[clean]
+    if clean.endswith("ies") and len(clean) > 4:
+        return clean[:-3] + "y"
+    if clean.endswith("es") and len(clean) > 4 and clean[-3] in {"s", "x", "z", "h", "o"}:
+        return clean[:-2]
+    if clean.endswith("s") and len(clean) > 3 and not clean.endswith(("ss", "us", "is")):
+        return clean[:-1]
+    return clean
+
+
 def _meaningful_short_answer_tokens(value: str) -> set[str]:
     tokens = set(re.findall(r"[a-z0-9]+", value.lower()))
     return {
-        token
+        _canonical_short_answer_token(token)
         for token in tokens
         if token not in _SHORT_ANSWER_STOPWORDS
         and token not in _SHORT_ANSWER_GENERIC_TOKENS
@@ -1226,7 +1254,13 @@ def _meaningful_short_answer_tokens(value: str) -> set[str]:
 def _meaningful_tokens_match(candidate_tokens: set[str], expected_tokens: set[str]) -> bool:
     if not candidate_tokens or not expected_tokens:
         return False
-    return candidate_tokens.issubset(expected_tokens) or expected_tokens.issubset(candidate_tokens)
+    return expected_tokens.issubset(candidate_tokens)
+
+
+def _required_term_matches(candidate_tokens: set[str], required_tokens: set[str]) -> bool:
+    if not candidate_tokens or not required_tokens:
+        return False
+    return required_tokens.issubset(candidate_tokens)
 
 
 def _student_answer_summary(question: Any, answer: Any) -> str:

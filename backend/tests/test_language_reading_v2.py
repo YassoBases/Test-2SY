@@ -343,6 +343,38 @@ def test_short_answer_scoring_accepts_meaningful_phrase_variants():
     assert results[0].expected_answer == "at home / the student studies at home / she studies at home"
 
 
+def test_short_answer_scoring_accepts_simple_inflection_variants():
+    blueprint = _blueprint(question_types=["short_answer"], number_of_questions=1)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    question = activity["questions"][0]
+    question["stem"] = "What does the family do after Ben helps put the food away?"
+    question["answer_key"] = {
+        "accepted_answers": ["eat a snack and rest", "they eat a snack and rest", "eat a snack"],
+        "required_key_terms": ["eat snack", "rest"],
+    }
+
+    score, results = score_generated_activity(activity, {"q1": "the family eats a snack and rests."})
+
+    assert score == 100.0
+    assert results[0].correct is True
+
+
+def test_short_answer_scoring_rejects_unrelated_answers():
+    blueprint = _blueprint(question_types=["short_answer"], number_of_questions=1)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    question = activity["questions"][0]
+    question["stem"] = "What does the family do after Ben helps put the food away?"
+    question["answer_key"] = {
+        "accepted_answers": ["eat a snack and rest", "they eat a snack and rest", "eat a snack"],
+        "required_key_terms": ["eat snack", "rest"],
+    }
+
+    score, results = score_generated_activity(activity, {"q1": "They clean the table."})
+
+    assert score == 0.0
+    assert results[0].correct is False
+
+
 def test_provider_selection_defaults_to_safe_local_mock(monkeypatch):
     monkeypatch.setattr(reading_service.settings, "READING_V2_GENERATION_PROVIDER", "local_mock")
 
@@ -392,6 +424,9 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "For A1 Beginner",
         "avoid abstract wording",
         "common natural variants",
+        "required_key_terms like \"eat snack\" and \"rest\"",
+        "eat/eats",
+        "rest/rests",
         "recent_titles",
         "recent_topics",
         "recent_topic_tags",
