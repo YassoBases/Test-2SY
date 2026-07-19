@@ -200,10 +200,10 @@
               <div v-for="item in historyItems" :key="item.attempt_id" class="history-item">
                 <div>
                   <div class="font-weight-bold">{{ labelize(item.mode) }} · {{ item.cefr_level }} {{ item.internal_stage }}</div>
-                  <div class="text-caption text-medium-emphasis">{{ formatDate(item.submitted_at || item.created_at) }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
                 </div>
-                <v-chip size="small" :color="item.score_percent == null ? 'grey' : scoreColor(item.score_percent)" variant="tonal">
-                  {{ item.score_percent == null ? labelize(item.status) : `${item.score_percent}%` }}
+                <v-chip size="small" :color="historyChipColor(item)" variant="tonal">
+                  {{ historyStatusLabel(item) }}
                 </v-chip>
               </div>
             </div>
@@ -872,6 +872,24 @@ function formatDate(iso) {
   } catch {
     return iso
   }
+}
+
+function isSubmittedHistoryItem(item) {
+  return item?.status === 'submitted' && item.score_percent != null
+}
+
+function historyStatusLabel(item) {
+  if (isSubmittedHistoryItem(item)) return `${item.score_percent}%`
+  return 'Not submitted'
+}
+
+function historyChipColor(item) {
+  return isSubmittedHistoryItem(item) ? scoreColor(item.score_percent) : 'grey'
+}
+
+function historyDateLabel(item) {
+  if (isSubmittedHistoryItem(item)) return formatDate(item.submitted_at)
+  return item?.created_at ? `Started ${formatDate(item.created_at)}` : 'Not submitted'
 }
 </script>
 
