@@ -214,11 +214,13 @@ async def _insert_subskill_attempt(
     attempt_index: int,
     results: list[tuple[str, bool]],
     score_percent: float | None = None,
+    cefr: LanguageLevel = LanguageLevel.A1,
+    stage: str = "Beginner",
 ) -> None:
     question_results = [
         {
             "question_id": f"q{index}",
-            "question_type": "mcq",
+            "question_type": reading_service.QUESTION_TYPES[(index - 1) % len(reading_service.QUESTION_TYPES)],
             "subskill": subskill,
             "correct": correct,
             "score": 1.0 if correct else 0.0,
@@ -234,11 +236,11 @@ async def _insert_subskill_attempt(
         LanguageReadingV2Attempt(
             student_id=student_id,
             language_id=language_id,
-            cefr_level=LanguageLevel.A1,
-            internal_stage="Beginner",
+            cefr_level=cefr,
+            internal_stage=stage,
             mode="practice",
             status="submitted",
-            generation_blueprint_json={"cefr_level": "A1", "internal_stage": "Beginner"},
+            generation_blueprint_json={"cefr_level": cefr.value, "internal_stage": stage},
             generated_activity_json={
                 "title": f"Subskill Evidence {attempt_index}",
                 "passage": f"Unique passage {attempt_index}",
@@ -263,6 +265,8 @@ async def _insert_balanced_subskill_attempts(
     skim_results: list[bool],
     scan_results: list[bool] | None = None,
     literal_results: list[bool] | None = None,
+    cefr: LanguageLevel = LanguageLevel.A1,
+    stage: str = "Beginner",
 ) -> None:
     scan_results = scan_results or [True, True, True, True, True]
     literal_results = literal_results or [True, True, True, True, True]
@@ -280,6 +284,8 @@ async def _insert_balanced_subskill_attempts(
             attempt_index=index + 1,
             results=results,
             score_percent=100.0 if all(correct for _subskill, correct in results) else 75.0,
+            cefr=cefr,
+            stage=stage,
         )
 
 
@@ -815,20 +821,22 @@ async def test_xp_alone_does_not_progress_stage(postgres_session):
     student_id, language_id = await _student_and_language(postgres_session)
 
     await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
-    postgres_session.add(
-        LanguageReadingV2StageProgress(
-            student_id=student_id,
-            language_id=language_id,
-            cefr_level=LanguageLevel.A1,
-            internal_stage="Beginner",
-            status="current",
-            attempts_completed=99,
-            mastery_score=100.0,
-            subskill_mastery_json={},
-            question_type_mastery_json={},
-            recent_attempt_ids_json=[],
+    progress = (
+        await postgres_session.execute(
+            select(LanguageReadingV2StageProgress).where(
+                LanguageReadingV2StageProgress.student_id == student_id,
+                LanguageReadingV2StageProgress.language_id == language_id,
+                LanguageReadingV2StageProgress.cefr_level == LanguageLevel.A1,
+                LanguageReadingV2StageProgress.internal_stage == "Beginner",
+            )
         )
-    )
+    ).scalar_one()
+    progress.status = "current"
+    progress.attempts_completed = 99
+    progress.mastery_score = 100.0
+    progress.subskill_mastery_json = {}
+    progress.question_type_mastery_json = {}
+    progress.recent_attempt_ids_json = []
     await postgres_session.flush()
 
     path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
@@ -910,7 +918,8 @@ async def test_one_wrong_under_sampled_subskill_is_not_marked_weak(postgres_sess
 
     assert "skim_gist" in {item["name"] for item in evidence["under_sampled_subskills"]}
     assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
-    assert "each_core_subskill_has_min_evidence" in evidence["blocking_reasons"]
+    assert "each_core_subskill_has_min_evidence" in evidence["advisory_reasons"]
+    assert "each_core_subskill_has_min_evidence" not in evidence["blocking_reasons"]
     assert "each_core_subskill_at_least_70" not in evidence["blocking_reasons"]
 
 
@@ -933,6 +942,8 @@ async def test_two_question_subskill_is_under_sampled_not_weak(postgres_session)
 
     assert "skim_gist" in {item["name"] for item in evidence["under_sampled_subskills"]}
     assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
+    assert "each_core_subskill_has_min_evidence" in evidence["advisory_reasons"]
+    assert "each_core_subskill_has_min_evidence" not in evidence["blocking_reasons"]
 
 
 async def test_sufficient_low_subskill_evidence_blocks_as_weak(postgres_session):
@@ -976,6 +987,7 @@ async def test_sufficient_passing_subskill_evidence_does_not_block(postgres_sess
 
     assert "skim_gist" not in {item["name"] for item in evidence["under_sampled_subskills"]}
     assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
+    assert "each_core_subskill_has_min_evidence" not in evidence["advisory_reasons"]
     assert "each_core_subskill_has_min_evidence" not in evidence["blocking_reasons"]
     assert "each_core_subskill_at_least_70" not in evidence["blocking_reasons"]
 
@@ -1024,17 +1036,115 @@ async def test_enough_evidence_unlocks_next_internal_stage(monkeypatch, postgres
     _install_unique_mock_generator(monkeypatch)
     student_id, language_id = await _student_and_language(postgres_session)
 
+    result = None
     for _ in range(5):
-        await _create_and_submit_practice(postgres_session, student_id=student_id, language_id=language_id)
+        result = await _create_and_submit_practice(postgres_session, student_id=student_id, language_id=language_id)
 
     overview = await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
     path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
 
+    assert result is not None
+    assert result.state["current_stage"] == "Intermediate"
     assert overview.current_cefr == "A1"
     assert overview.current_stage == "Intermediate"
     by_stage = {(stage.cefr_level, stage.internal_stage): stage for stage in path.stages}
     assert by_stage[("A1", "Beginner")].status == "mastered"
     assert by_stage[("A1", "Intermediate")].status == "current"
+    assert by_stage[("A1", "Advanced")].status == "locked"
+    assert overview.readiness_available is False
+    assert overview.readiness_blocked_reason == "advanced_stage_not_mastered"
+
+
+async def test_under_sampled_subskill_does_not_block_stage_advancement(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False, True],
+    )
+
+    overview = await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
+    path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
+    by_stage = {(stage.cefr_level, stage.internal_stage): stage for stage in path.stages}
+
+    assert overview.current_stage == "Intermediate"
+    assert by_stage[("A1", "Beginner")].status == "mastered"
+    assert by_stage[("A1", "Intermediate")].status == "current"
+
+
+async def test_stale_mastered_beginner_state_is_reconciled_to_intermediate(monkeypatch, postgres_session):
+    _install_unique_mock_generator(monkeypatch)
+    student_id, language_id = await _student_and_language(postgres_session)
+
+    for _ in range(5):
+        await _create_and_submit_practice(postgres_session, student_id=student_id, language_id=language_id)
+
+    state = await reading_service.get_or_create_student_state(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+    state.current_cefr = LanguageLevel.A1
+    state.current_stage = "Beginner"
+    state.readiness_target_level = None
+    state.unlocked_rank = reading_service.stage_rank(LanguageLevel.A1, "Beginner")
+    beginner = await reading_service.get_or_create_stage_progress(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=LanguageLevel.A1,
+        internal_stage="Beginner",
+    )
+    beginner.status = "current"
+    beginner.mastered_at = None
+    intermediate = await reading_service.get_or_create_stage_progress(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=LanguageLevel.A1,
+        internal_stage="Intermediate",
+    )
+    intermediate.status = "locked"
+    await postgres_session.flush()
+
+    overview = await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
+    path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
+    by_stage = {(stage.cefr_level, stage.internal_stage): stage for stage in path.stages}
+
+    assert overview.current_cefr == "A1"
+    assert overview.current_stage == "Intermediate"
+    assert overview.readiness_available is False
+    assert by_stage[("A1", "Beginner")].status == "mastered"
+    assert by_stage[("A1", "Intermediate")].status == "current"
+    assert by_stage[("A1", "Advanced")].status == "locked"
+    assert by_stage[("A2", "Beginner")].status == "locked"
+
+
+async def test_intermediate_mastery_advances_to_advanced(monkeypatch, postgres_session):
+    _install_unique_mock_generator(monkeypatch)
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _move_to_stage(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr=LanguageLevel.A1,
+        stage="Intermediate",
+    )
+
+    for _ in range(5):
+        await _create_and_submit_practice(postgres_session, student_id=student_id, language_id=language_id)
+
+    overview = await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
+    path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
+    by_stage = {(stage.cefr_level, stage.internal_stage): stage for stage in path.stages}
+
+    assert overview.current_cefr == "A1"
+    assert overview.current_stage == "Advanced"
+    assert overview.readiness_available is False
+    assert overview.readiness_blocked_reason == "advanced_stage_not_mastered"
+    assert by_stage[("A1", "Intermediate")].status == "mastered"
+    assert by_stage[("A1", "Advanced")].status == "current"
 
 
 async def test_advanced_mastery_unlocks_readiness(monkeypatch, postgres_session):
@@ -1054,12 +1164,15 @@ async def test_advanced_mastery_unlocks_readiness(monkeypatch, postgres_session)
     overview = await build_reading_v2_overview(postgres_session, student_id=student_id, language_id=language_id)
     path = await build_reading_v2_path(postgres_session, student_id=student_id, language_id=language_id)
     advanced = [stage for stage in path.stages if stage.cefr_level == "A1" and stage.internal_stage == "Advanced"][0]
+    a2_beginner = [stage for stage in path.stages if stage.cefr_level == "A2" and stage.internal_stage == "Beginner"][0]
 
+    assert overview.current_cefr == "A1"
     assert overview.current_stage == "Advanced"
     assert overview.readiness_available is True
     assert overview.readiness_target_level == "A2"
     assert overview.next_action == "readiness"
     assert advanced.status == "mastered"
+    assert a2_beginner.status == "locked"
 
 
 async def test_readiness_unavailable_before_advanced_mastery(postgres_session):
