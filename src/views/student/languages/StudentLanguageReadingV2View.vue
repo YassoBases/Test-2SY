@@ -25,6 +25,12 @@
                     {{ labelize(overview.status) }}
                   </v-chip>
                 </div>
+                <div class="readiness-inline mt-3">
+                  <v-chip size="small" :color="readinessColor" variant="tonal">
+                    {{ readinessStatusLabel }}
+                  </v-chip>
+                  <span>{{ readinessInlineText }}</span>
+                </div>
               </div>
               <div class="d-flex gap-2 flex-wrap">
                 <v-btn
@@ -54,20 +60,67 @@
             <v-divider class="my-4" />
             <div class="mastery-grid">
               <div>
-                <div class="text-caption text-medium-emphasis">Attempts evidenced</div>
-                <div class="text-h6 font-weight-bold">{{ mastery.attempts_completed ?? 0 }}</div>
+                <div class="text-caption text-medium-emphasis">Current level</div>
+                <div class="text-h6 font-weight-bold">{{ overview?.current_cefr || 'A1' }}</div>
+              </div>
+              <div>
+                <div class="text-caption text-medium-emphasis">Current stage</div>
+                <div class="text-h6 font-weight-bold">{{ overview?.current_stage || 'Beginner' }}</div>
               </div>
               <div>
                 <div class="text-caption text-medium-emphasis">Mastery score</div>
-                <div class="text-h6 font-weight-bold">{{ mastery.mastery_score ?? 0 }}%</div>
+                <div class="text-h6 font-weight-bold">{{ formatPercent(displayedMasteryScore) }}</div>
               </div>
               <div>
-                <div class="text-caption text-medium-emphasis">Evidence status</div>
+                <div class="text-caption text-medium-emphasis">Readiness</div>
                 <div class="text-h6 font-weight-bold">
-                  {{ mastery.evidence_sufficient ? 'Sufficient' : 'Building' }}
+                  {{ overview?.readiness_available ? 'Available' : 'Locked' }}
                 </div>
               </div>
             </div>
+          </v-card>
+
+          <v-card class="glass-card pa-5 mb-4" variant="flat">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+              <div>
+                <h3 class="text-subtitle-1 font-weight-bold mb-0">Current-stage evidence</h3>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                  Progress is based on recent practice evidence, not XP alone.
+                </p>
+              </div>
+              <v-chip :color="currentStageEvidence.mastered ? 'success' : 'warning'" size="small" variant="tonal">
+                {{ currentStageEvidence.mastered ? 'Stage mastered' : 'Still building' }}
+              </v-chip>
+            </div>
+
+            <div class="evidence-list">
+              <div v-for="metric in evidenceMetrics" :key="metric.label" class="evidence-row">
+                <v-icon :color="metric.met ? 'success' : 'warning'" :icon="metric.met ? 'mdi-check-circle' : 'mdi-clock-outline'" />
+                <div>
+                  <div class="font-weight-bold">{{ metric.label }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ metric.value }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="weakestSubskills.length" class="mt-4">
+              <div class="text-caption text-medium-emphasis mb-2">Weakest subskills</div>
+              <div class="d-flex flex-wrap gap-2">
+                <v-chip v-for="item in weakestSubskills" :key="item.name" color="warning" size="small" variant="tonal">
+                  {{ labelize(item.name) }}: {{ formatPercent(item.score) }}
+                </v-chip>
+              </div>
+            </div>
+
+            <v-alert v-if="currentBlockingReasonTexts.length" type="warning" variant="tonal" density="comfortable" class="mt-4">
+              <div class="font-weight-bold mb-1">To unlock the next step</div>
+              <ul class="reason-list">
+                <li v-for="reason in currentBlockingReasonTexts" :key="reason">{{ reason }}</li>
+              </ul>
+            </v-alert>
+            <v-alert v-else type="success" variant="tonal" density="comfortable" class="mt-4">
+              This stage has enough evidence for progression.
+            </v-alert>
           </v-card>
 
           <v-card class="glass-card pa-5" variant="flat">
@@ -89,8 +142,12 @@
                     class="stage-pill"
                     :class="`stage-pill--${stageStatus(stage)}`"
                   >
-                    <span>{{ stage.internal_stage }}</span>
-                    <small>{{ labelize(stageStatus(stage)) }}</small>
+                    <div class="stage-pill__top">
+                      <span>{{ stage.internal_stage }}</span>
+                      <v-icon :icon="stageIcon(stage)" :color="statusColor(stageStatus(stage))" size="18" />
+                    </div>
+                    <small>{{ stageStatusLabel(stage) }}</small>
+                    <p v-if="stageReason(stage)" class="stage-pill__reason">{{ stageReason(stage) }}</p>
                   </div>
                 </div>
               </div>
@@ -99,6 +156,44 @@
         </div>
 
         <aside class="reading-side">
+          <v-card class="glass-card pa-5 mb-4" variant="flat">
+            <div class="d-flex align-center justify-space-between gap-2 mb-3">
+              <h3 class="text-subtitle-1 font-weight-bold mb-0">Readiness test</h3>
+              <v-chip :color="readinessColor" size="small" variant="tonal">{{ readinessStatusLabel }}</v-chip>
+            </div>
+            <div class="readiness-detail">
+              <div>
+                <span class="text-caption text-medium-emphasis">Target</span>
+                <strong>{{ readinessTargetText }}</strong>
+              </div>
+              <div>
+                <span class="text-caption text-medium-emphasis">Status</span>
+                <strong>{{ readinessDetailText }}</strong>
+              </div>
+            </div>
+            <v-alert
+              v-if="!overview?.readiness_available"
+              type="info"
+              variant="tonal"
+              density="comfortable"
+              class="mt-3"
+            >
+              {{ readinessBlockedText }}
+            </v-alert>
+            <div v-if="retakeStatus?.blocked" class="retake-meter mt-3">
+              <div class="d-flex justify-space-between text-caption text-medium-emphasis mb-1">
+                <span>Advanced practices before retake</span>
+                <span>{{ retakeStatus.completed_additional_practice || 0 }} / {{ retakeStatus.required_additional_practice || 3 }}</span>
+              </div>
+              <v-progress-linear
+                color="warning"
+                height="8"
+                rounded
+                :model-value="retakeProgress"
+              />
+            </div>
+          </v-card>
+
           <v-card class="glass-card pa-5 mb-4" variant="flat">
             <h3 class="text-subtitle-1 font-weight-bold mb-3">Recent history</h3>
             <div v-if="historyItems.length" class="history-list">
@@ -287,7 +382,17 @@ import {
 } from '../../../api/language.js'
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+const INTERNAL_STAGES = ['Beginner', 'Intermediate', 'Advanced']
 const SECRET_FIELDS = ['answer_key', 'accepted_answers', 'required_key_terms']
+const STAGE_REQUIREMENTS = {
+  attempts: 5,
+  uniqueActivities: 4,
+  questions: 12,
+  questionTypes: 3,
+  recentAverage: 80,
+  recentAttemptMinimum: 70,
+  coreSubskill: 70,
+}
 
 const loading = ref(true)
 const loadError = ref('')
@@ -307,8 +412,100 @@ const cefrLevels = CEFR_LEVELS
 const pathStages = computed(() => path.value?.stages || [])
 const historyItems = computed(() => history.value?.attempts || [])
 const mastery = computed(() => overview.value?.recent_mastery || {})
-const readinessAvailable = computed(() =>
-  overview.value?.next_action === 'readiness' || !!overview.value?.readiness_target_level,
+const currentStageEvidence = computed(() => mastery.value?.current_stage_evidence || {})
+const readinessGate = computed(() => mastery.value?.readiness || {})
+const retakeStatus = computed(() => readinessGate.value?.retake || null)
+const readinessAvailable = computed(() => overview.value?.readiness_available === true)
+const displayedMasteryScore = computed(() =>
+  currentStageEvidence.value?.recent_average_score ?? mastery.value?.mastery_score ?? 0,
+)
+const readinessTargetLevel = computed(() =>
+  overview.value?.readiness_target_level || readinessGate.value?.target_level || nextCefr(overview.value?.current_cefr),
+)
+const readinessTargetText = computed(() =>
+  readinessTargetLevel.value ? `${readinessTargetLevel.value} readiness` : 'No next level',
+)
+const readinessColor = computed(() => {
+  if (overview.value?.status === 'mastered') return 'success'
+  return readinessAvailable.value ? 'warning' : 'grey'
+})
+const readinessStatusLabel = computed(() => {
+  if (overview.value?.status === 'mastered') return 'Mastered'
+  return readinessAvailable.value ? 'Available' : 'Locked'
+})
+const readinessBlockedText = computed(() => {
+  if (readinessAvailable.value) return 'Readiness is available now.'
+  return friendlyReason(overview.value?.readiness_blocked_reason || readinessGate.value?.blocked_reason, {
+    targetLevel: readinessTargetLevel.value,
+    retake: retakeStatus.value,
+  })
+})
+const readinessInlineText = computed(() => {
+  if (readinessAvailable.value) return `${readinessTargetText.value} is ready.`
+  return readinessBlockedText.value
+})
+const readinessDetailText = computed(() => {
+  if (readinessAvailable.value) return 'Unlocked after Advanced mastery'
+  return readinessBlockedText.value
+})
+const retakeProgress = computed(() => {
+  const required = Number(retakeStatus.value?.required_additional_practice || 0)
+  if (!required) return 0
+  return Math.min(100, Math.round((Number(retakeStatus.value?.completed_additional_practice || 0) / required) * 100))
+})
+const evidenceMetrics = computed(() => {
+  const evidence = currentStageEvidence.value
+  const questionTypes = evidence.question_types_represented || []
+  const recentLowest = Number(evidence.recent_lowest_score || 0)
+  const hasRecentWindow = (evidence.recent_attempt_ids || []).length >= 5
+  return [
+    {
+      label: 'Practice attempts',
+      value: `${Number(evidence.attempts_submitted || 0)} / ${STAGE_REQUIREMENTS.attempts}`,
+      met: evidence.requirements?.min_5_submitted_practice_attempts === true,
+    },
+    {
+      label: 'Unique activities',
+      value: `${Number(evidence.unique_generated_activities || 0)} / ${STAGE_REQUIREMENTS.uniqueActivities}`,
+      met: evidence.requirements?.min_4_unique_generated_activities === true,
+    },
+    {
+      label: 'Answered questions',
+      value: `${Number(evidence.total_answered_questions || 0)} / ${STAGE_REQUIREMENTS.questions}`,
+      met: evidence.requirements?.min_12_answered_questions === true,
+    },
+    {
+      label: 'Question types',
+      value: `${questionTypes.length} / ${STAGE_REQUIREMENTS.questionTypes}${questionTypes.length ? ` (${questionTypes.map(questionTypeLabel).join(', ')})` : ''}`,
+      met: evidence.requirements?.min_3_question_types === true,
+    },
+    {
+      label: 'Recent 5-attempt average',
+      value: `${formatPercent(evidence.recent_average_score)} needed: ${STAGE_REQUIREMENTS.recentAverage}%`,
+      met: evidence.requirements?.recent_5_average_at_least_80 === true,
+    },
+    {
+      label: 'Recent low score check',
+      value: hasRecentWindow
+        ? recentLowest < STAGE_REQUIREMENTS.recentAttemptMinimum
+          ? `One recent attempt is below ${STAGE_REQUIREMENTS.recentAttemptMinimum}%`
+          : `No recent attempt below ${STAGE_REQUIREMENTS.recentAttemptMinimum}%`
+        : 'Needs 5 recent attempts',
+      met: evidence.requirements?.no_recent_attempt_below_70 === true,
+    },
+  ]
+})
+const weakestSubskills = computed(() => {
+  const scores = currentStageEvidence.value?.core_subskill_scores || {}
+  return Object.entries(scores)
+    .map(([name, score]) => ({ name, score: Number(score || 0) }))
+    .filter((item) => item.score < STAGE_REQUIREMENTS.coreSubskill)
+    .sort((a, b) => a.score - b.score)
+})
+const currentBlockingReasonTexts = computed(() =>
+  (currentStageEvidence.value?.blocking_reasons || []).map((reason) =>
+    friendlyReason(reason, { weakestSubskill: weakestSubskills.value[0]?.name }),
+  ),
 )
 const safeActivity = computed(() => stripSecrets(attempt.value?.activity || {}))
 const questions = computed(() => (safeActivity.value?.questions || []).map(stripSecrets))
@@ -317,8 +514,8 @@ const canSubmit = computed(() => questions.value.length > 0 && questions.value.e
 
 const summaryChips = computed(() => {
   const chips = []
-  const subskills = mastery.value?.subskills || {}
-  const questionTypes = mastery.value?.question_types || {}
+  const subskills = currentStageEvidence.value?.subskills || {}
+  const questionTypes = currentStageEvidence.value?.question_types || {}
   for (const [key, value] of Object.entries(subskills).slice(0, 4)) {
     chips.push({ label: labelize(key), value: `${value.score_percent ?? 0}%`, color: 'primary' })
   }
@@ -459,6 +656,43 @@ function stageStatus(stage) {
   return stage.status || 'locked'
 }
 
+function stageStatusLabel(stage) {
+  const map = {
+    locked: 'Locked',
+    unlocked: 'Unlocked',
+    current: 'Current',
+    completed: 'Completed',
+    mastered: 'Mastered',
+  }
+  return map[stageStatus(stage)] || labelize(stageStatus(stage))
+}
+
+function stageIcon(stage) {
+  const map = {
+    locked: 'mdi-lock-outline',
+    unlocked: 'mdi-lock-open-variant-outline',
+    current: 'mdi-map-marker-circle',
+    completed: 'mdi-check-circle-outline',
+    mastered: 'mdi-check-circle',
+  }
+  return map[stageStatus(stage)] || 'mdi-circle-outline'
+}
+
+function stageReason(stage) {
+  const status = stageStatus(stage)
+  if (status === 'mastered' || status === 'completed') return 'Evidence complete.'
+  if (status === 'unlocked') return 'Ready when you reach this step.'
+  const reason = stage.recent_mastery?.locked_reason
+  if (status === 'current') {
+    const firstBlocker = currentStageEvidence.value?.blocking_reasons?.[0]
+    return firstBlocker ? friendlyReason(firstBlocker, { weakestSubskill: weakestSubskills.value[0]?.name }) : ''
+  }
+  if (stage.cefr_level !== overview.value?.current_cefr && stage.rank > currentRank.value) {
+    return 'Pass the readiness test to unlock this level.'
+  }
+  return friendlyReason(reason || 'previous_stage_not_mastered')
+}
+
 function statusColor(status) {
   const map = {
     active: 'success',
@@ -471,16 +705,63 @@ function statusColor(status) {
   return map[status] || 'grey'
 }
 
+const currentRank = computed(() => stageRank(overview.value?.current_cefr || 'A1', overview.value?.current_stage || 'Beginner'))
+
+function stageRank(cefr, stage) {
+  return CEFR_LEVELS.indexOf(cefr) * INTERNAL_STAGES.length + INTERNAL_STAGES.indexOf(stage)
+}
+
+function nextCefr(cefr) {
+  const index = CEFR_LEVELS.indexOf(cefr)
+  return index >= 0 && index + 1 < CEFR_LEVELS.length ? CEFR_LEVELS[index + 1] : null
+}
+
 function scoreColor(score) {
   if (score >= 80) return 'success'
   if (score >= 60) return 'warning'
   return 'error'
 }
 
+function formatPercent(value) {
+  const number = Number(value || 0)
+  return `${Number.isInteger(number) ? number : number.toFixed(1)}%`
+}
+
 function labelize(value) {
   return String(value || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function friendlyReason(reason, context = {}) {
+  const weakSubskill = context.weakestSubskill ? `: ${labelize(context.weakestSubskill)}` : ''
+  const retake = context.retake || {}
+  const target = context.targetLevel ? `${context.targetLevel} readiness` : 'the readiness test'
+  const remaining = Number(retake.remaining_additional_practice || 0)
+  const map = {
+    min_5_submitted_practice_attempts: 'Complete more practice attempts.',
+    min_4_unique_generated_activities: 'Practice with more unique reading activities.',
+    min_12_answered_questions: 'Answer more reading questions.',
+    min_3_question_types: 'Try more question types.',
+    recent_5_average_at_least_80: 'Improve your recent 5-attempt average to 80%.',
+    no_recent_attempt_below_70: 'Keep every recent attempt at 70% or higher.',
+    each_core_subskill_at_least_70: `Strengthen weak subskill${weakSubskill}.`,
+    no_core_subskill_two_recent_failures_below_60: 'Avoid repeated low scores in core subskills.',
+    previous_stage_not_mastered: 'Complete the previous stage first.',
+    advanced_stage_not_mastered: `Master Advanced before ${target} unlocks.`,
+    current_stage_is_not_advanced: 'Reach Advanced before taking readiness.',
+    readiness_retake_requires_more_practice:
+      remaining > 0
+        ? `Complete ${remaining} more Advanced practice ${remaining === 1 ? 'attempt' : 'attempts'} before retaking readiness.`
+        : 'Complete more Advanced practice before retaking readiness.',
+    reading_v2_mastered: 'Reading V2 is mastered.',
+    overall_score_at_least_80: 'Score 80% or higher on readiness.',
+    mvp_equivalent_evidence: 'Complete enough readiness evidence.',
+    all_mvp_question_types_represented: 'Complete all required question types.',
+    each_tested_core_subskill_at_least_70: 'Score at least 70% in each tested core subskill.',
+    no_question_type_below_60: 'Keep every question type score at 60% or higher.',
+  }
+  return map[reason] || 'Keep practicing to unlock this step.'
 }
 
 function questionTypeLabel(type) {
@@ -531,8 +812,52 @@ function formatDate(iso) {
 
 .mastery-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.readiness-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.875rem;
+}
+
+.evidence-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.evidence-row {
+  min-height: 72px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(var(--v-theme-surface), 0.42);
+}
+
+.reason-list {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.readiness-detail {
+  display: grid;
+  gap: 10px;
+}
+
+.readiness-detail > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  padding-bottom: 8px;
 }
 
 .path-map {
@@ -559,15 +884,22 @@ function formatDate(iso) {
 }
 
 .stage-pill {
-  min-height: 64px;
+  min-height: 96px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 8px;
   padding: 10px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  justify-content: flex-start;
+  gap: 4px;
   background: rgba(var(--v-theme-surface), 0.52);
+}
+
+.stage-pill__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .stage-pill span {
@@ -577,6 +909,13 @@ function formatDate(iso) {
 
 .stage-pill small {
   color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.stage-pill__reason {
+  margin: 2px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 
 .stage-pill--current {
@@ -662,6 +1001,7 @@ function formatDate(iso) {
 
 @media (max-width: 640px) {
   .mastery-grid,
+  .evidence-list,
   .path-row__stages {
     grid-template-columns: 1fr;
   }
