@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 CEFRLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -28,9 +28,10 @@ class GenerationBlueprint(BaseModel):
     topic: str
     difficulty_score: float = Field(ge=0.0, le=100.0)
     inference_depth: str
+    question_count: int | None = Field(default=None, ge=1, le=20)
     number_of_questions: int = Field(ge=1, le=20)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
-    prompt_version: str = "reading_v2_r7_topic_diversity"
+    prompt_version: str = "reading_v2_r8_adaptive_question_counts"
     known_vocab_items: list[str] = Field(default_factory=list)
     weak_vocab_items: list[str] = Field(default_factory=list)
     grammar_mastery_profile: dict[str, float] = Field(default_factory=dict)
@@ -46,6 +47,12 @@ class GenerationBlueprint(BaseModel):
     under_sampled_subskills: list[str] = Field(default_factory=list)
     weak_subskills: list[str] = Field(default_factory=list)
     subskill_targeting_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _sync_question_count(self) -> "GenerationBlueprint":
+        if self.question_count is None:
+            self.question_count = self.number_of_questions
+        return self
 
 
 class GeneratedChoice(BaseModel):

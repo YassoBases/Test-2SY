@@ -299,6 +299,117 @@ def test_generated_activity_validation_passes_for_valid_mock_activity():
     assert result.issues == []
 
 
+@pytest.mark.parametrize(
+    ("cefr", "stage", "expected_count"),
+    [
+        ("A1", "Beginner", 4),
+        ("A1", "Intermediate", 4),
+        ("A1", "Advanced", 5),
+        ("A2", "Intermediate", 5),
+        ("B1", "Intermediate", 6),
+        ("B2", "Advanced", 7),
+        ("C2", "Advanced", 8),
+    ],
+)
+def test_practice_question_count_policy_by_level_and_stage(cefr, stage, expected_count):
+    assert reading_service.get_practice_question_count(cefr, stage) == expected_count
+
+
+@pytest.mark.parametrize(
+    ("cefr", "stage", "expected_count"),
+    [
+        (LanguageLevel.A1, "Beginner", 4),
+        (LanguageLevel.A1, "Intermediate", 4),
+        (LanguageLevel.A1, "Advanced", 5),
+        (LanguageLevel.A2, "Intermediate", 5),
+        (LanguageLevel.B1, "Intermediate", 6),
+        (LanguageLevel.B2, "Advanced", 7),
+        (LanguageLevel.C2, "Advanced", 8),
+    ],
+)
+async def test_generation_blueprint_uses_adaptive_practice_question_count(postgres_session, cefr, stage, expected_count):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _move_to_stage(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr=cefr,
+        stage=stage,
+    )
+
+    blueprint = await build_generation_blueprint(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+
+    assert blueprint.mode == "practice"
+    assert blueprint.cefr_level == cefr.value
+    assert blueprint.internal_stage == stage
+    assert blueprint.question_count == expected_count
+    assert blueprint.number_of_questions == expected_count
+    assert len(blueprint.question_types) == expected_count
+    assert set(reading_service.REQUIRED_PRACTICE_QUESTION_TYPES).issubset(set(blueprint.question_types))
+    assert set(blueprint.question_types).issubset(set(reading_service.QUESTION_TYPES))
+
+
+def test_practice_question_type_policy_preserves_required_mvp_types_for_extra_questions():
+    question_types = reading_service.question_types_for_count(8, mode="practice")
+
+    assert len(question_types) == 8
+    assert set(reading_service.REQUIRED_PRACTICE_QUESTION_TYPES).issubset(set(question_types))
+    assert set(question_types).issubset(set(reading_service.QUESTION_TYPES))
+
+
+def test_extra_subskill_priority_keeps_lower_levels_direct():
+    blueprint = _blueprint(
+        cefr_level="A2",
+        internal_stage="Intermediate",
+        reading_subskills=["skim_gist", "scan_detail", "literal_comprehension", "infer_meaning"],
+        target_subskills=[],
+    )
+
+    assert reading_service._prioritized_subskills_for_questions(blueprint)[:3] == [
+        "scan_detail",
+        "literal_comprehension",
+        "skim_gist",
+    ]
+
+
+def test_extra_subskill_priority_targets_higher_level_subskills():
+    blueprint = _blueprint(
+        cefr_level="C1",
+        internal_stage="Advanced",
+        reading_subskills=["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+        target_subskills=[],
+    )
+
+    assert reading_service._prioritized_subskills_for_questions(blueprint)[:3] == [
+        "infer_meaning",
+        "author_purpose",
+        "vocab_in_context",
+    ]
+
+
+def test_target_subskills_still_take_priority_over_extra_distribution():
+    blueprint = _blueprint(
+        cefr_level="C1",
+        internal_stage="Advanced",
+        reading_subskills=["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+        target_subskills=["scan_detail"],
+    )
+
+    assert reading_service._prioritized_subskills_for_questions(blueprint)[0] == "scan_detail"
+
+
+def test_readiness_question_count_policy_preserves_comprehensive_coverage():
+    assert reading_service.get_readiness_question_count("B1") == 12
+    question_types = reading_service.question_types_for_count(12, mode="readiness")
+
+    assert len(question_types) == 12
+    assert set(reading_service.QUESTION_TYPES).issubset(set(question_types))
+
+
 def test_validation_rejects_malformed_activity():
     result = validate_generated_activity({"passage": ""}, _blueprint())
 
@@ -315,6 +426,49 @@ def test_validation_rejects_unsupported_question_type():
 
     assert result.valid is False
     assert any(issue.code == "unsupported_question_type" for issue in result.issues)
+
+
+def test_validator_rejects_wrong_question_counts():
+    blueprint = _blueprint(
+        question_count=5,
+        number_of_questions=5,
+        question_types=reading_service.question_types_for_count(5, mode="practice"),
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["questions"] = activity["questions"][:-1]
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert any(issue.code == "question_count_mismatch" for issue in result.issues)
+
+
+def test_validator_rejects_missing_required_practice_question_types():
+    blueprint = _blueprint(
+        question_types=["mcq", "mcq", "true_false", "short_answer"],
+        number_of_questions=4,
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert any(issue.code == "missing_required_question_types" for issue in result.issues)
+
+
+def test_validator_rejects_missing_target_subskills():
+    blueprint = _blueprint(
+        target_subskills=["infer_meaning"],
+        reading_subskills=["skim_gist", "scan_detail", "infer_meaning", "literal_comprehension"],
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    for question in activity["questions"]:
+        question["subskill"] = "scan_detail"
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert any(issue.code == "target_subskills_missing" for issue in result.issues)
 
 
 def test_validation_rejects_missing_answer_keys():
@@ -406,6 +560,70 @@ def test_deterministic_scoring_works_for_mvp_question_types():
     assert results[0].expected_answer == "Mira learns helpful ways to read more confidently."
     assert results[2].expected_answer == "margin"
     assert results[3].explanation
+
+
+def test_generated_practice_with_extra_questions_uses_supported_types_and_scores():
+    blueprint = _blueprint(
+        cefr_level="B2",
+        internal_stage="Advanced",
+        question_count=7,
+        number_of_questions=7,
+        question_types=reading_service.question_types_for_count(7, mode="practice"),
+        reading_subskills=["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+
+    result = validate_generated_activity(activity, blueprint)
+    answers = _answers_for_activity(activity)
+    score, question_results = score_generated_activity(activity, answers)
+    question_type_summary = reading_service._aggregate_results(question_results, "question_type")
+
+    assert result.valid is True
+    assert len(activity["questions"]) == 7
+    assert set(reading_service.REQUIRED_PRACTICE_QUESTION_TYPES).issubset(
+        {question["type"] for question in activity["questions"]}
+    )
+    assert {question["type"] for question in activity["questions"]}.issubset(set(reading_service.QUESTION_TYPES))
+    assert score == 100.0
+    assert len(question_results) == 7
+    assert question_type_summary["mcq"]["total"] > 1
+    assert question_type_summary["short_answer"]["total"] > 1
+
+
+def test_answer_key_stripping_works_with_adaptive_question_counts():
+    blueprint = _blueprint(
+        cefr_level="C2",
+        internal_stage="Advanced",
+        question_count=8,
+        number_of_questions=8,
+        question_types=reading_service.question_types_for_count(8, mode="practice"),
+        reading_subskills=["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+
+    stripped = reading_service.strip_answer_keys(activity)
+
+    assert len(stripped["questions"]) == 8
+    assert "answer_key" not in str(stripped)
+    assert "accepted_answers" not in str(stripped)
+    assert "required_key_terms" not in str(stripped)
+
+
+def test_missing_answers_are_scored_incorrect_with_adaptive_question_counts():
+    blueprint = _blueprint(
+        question_count=5,
+        number_of_questions=5,
+        question_types=reading_service.question_types_for_count(5, mode="practice"),
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    answers = _answers_for_activity(activity)
+    answers.pop("q5")
+
+    score, question_results = score_generated_activity(activity, answers)
+
+    assert len(question_results) == 5
+    assert question_results[-1].correct is False
+    assert score < 100.0
 
 
 def test_short_answer_scoring_accepts_meaningful_phrase_variants():

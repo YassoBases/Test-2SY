@@ -41,7 +41,17 @@ from app.services.ai_service import generate_llm_json
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
-PROMPT_VERSION = "reading_v2_r7_topic_diversity"
+REQUIRED_PRACTICE_QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
+PRACTICE_QUESTION_COUNT_POLICY = {
+    "A1": {"Beginner": 4, "Intermediate": 4, "Advanced": 5},
+    "A2": {"Beginner": 4, "Intermediate": 5, "Advanced": 5},
+    "B1": {"Beginner": 5, "Intermediate": 6, "Advanced": 6},
+    "B2": {"Beginner": 6, "Intermediate": 6, "Advanced": 7},
+    "C1": {"Beginner": 6, "Intermediate": 7, "Advanced": 7},
+    "C2": {"Beginner": 7, "Intermediate": 8, "Advanced": 8},
+}
+READINESS_QUESTION_COUNT = 12
+PROMPT_VERSION = "reading_v2_r8_adaptive_question_counts"
 VALIDATOR_VERSION = "reading_v2_validator_r1"
 MODEL_USED = "local_mock"
 MIN_STAGE_EVIDENCE_ATTEMPTS = 6
@@ -142,6 +152,15 @@ _SUBSKILLS_BY_STAGE = {
     "Beginner": ["skim_gist", "scan_detail", "literal_comprehension"],
     "Intermediate": ["skim_gist", "scan_detail", "vocab_in_context", "infer_meaning"],
     "Advanced": ["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+}
+
+_EXTRA_SUBSKILL_PRIORITY_BY_LEVEL = {
+    "A1": ["scan_detail", "literal_comprehension", "skim_gist"],
+    "A2": ["scan_detail", "literal_comprehension", "skim_gist"],
+    "B1": ["infer_meaning", "vocab_in_context", "skim_gist", "scan_detail"],
+    "B2": ["infer_meaning", "vocab_in_context", "skim_gist", "scan_detail"],
+    "C1": ["infer_meaning", "author_purpose", "vocab_in_context", "scan_detail"],
+    "C2": ["infer_meaning", "author_purpose", "vocab_in_context", "scan_detail"],
 }
 
 _GRAMMAR_BY_LEVEL = {
@@ -477,9 +496,36 @@ def _target_subskills_from_evidence(evidence: dict[str, Any]) -> tuple[list[str]
 
 
 def _prioritized_subskills_for_questions(blueprint: GenerationBlueprint) -> list[str]:
-    return _dedupe_keep_order([*blueprint.target_subskills, *blueprint.reading_subskills], limit=12) or list(
+    cefr = _enum_value(blueprint.cefr_level) or "A1"
+    preferred = [
+        subskill
+        for subskill in _EXTRA_SUBSKILL_PRIORITY_BY_LEVEL.get(cefr, [])
+        if subskill in blueprint.reading_subskills
+    ]
+    return _dedupe_keep_order([*blueprint.target_subskills, *preferred, *blueprint.reading_subskills], limit=12) or list(
         blueprint.reading_subskills
     )
+
+
+def get_practice_question_count(cefr_level: str | LanguageLevel, stage: str) -> int:
+    cefr = _enum_value(cefr_level) or "A1"
+    return PRACTICE_QUESTION_COUNT_POLICY.get(cefr, PRACTICE_QUESTION_COUNT_POLICY["A1"]).get(stage, 4)
+
+
+def get_readiness_question_count(target_cefr: str | LanguageLevel | None = None) -> int:
+    return READINESS_QUESTION_COUNT
+
+
+def question_types_for_count(question_count: int, *, mode: ReadingV2Mode = "practice") -> list[str]:
+    if mode == "practice":
+        base = list(REQUIRED_PRACTICE_QUESTION_TYPES)
+    else:
+        base = list(QUESTION_TYPES)
+    if question_count <= len(base):
+        return base[:question_count]
+    extra_cycle = ["mcq", "short_answer", "true_false", "gap_fill"]
+    extras_needed = question_count - len(base)
+    return base + [extra_cycle[index % len(extra_cycle)] for index in range(extras_needed)]
 
 
 async def build_generation_blueprint(
@@ -490,9 +536,13 @@ async def build_generation_blueprint(
     cefr = _enum_value(state_row.current_cefr) or "A1"
     stage = state_row.current_stage
     word_min, word_max = _WORD_RANGES[cefr][stage]
-    question_count = 12 if mode == "readiness" else 4
-    question_types = (QUESTION_TYPES * ((question_count // len(QUESTION_TYPES)) + 1))[:question_count]
     target_next = next_cefr_level(cefr) if mode == "readiness" else None
+    question_count = (
+        get_readiness_question_count(target_next)
+        if mode == "readiness"
+        else get_practice_question_count(cefr, stage)
+    )
+    question_types = question_types_for_count(question_count, mode=mode)
     topic = "everyday learning habits" if mode == "practice" else f"{target_next or cefr} readiness"
     recent_context = await _recent_generation_context(
         db,
@@ -532,6 +582,7 @@ async def build_generation_blueprint(
         topic=topic,
         difficulty_score=min(100.0, 8.0 + stage_rank(cefr, stage) * 5.0 + (8.0 if mode == "readiness" else 0.0)),
         inference_depth={"Beginner": "direct", "Intermediate": "mixed", "Advanced": "indirect"}[stage],
+        question_count=question_count,
         number_of_questions=question_count,
         safety_topic_restrictions=sorted(_SENSITIVE_TERMS),
         prompt_version=PROMPT_VERSION,
@@ -825,8 +876,38 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
         issues.append(ValidationIssue(code="grammar_tags_not_targeted", message="Activity grammar tags do not match blueprint"))
     if not set(blueprint.target_vocab_tags).intersection(parsed.vocab_tags):
         issues.append(ValidationIssue(code="vocab_tags_not_targeted", message="Activity vocabulary tags do not match blueprint"))
-    if len(parsed.questions) != blueprint.number_of_questions:
+    expected_question_count = blueprint.question_count or blueprint.number_of_questions
+    if len(parsed.questions) != expected_question_count:
         issues.append(ValidationIssue(code="question_count_mismatch", message="Activity question count does not match blueprint"))
+    generated_question_types = [question.type for question in parsed.questions]
+    if blueprint.mode == "practice":
+        missing_types = [q_type for q_type in REQUIRED_PRACTICE_QUESTION_TYPES if q_type not in generated_question_types]
+        if missing_types:
+            issues.append(
+                ValidationIssue(
+                    code="missing_required_question_types",
+                    message=f"Practice activity is missing required question types: {', '.join(missing_types)}",
+                )
+            )
+    if blueprint.target_subskills:
+        generated_subskills = {question.subskill for question in parsed.questions}
+        target_subskills = [
+            subskill
+            for subskill in blueprint.target_subskills
+            if not blueprint.reading_subskills or subskill in blueprint.reading_subskills
+        ]
+        missing_targets = [
+            subskill
+            for subskill in target_subskills[: len(parsed.questions)]
+            if subskill not in generated_subskills
+        ]
+        if missing_targets:
+            issues.append(
+                ValidationIssue(
+                    code="target_subskills_missing",
+                    message=f"Target subskills are not represented: {', '.join(missing_targets)}",
+                )
+            )
     if _contains_sensitive_topic(parsed):
         issues.append(ValidationIssue(code="unsafe_topic", message="Activity contains a restricted topic"))
     warnings.extend(_diversity_warnings(parsed, blueprint))
@@ -997,6 +1078,7 @@ Must include these control fields from the blueprint:
 - student_interest or topic
 - difficulty_score
 - inference_depth
+- question_count
 - number_of_questions
 - safety_topic_restrictions
 - recent_titles / recent_topics / recent_topic_tags / recent_passage_summaries / recent_character_names / recent_question_stems
@@ -1021,7 +1103,13 @@ Hard requirements:
 - If target_subskills is not empty, include questions for those subskills early in the activity while keeping the exact requested question type order.
 - Under-sampled subskills need more evidence, not harder questions. For Skim Gist at A1 Beginner, use direct main-idea prompts such as "What is the passage mainly about?", "What is the best title?", or "What is the main idea?"
 - Weak subskills need focused practice at the same CEFR/stage difficulty, not above-level text.
-- Create exactly {blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
+- Create exactly {blueprint.question_count or blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
+- Normal practice must include at least one MCQ, one Gap Fill, one True/False, and one Short Answer.
+- Extra questions must still use only these supported formats: mcq, gap_fill, true_false, short_answer.
+- For A1/A2 extra questions, prefer Scan Detail, Literal Comprehension, and simple Skim Gist subskills.
+- For B1/B2 extra questions, prefer Inference, Vocabulary in Context, and Main Idea subskills.
+- For C1/C2 extra questions, prefer Inference, Author Purpose, Tone, Argument/Structure, and Vocabulary in Context subskills when those skills are present in reading_subskills.
+- Extra questions add more evidence; they must not raise the CEFR/stage difficulty.
 - MCQ questions need at least three plausible choices and answer_key.correct_choice_id.
 - True/False questions need answer_key.correct as a boolean.
 - Gap Fill questions need deterministic answer_key.accepted_answers and sentence_with_blank with exactly one visible ____ marker.
