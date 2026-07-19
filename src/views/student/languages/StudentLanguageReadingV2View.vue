@@ -244,8 +244,8 @@
         <v-card class="glass-card pa-6 reading-v2-text" variant="flat">
           <h3 class="text-subtitle-1 font-weight-bold mb-4">Questions</h3>
           <div v-for="(question, index) in questions" :key="question.id" class="question-block">
-            <div class="d-flex align-start gap-3 mb-3">
-              <v-avatar color="secondary" variant="tonal" size="30">{{ index + 1 }}</v-avatar>
+            <div class="question-heading mb-3">
+              <v-avatar class="question-number-badge" color="secondary" variant="tonal" size="30">{{ index + 1 }}</v-avatar>
               <div>
                 <div class="font-weight-bold question-stem">{{ displayQuestionStem(question) }}</div>
                 <div class="text-caption text-medium-emphasis">{{ questionTypeLabel(question.type) }} · {{ labelize(question.subskill) }}</div>
@@ -269,13 +269,26 @@
             <v-btn-toggle
               v-else-if="question.type === 'true_false'"
               v-model="answers[question.id]"
+              class="reading-true-false-toggle"
               color="secondary"
               variant="outlined"
               divided
               mandatory
             >
-              <v-btn :value="true">True</v-btn>
-              <v-btn :value="false">False</v-btn>
+              <v-btn
+                class="reading-true-false-choice"
+                :class="{ 'reading-true-false-choice--selected': answers[question.id] === true }"
+                :value="true"
+              >
+                True
+              </v-btn>
+              <v-btn
+                class="reading-true-false-choice"
+                :class="{ 'reading-true-false-choice--selected': answers[question.id] === false }"
+                :value="false"
+              >
+                False
+              </v-btn>
             </v-btn-toggle>
 
             <div
@@ -1107,6 +1120,18 @@ function historyDateLabel(item) {
   text-align: left;
 }
 
+.question-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  direction: ltr;
+  text-align: left;
+}
+
+.question-number-badge {
+  flex: 0 0 auto;
+}
+
 .gap-fill-prompt {
   margin: -4px 0 12px 42px;
   color: rgba(var(--v-theme-on-surface), 0.76);
@@ -1166,6 +1191,41 @@ function historyDateLabel(item) {
 .reading-answer-field :deep(input) {
   direction: ltr;
   text-align: left;
+}
+
+.reading-true-false-toggle :deep(.v-btn) {
+  color: rgb(var(--v-theme-secondary));
+}
+
+.reading-true-false-choice--selected {
+  border-color: rgb(var(--v-theme-secondary)) !important;
+  background-color: rgba(var(--v-theme-secondary), 0.16) !important;
+  color: rgb(var(--v-theme-secondary)) !important;
+  box-shadow:
+    inset 0 0 0 999px rgba(var(--v-theme-secondary), 0.16),
+    inset 0 0 0 1px rgba(var(--v-theme-secondary), 0.72) !important;
+}
+
+.reading-true-false-choice--selected :deep(.v-btn__overlay) {
+  opacity: 0 !important;
+}
+
+.reading-true-false-toggle :deep(.v-btn.v-btn--active) {
+  border-color: rgb(var(--v-theme-secondary));
+  background-color: rgba(var(--v-theme-secondary), 0.16);
+  color: rgb(var(--v-theme-secondary));
+  box-shadow:
+    inset 0 0 0 999px rgba(var(--v-theme-secondary), 0.16),
+    inset 0 0 0 1px rgba(var(--v-theme-secondary), 0.72);
+}
+
+.reading-true-false-toggle :deep(.v-btn.v-btn--active .v-btn__overlay) {
+  opacity: 0;
+}
+
+.reading-true-false-toggle :deep(.v-btn:focus-visible) {
+  outline: 3px solid rgba(var(--v-theme-secondary), 0.35);
+  outline-offset: 2px;
 }
 
 .result-item {
