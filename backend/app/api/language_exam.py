@@ -106,11 +106,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/student/languages/exam", tags=["Language Exam"])
 
-SECTIONS = ["speaking", "listening", "reading", "grammar_vocab", "writing"]
+SECTIONS = ["speaking", "listening", "reading", "writing"]
 # Sections that work like the audio speaking flow (record -> assess -> next question).
 # "interview" stays in this set (not in SECTIONS) so any already-persisted session that still
 # has "interview" in its own exam_state["sections"] continues to route those turns correctly.
 SPEAKING_LIKE = {"speaking", "interview"}
+# "grammar_vocab" stays in MCQ_SECTIONS/PREPARED_SECTIONS (not SECTIONS) so any already-persisted
+# session that still has "grammar_vocab" in its own exam_state["sections"] continues to route,
+# render, and self-heal content for it correctly. New sessions never gain a "grammar_vocab" key
+# (see initiate_exam) and every PREPARED_SECTIONS loop below is filtered to the session's own
+# "sections" list, so this no longer runs for new sessions.
 MCQ_SECTIONS = {"listening", "reading", "grammar_vocab"}
 PREPARED_SECTIONS = {"listening", "reading", "grammar_vocab", "writing"}
 SPEAKING_TURNS = 3
@@ -669,7 +674,10 @@ async def _mark_content_prep_unavailable(
             return
         state["content_prep_status"] = "content_unavailable"
         state["content_prep_error_code"] = error_code
+        session_sections = state.get("sections") or SECTIONS
         for section in PREPARED_SECTIONS:
+            if section not in session_sections:
+                continue
             if not state.get(section, {}).get("ready"):
                 state.setdefault(section, {})["evidence_status"] = "content_unavailable"
         _bump_state_revision(state)
@@ -698,6 +706,10 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             source_state = copy.deepcopy(sess.exam_state or {})
             source_revision = _state_revision(source_state)
             prep_token = str(source_state.get("content_prep_token") or "")
+            # New sessions no longer carry "grammar_vocab" in their own "sections" list (see
+            # initiate_exam); only an already-persisted session that still lists it needs its
+            # content (re)prepared here.
+            needs_grammar_vocab = "grammar_vocab" in (source_state.get("sections") or SECTIONS)
             student_id = int(sess.student_id)
             if not check("placement_generation", f"{student_id}:{session_id}"):
                 logger.warning(
@@ -727,12 +739,16 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             r_generated_bank = await _generated_pool(
                 db, language_id=language_id, levels=r_missing
             )
-            g_pool = await _question_bank_pool(
-                db,
-                language_id=language_id,
-                skill="grammar_vocab",
-                levels=ALL_CEFR_LEVELS,
-                used_item_ids=_already_used_bank_item_ids(source_state, "grammar_vocab"),
+            g_pool = (
+                await _question_bank_pool(
+                    db,
+                    language_id=language_id,
+                    skill="grammar_vocab",
+                    levels=ALL_CEFR_LEVELS,
+                    used_item_ids=_already_used_bank_item_ids(source_state, "grammar_vocab"),
+                )
+                if needs_grammar_vocab
+                else {}
             )
             l_used_item_ids = _already_used_bank_item_ids(source_state, "listening")
             l_pool = await _question_bank_pool(
@@ -791,7 +807,7 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             for fallback_level, item in fallback_pool.items():
                 r_pool.setdefault(fallback_level, item)
         reading_section = _new_adaptive_section(r_pool, start_level)
-        grammar_vocab_section = _new_adaptive_section(g_pool, start_level)
+        grammar_vocab_section = _new_adaptive_section(g_pool, start_level) if needs_grammar_vocab else None
 
         missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
         try:
@@ -855,9 +871,10 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
         prepared = {
             "reading": reading_section,
             "listening": listening_section,
-            "grammar_vocab": grammar_vocab_section,
             "writing": writing_section,
         }
+        if needs_grammar_vocab:
+            prepared["grammar_vocab"] = grammar_vocab_section
         await _merge_prepared_content(
             session_id=session_id,
             prep_token=prep_token,
@@ -921,9 +938,14 @@ async def _merge_prepared_content(
             _cleanup_exam_audio(prepared)
             return False
 
+        latest_sections = latest.get("sections") or SECTIONS
         latest["content_prep_status"] = (
             "completed"
-            if all(latest.get(section, {}).get("ready") for section in PREPARED_SECTIONS)
+            if all(
+                latest.get(section, {}).get("ready")
+                for section in PREPARED_SECTIONS
+                if section in latest_sections
+            )
             else "content_unavailable"
         )
         latest["content_prepared_from_revision"] = source_revision
@@ -2346,7 +2368,10 @@ def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, backgroun
     state["content_prep_token"] = _new_exam_token()
     state["content_prep_status"] = "preparing"
     state.pop("content_prep_error_code", None)
+    session_sections = state.get("sections") or SECTIONS
     for prepared_section in PREPARED_SECTIONS:
+        if prepared_section not in session_sections:
+            continue
         if not state.get(prepared_section, {}).get("ready"):
             state.setdefault(prepared_section, {})["evidence_status"] = "retry_required"
     sess.exam_state = state
@@ -2477,12 +2502,15 @@ async def initiate_exam(
         # Filled in by the background _prepare_content task (until then: not ready).
         "listening": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
         "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
-        "grammar_vocab": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
         "writing": {"prompt": "", "prompt_token": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False, "evidence_status": "retry_required"},
         # No "interview" section for new sessions (product decision: guided interview removed).
         # _ensure_interview_ready/_provisional_from_phase1/interview_opening stay in place as
         # dormant compatibility code for any already-persisted session whose own "sections" list
         # still includes "interview".
+        # No "grammar_vocab" section for new sessions either (product decision: dropped from the
+        # active exam). _prepare_content/_maybe_retrigger_prep/_merge_prepared_content stay
+        # gated on the session's own "sections" list so any already-persisted session that still
+        # includes "grammar_vocab" keeps generating and scoring it exactly as before.
         "request_receipts": [],
     }
     sess = LanguageExamSession(

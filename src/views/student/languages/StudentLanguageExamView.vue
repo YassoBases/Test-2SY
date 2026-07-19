@@ -4,7 +4,7 @@
       eyebrow="Learn languages"
       eyebrow-icon="mdi-clipboard-text-clock"
       title="AI Placement Exam"
-      subtitle="Speaking, listening, reading, grammar/vocab and writing — then a full level report"
+      subtitle="Speaking, listening, reading and writing — then a full level report"
     />
     <LanguageModuleTabs />
 
@@ -13,9 +13,9 @@
     <!-- INTRO -->
     <v-card v-if="view === 'intro'" class="glass-card pa-6 exam-intro text-center" variant="flat">
       <v-icon size="52" color="secondary" class="mb-2">mdi-medal-outline</v-icon>
-      <h3 class="text-h6 font-weight-bold mb-1">Full level test — skills plus language systems</h3>
+      <h3 class="text-h6 font-weight-bold mb-1">Full level test — every core skill</h3>
       <p class="text-body-2 text-medium-emphasis mb-4">
-        ~10 minutes. You'll speak, listen, read, answer grammar/vocab checks and write. Each skill is graded separately, then
+        ~10 minutes. You'll speak, listen, read and write. Each skill is graded separately, then
         we map you to a CEFR level and unlock your learning path.
       </p>
       <v-row dense class="mb-2 text-start">
@@ -500,7 +500,9 @@ const SECTION_META = {
   interview: { label: 'Interview', icon: 'mdi-account-voice', hint: 'Guided follow-up' },
 }
 // Core skills shown on the intro screen (the interview is a Phase-2 deep-dive).
-const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'grammar_vocab', 'writing']
+// "grammar_vocab" is dropped from the active exam (product decision) but SECTION_META/isMcqPhase/
+// skillRows below keep it so any already-persisted session or historical report still renders.
+const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'writing']
 const CONSISTENCY_LABEL = {
   consistent: 'Spoken and written performance matched — high-confidence result',
   speaking_stronger: 'You performed noticeably stronger speaking than in writing',
