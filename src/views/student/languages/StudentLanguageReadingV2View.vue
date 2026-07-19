@@ -554,33 +554,37 @@ const retakeProgress = computed(() => {
 const evidenceMetrics = computed(() => {
   const evidence = currentStageEvidence.value
   const questionTypes = evidence.question_types_represented || []
+  const attemptsSubmitted = Number(evidence.attempts_submitted || 0)
+  const uniqueActivities = Number(evidence.unique_generated_activities || 0)
+  const answeredQuestions = Number(evidence.total_answered_questions || 0)
+  const recentAverage = Number(evidence.recent_average_score || 0)
   const recentLowest = Number(evidence.recent_lowest_score || 0)
   const hasRecentWindow = (evidence.recent_attempt_ids || []).length >= 5
   return [
     {
       label: 'Practice attempts',
-      value: `${Number(evidence.attempts_submitted || 0)} / ${STAGE_REQUIREMENTS.attempts}`,
-      met: evidence.requirements?.min_5_submitted_practice_attempts === true,
+      value: `${attemptsSubmitted} / ${STAGE_REQUIREMENTS.attempts}`,
+      met: attemptsSubmitted >= STAGE_REQUIREMENTS.attempts,
     },
     {
       label: 'Unique activities',
-      value: `${Number(evidence.unique_generated_activities || 0)} / ${STAGE_REQUIREMENTS.uniqueActivities}`,
-      met: evidence.requirements?.min_4_unique_generated_activities === true,
+      value: `${uniqueActivities} / ${STAGE_REQUIREMENTS.uniqueActivities}`,
+      met: uniqueActivities >= STAGE_REQUIREMENTS.uniqueActivities,
     },
     {
       label: 'Answered questions',
-      value: `${Number(evidence.total_answered_questions || 0)} / ${STAGE_REQUIREMENTS.questions}`,
-      met: evidence.requirements?.min_12_answered_questions === true,
+      value: `${answeredQuestions} / ${STAGE_REQUIREMENTS.questions}`,
+      met: answeredQuestions >= STAGE_REQUIREMENTS.questions,
     },
     {
       label: 'Question types',
       value: `${questionTypes.length} / ${STAGE_REQUIREMENTS.questionTypes}${questionTypes.length ? ` (${questionTypes.map(questionTypeLabel).join(', ')})` : ''}`,
-      met: evidence.requirements?.min_3_question_types === true,
+      met: questionTypes.length >= STAGE_REQUIREMENTS.questionTypes,
     },
     {
       label: 'Recent 5-attempt average',
       value: `${formatPercent(evidence.recent_average_score)} needed: ${STAGE_REQUIREMENTS.recentAverage}%`,
-      met: evidence.requirements?.recent_5_average_at_least_80 === true,
+      met: hasRecentWindow && recentAverage >= STAGE_REQUIREMENTS.recentAverage,
     },
     {
       label: 'Recent low score check',
@@ -589,7 +593,7 @@ const evidenceMetrics = computed(() => {
           ? `One recent attempt is below ${STAGE_REQUIREMENTS.recentAttemptMinimum}%`
           : `No recent attempt below ${STAGE_REQUIREMENTS.recentAttemptMinimum}%`
         : 'Needs 5 recent attempts',
-      met: evidence.requirements?.no_recent_attempt_below_70 === true,
+      met: hasRecentWindow && evidence.requirements?.no_recent_attempt_below_70 === true,
     },
   ]
 })
