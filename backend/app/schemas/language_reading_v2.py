@@ -42,6 +42,10 @@ class GenerationBlueprint(BaseModel):
     recent_character_names: list[str] = Field(default_factory=list)
     recent_question_stems: list[str] = Field(default_factory=list)
     preferred_topic_rotation: list[str] = Field(default_factory=list)
+    target_subskills: list[str] = Field(default_factory=list)
+    under_sampled_subskills: list[str] = Field(default_factory=list)
+    weak_subskills: list[str] = Field(default_factory=list)
+    subskill_targeting_reason: str | None = None
 
 
 class GeneratedChoice(BaseModel):

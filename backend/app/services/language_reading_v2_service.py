@@ -52,6 +52,7 @@ STAGE_MIN_PRACTICE_ATTEMPTS = 5
 STAGE_MIN_UNIQUE_ACTIVITIES = 4
 STAGE_MIN_ANSWERED_QUESTIONS = 12
 STAGE_MIN_QUESTION_TYPES = 3
+STAGE_MIN_CORE_SUBSKILL_QUESTIONS = 3
 STAGE_RECENT_WINDOW = 5
 STAGE_RECENT_AVERAGE_THRESHOLD = 80.0
 STAGE_RECENT_MIN_ATTEMPT_SCORE = 70.0
@@ -434,6 +435,53 @@ def _preferred_topic_rotation(cefr: str, stage: str) -> list[str]:
     return []
 
 
+def _subskill_record(name: str, stats: dict[str, Any] | None) -> dict[str, Any]:
+    stats = stats or {}
+    return {
+        "name": name,
+        "correct": float(stats.get("correct") or 0.0),
+        "total": float(stats.get("total") or 0.0),
+        "score_percent": float(stats.get("score_percent") or 0.0),
+        "required_questions": STAGE_MIN_CORE_SUBSKILL_QUESTIONS,
+    }
+
+
+def _classify_core_subskills(subskills: dict[str, dict[str, float]], core_subskills: list[str]) -> dict[str, Any]:
+    records = [_subskill_record(name, subskills.get(name)) for name in core_subskills]
+    under_sampled = [record for record in records if record["total"] < STAGE_MIN_CORE_SUBSKILL_QUESTIONS]
+    weak = [
+        record
+        for record in records
+        if record["total"] >= STAGE_MIN_CORE_SUBSKILL_QUESTIONS
+        and record["score_percent"] < STAGE_CORE_SUBSKILL_THRESHOLD
+    ]
+    return {
+        "records": records,
+        "under_sampled": under_sampled,
+        "weak": weak,
+        "scores": {record["name"]: record["score_percent"] for record in records},
+    }
+
+
+def _target_subskills_from_evidence(evidence: dict[str, Any]) -> tuple[list[str], str | None]:
+    under_sampled = [item["name"] for item in evidence.get("under_sampled_subskills") or [] if item.get("name")]
+    weak = [item["name"] for item in evidence.get("weak_subskills") or [] if item.get("name")]
+    targets = _dedupe_keep_order([*under_sampled, *weak], limit=4)
+    if under_sampled and weak:
+        return targets, "Prioritize under-sampled and weak core reading subskills."
+    if under_sampled:
+        return targets, "Prioritize core reading subskills that need more evidence."
+    if weak:
+        return targets, "Prioritize core reading subskills with enough evidence but low scores."
+    return [], None
+
+
+def _prioritized_subskills_for_questions(blueprint: GenerationBlueprint) -> list[str]:
+    return _dedupe_keep_order([*blueprint.target_subskills, *blueprint.reading_subskills], limit=12) or list(
+        blueprint.reading_subskills
+    )
+
+
 async def build_generation_blueprint(
     db: AsyncSession, *, student_id: int, language_id: int, mode: ReadingV2Mode = "practice"
 ) -> GenerationBlueprint:
@@ -452,6 +500,14 @@ async def build_generation_blueprint(
         cefr_level=cefr,
         internal_stage=stage,
     )
+    evidence = await evaluate_stage_evidence(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=cefr,
+        internal_stage=stage,
+    )
+    target_subskills, target_reason = _target_subskills_from_evidence(evidence)
 
     return GenerationBlueprint(
         cefr_level=cefr,
@@ -483,6 +539,10 @@ async def build_generation_blueprint(
         grammar_mastery_profile={},
         vocab_review_due_items=[],
         preferred_topic_rotation=_preferred_topic_rotation(cefr, stage),
+        target_subskills=target_subskills,
+        under_sampled_subskills=[item["name"] for item in evidence.get("under_sampled_subskills") or []],
+        weak_subskills=[item["name"] for item in evidence.get("weak_subskills") or []],
+        subskill_targeting_reason=target_reason,
         **recent_context,
     )
 
@@ -543,6 +603,7 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
         ),
     ]
     answer_specs_by_type = {spec[0]: spec for spec in answer_specs}
+    prioritized_subskills = _prioritized_subskills_for_questions(blueprint)
     for i, question_type in enumerate(blueprint.question_types, start=1):
         spec = answer_specs_by_type.get(question_type)
         if spec:
@@ -555,7 +616,7 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
         sentence_with_blank = _fallback_gap_fill_sentence() if q_type == "gap_fill" and not _has_exactly_one_blank(stem) else None
         if q_type == "gap_fill" and _has_exactly_one_blank(stem):
             sentence_with_blank = stem
-        subskill = blueprint.reading_subskills[(i - 1) % len(blueprint.reading_subskills)]
+        subskill = prioritized_subskills[(i - 1) % len(prioritized_subskills)]
         questions.append(
             {
                 "id": f"q{i}",
@@ -844,6 +905,8 @@ def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_e
         "skill_tags": ["string"],
         "difficulty_score": "number",
         "topic": "string",
+        "target_subskills": ["string"],
+        "subskill_targeting_reason": "string or null",
         "topic_tags": ["short_topic_tag"],
         "safety_tags": ["string"],
         "diversity_metadata": {
@@ -937,6 +1000,7 @@ Must include these control fields from the blueprint:
 - safety_topic_restrictions
 - recent_titles / recent_topics / recent_topic_tags / recent_passage_summaries / recent_character_names / recent_question_stems
 - preferred_topic_rotation
+- target_subskills / under_sampled_subskills / weak_subskills / subskill_targeting_reason
 
 Hard requirements:
 - Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
@@ -953,6 +1017,9 @@ Hard requirements:
 - Include topic_tags and diversity_metadata.topic_tags.
 - Include diversity_metadata.character_names and diversity_metadata.passage_summary.
 - Include diversity_metadata.anti_repetition_notes explaining how this activity differs from recent attempts.
+- If target_subskills is not empty, include questions for those subskills early in the activity while keeping the exact requested question type order.
+- Under-sampled subskills need more evidence, not harder questions. For Skim Gist at A1 Beginner, use direct main-idea prompts such as "What is the passage mainly about?", "What is the best title?", or "What is the main idea?"
+- Weak subskills need focused practice at the same CEFR/stage difficulty, not above-level text.
 - Create exactly {blueprint.number_of_questions} questions in this exact order: {blueprint.question_types}.
 - MCQ questions need at least three plausible choices and answer_key.correct_choice_id.
 - True/False questions need answer_key.correct as a boolean.
@@ -1607,7 +1674,10 @@ async def evaluate_stage_evidence(
     subskills = _aggregate_results(recent_results, "subskill")
     question_type_mastery = _aggregate_results(recent_results, "question_type")
     core_subskills = _SUBSKILLS_BY_STAGE[internal_stage]
-    core_scores = {subskill: float((subskills.get(subskill) or {}).get("score_percent") or 0.0) for subskill in core_subskills}
+    core_evidence = _classify_core_subskills(subskills, core_subskills)
+    core_scores = core_evidence["scores"]
+    under_sampled_subskills = core_evidence["under_sampled"]
+    weak_subskills = core_evidence["weak"]
     core_failure_counts = _recent_core_subskill_failure_counts(recent, core_subskills)
     requirements = {
         "min_5_submitted_practice_attempts": len(attempts) >= STAGE_MIN_PRACTICE_ATTEMPTS,
@@ -1616,7 +1686,8 @@ async def evaluate_stage_evidence(
         "min_3_question_types": len(question_types) >= STAGE_MIN_QUESTION_TYPES,
         "recent_5_average_at_least_80": len(recent) >= STAGE_RECENT_WINDOW and recent_average >= STAGE_RECENT_AVERAGE_THRESHOLD,
         "no_recent_attempt_below_70": len(recent) >= STAGE_RECENT_WINDOW and all(score >= STAGE_RECENT_MIN_ATTEMPT_SCORE for score in recent_scores),
-        "each_core_subskill_at_least_70": bool(core_scores) and all(score >= STAGE_CORE_SUBSKILL_THRESHOLD for score in core_scores.values()),
+        "each_core_subskill_has_min_evidence": not under_sampled_subskills,
+        "each_core_subskill_at_least_70": not weak_subskills,
         "no_core_subskill_two_recent_failures_below_60": all(
             count <= STAGE_CORE_SUBSKILL_MAX_RECENT_FAILURES for count in core_failure_counts.values()
         ),
@@ -1635,6 +1706,10 @@ async def evaluate_stage_evidence(
         "recent_lowest_score": recent_lowest,
         "core_subskills": core_subskills,
         "core_subskill_scores": core_scores,
+        "core_subskill_min_questions": STAGE_MIN_CORE_SUBSKILL_QUESTIONS,
+        "core_subskill_evidence": core_evidence["records"],
+        "under_sampled_subskills": under_sampled_subskills,
+        "weak_subskills": weak_subskills,
         "core_subskill_failures_below_60_last_5": core_failure_counts,
         "subskills": subskills,
         "question_types": question_type_mastery,
@@ -1681,9 +1756,16 @@ def _recent_core_subskill_failure_counts(
     attempts: list[LanguageReadingV2Attempt], core_subskills: list[str]
 ) -> dict[str, int]:
     counts = {subskill: 0 for subskill in core_subskills}
+    totals = {subskill: 0.0 for subskill in core_subskills}
     for attempt in attempts:
         subskill_scores = _aggregate_results(_attempt_question_results(attempt), "subskill")
         for subskill in core_subskills:
+            totals[subskill] += float((subskill_scores.get(subskill) or {}).get("total") or 0.0)
+    for attempt in attempts:
+        subskill_scores = _aggregate_results(_attempt_question_results(attempt), "subskill")
+        for subskill in core_subskills:
+            if totals[subskill] < STAGE_MIN_CORE_SUBSKILL_QUESTIONS or subskill not in subskill_scores:
+                continue
             score = float((subskill_scores.get(subskill) or {}).get("score_percent") or 0.0)
             if score < STAGE_CORE_SUBSKILL_FAILURE_THRESHOLD:
                 counts[subskill] += 1
@@ -1852,11 +1934,11 @@ def evaluate_readiness_attempt(
     question_types = _aggregate_results(question_results, "question_type")
     represented_types = set(question_types)
     target_types = set(QUESTION_TYPES)
-    core_scores = {
-        name: float(value.get("score_percent") or 0.0)
-        for name, value in subskills.items()
-        if name in _SUBSKILLS_BY_STAGE.get(attempt.internal_stage, [])
-    }
+    core_subskills = _SUBSKILLS_BY_STAGE.get(attempt.internal_stage, [])
+    core_evidence = _classify_core_subskills(subskills, core_subskills)
+    core_scores = core_evidence["scores"]
+    under_sampled_subskills = core_evidence["under_sampled"]
+    weak_subskills = core_evidence["weak"]
     total_questions = len(question_results)
     evidence_units = max(1, total_questions // 6)
     requirements = {
@@ -1864,8 +1946,8 @@ def evaluate_readiness_attempt(
         "mvp_equivalent_evidence": evidence_units >= 2,
         "min_12_answered_questions": total_questions >= READINESS_MIN_ANSWERED_QUESTIONS,
         "all_mvp_question_types_represented": target_types.issubset(represented_types),
-        "each_tested_core_subskill_at_least_70": bool(core_scores)
-        and all(score >= STAGE_CORE_SUBSKILL_THRESHOLD for score in core_scores.values()),
+        "each_tested_core_subskill_has_min_evidence": not under_sampled_subskills,
+        "each_tested_core_subskill_at_least_70": not weak_subskills,
         "no_question_type_below_60": bool(question_types)
         and all(float(value.get("score_percent") or 0.0) >= READINESS_MIN_QUESTION_TYPE_SCORE for value in question_types.values()),
     }
@@ -1879,6 +1961,10 @@ def evaluate_readiness_attempt(
         "mvp_equivalent_evidence_units": evidence_units,
         "question_types": question_types,
         "subskills": subskills,
+        "core_subskill_min_questions": STAGE_MIN_CORE_SUBSKILL_QUESTIONS,
+        "core_subskill_evidence": core_evidence["records"],
+        "under_sampled_subskills": under_sampled_subskills,
+        "weak_subskills": weak_subskills,
         "target_next_cefr": _enum_value(attempt.target_next_cefr),
     }
 

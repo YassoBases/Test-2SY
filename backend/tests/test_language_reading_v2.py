@@ -206,6 +206,83 @@ async def _create_and_submit_readiness(
     )
 
 
+async def _insert_subskill_attempt(
+    db,
+    *,
+    student_id: int,
+    language_id: int,
+    attempt_index: int,
+    results: list[tuple[str, bool]],
+    score_percent: float | None = None,
+) -> None:
+    question_results = [
+        {
+            "question_id": f"q{index}",
+            "question_type": "mcq",
+            "subskill": subskill,
+            "correct": correct,
+            "score": 1.0 if correct else 0.0,
+        }
+        for index, (subskill, correct) in enumerate(results, start=1)
+    ]
+    if score_percent is None:
+        score_percent = round(
+            (sum(1 for _subskill, correct in results if correct) / len(results)) * 100.0,
+            2,
+        )
+    db.add(
+        LanguageReadingV2Attempt(
+            student_id=student_id,
+            language_id=language_id,
+            cefr_level=LanguageLevel.A1,
+            internal_stage="Beginner",
+            mode="practice",
+            status="submitted",
+            generation_blueprint_json={"cefr_level": "A1", "internal_stage": "Beginner"},
+            generated_activity_json={
+                "title": f"Subskill Evidence {attempt_index}",
+                "passage": f"Unique passage {attempt_index}",
+                "questions": [],
+            },
+            validation_result_json={"valid": True, "issues": [], "warnings": []},
+            model_used="test",
+            prompt_version=reading_service.PROMPT_VERSION,
+            validator_version="reading_v2_validator_r1",
+            score_percent=score_percent,
+            question_results_json=question_results,
+        )
+    )
+    await db.flush()
+
+
+async def _insert_balanced_subskill_attempts(
+    db,
+    *,
+    student_id: int,
+    language_id: int,
+    skim_results: list[bool],
+    scan_results: list[bool] | None = None,
+    literal_results: list[bool] | None = None,
+) -> None:
+    scan_results = scan_results or [True, True, True, True, True]
+    literal_results = literal_results or [True, True, True, True, True]
+    for index in range(5):
+        results = [
+            ("scan_detail", scan_results[index]),
+            ("literal_comprehension", literal_results[index]),
+        ]
+        if index < len(skim_results):
+            results.append(("skim_gist", skim_results[index]))
+        await _insert_subskill_attempt(
+            db,
+            student_id=student_id,
+            language_id=language_id,
+            attempt_index=index + 1,
+            results=results,
+            score_percent=100.0 if all(correct for _subskill, correct in results) else 75.0,
+        )
+
+
 def test_generated_activity_validation_passes_for_valid_mock_activity():
     blueprint = _blueprint()
     activity = generate_reading_activity_from_blueprint(blueprint)
@@ -397,6 +474,10 @@ def test_ai_prompt_contains_required_blueprint_controls():
             recent_character_names=["Mia"],
             recent_question_stems=["Where does Mia study English?"],
             preferred_topic_rotation=["family meal", "bus ride"],
+            target_subskills=["skim_gist"],
+            under_sampled_subskills=["skim_gist"],
+            weak_subskills=[],
+            subskill_targeting_reason="Prioritize core reading subskills that need more evidence.",
         )
     )
     prompt_text = f"{prompt['system']}\n{prompt['user']}"
@@ -439,6 +520,12 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "bus ride",
         "topic_tags",
         "diversity_metadata",
+        "target_subskills",
+        "under_sampled_subskills",
+        "weak_subskills",
+        "subskill_targeting_reason",
+        "What is the passage mainly about?",
+        "What is the best title?",
         "Return valid JSON only",
     ]:
         assert required in prompt_text
@@ -802,6 +889,135 @@ async def test_one_weak_subskill_blocks_progression(monkeypatch, postgres_sessio
     evidence = overview.recent_mastery["current_stage_evidence"]
     assert evidence["core_subskill_scores"]["skim_gist"] < 70.0
     assert "each_core_subskill_at_least_70" in evidence["blocking_reasons"]
+
+
+async def test_one_wrong_under_sampled_subskill_is_not_marked_weak(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False],
+    )
+
+    evidence = await reading_service.evaluate_stage_evidence(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level="A1",
+        internal_stage="Beginner",
+    )
+
+    assert "skim_gist" in {item["name"] for item in evidence["under_sampled_subskills"]}
+    assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
+    assert "each_core_subskill_has_min_evidence" in evidence["blocking_reasons"]
+    assert "each_core_subskill_at_least_70" not in evidence["blocking_reasons"]
+
+
+async def test_two_question_subskill_is_under_sampled_not_weak(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False, True],
+    )
+
+    evidence = await reading_service.evaluate_stage_evidence(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level="A1",
+        internal_stage="Beginner",
+    )
+
+    assert "skim_gist" in {item["name"] for item in evidence["under_sampled_subskills"]}
+    assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
+
+
+async def test_sufficient_low_subskill_evidence_blocks_as_weak(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False, False, True],
+    )
+
+    evidence = await reading_service.evaluate_stage_evidence(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level="A1",
+        internal_stage="Beginner",
+    )
+
+    assert "skim_gist" not in {item["name"] for item in evidence["under_sampled_subskills"]}
+    assert "skim_gist" in {item["name"] for item in evidence["weak_subskills"]}
+    assert "each_core_subskill_at_least_70" in evidence["blocking_reasons"]
+
+
+async def test_sufficient_passing_subskill_evidence_does_not_block(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[True, True, True, False],
+    )
+
+    evidence = await reading_service.evaluate_stage_evidence(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level="A1",
+        internal_stage="Beginner",
+    )
+
+    assert "skim_gist" not in {item["name"] for item in evidence["under_sampled_subskills"]}
+    assert "skim_gist" not in {item["name"] for item in evidence["weak_subskills"]}
+    assert "each_core_subskill_has_min_evidence" not in evidence["blocking_reasons"]
+    assert "each_core_subskill_at_least_70" not in evidence["blocking_reasons"]
+
+
+async def test_under_sampled_subskills_target_next_generation_blueprint(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False],
+    )
+
+    blueprint = await build_generation_blueprint(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+
+    assert "skim_gist" in blueprint.under_sampled_subskills
+    assert "skim_gist" in blueprint.target_subskills
+    assert "more evidence" in (blueprint.subskill_targeting_reason or "")
+
+
+async def test_weak_subskills_target_next_generation_blueprint(postgres_session):
+    student_id, language_id = await _student_and_language(postgres_session)
+    await _insert_balanced_subskill_attempts(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+        skim_results=[False, False, True],
+    )
+
+    blueprint = await build_generation_blueprint(
+        postgres_session,
+        student_id=student_id,
+        language_id=language_id,
+    )
+
+    assert "skim_gist" in blueprint.weak_subskills
+    assert "skim_gist" in blueprint.target_subskills
+    assert "low scores" in (blueprint.subskill_targeting_reason or "")
 
 
 async def test_enough_evidence_unlocks_next_internal_stage(monkeypatch, postgres_session):

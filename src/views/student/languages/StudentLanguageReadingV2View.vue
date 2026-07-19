@@ -104,10 +104,19 @@
             </div>
 
             <div v-if="weakestSubskills.length" class="mt-4">
-              <div class="text-caption text-medium-emphasis mb-2">Weakest subskills</div>
+              <div class="text-caption text-medium-emphasis mb-2">Weak subskills</div>
               <div class="d-flex flex-wrap gap-2">
                 <v-chip v-for="item in weakestSubskills" :key="item.name" color="warning" size="small" variant="tonal">
                   {{ labelize(item.name) }}: {{ formatPercent(item.score) }}
+                </v-chip>
+              </div>
+            </div>
+
+            <div v-if="underSampledSubskills.length" class="mt-4">
+              <div class="text-caption text-medium-emphasis mb-2">Needs more evidence</div>
+              <div class="d-flex flex-wrap gap-2">
+                <v-chip v-for="item in underSampledSubskills" :key="item.name" color="info" size="small" variant="tonal">
+                  {{ labelize(item.name) }}: {{ Number(item.total || 0) }} / {{ item.required_questions || 3 }} questions
                 </v-chip>
               </div>
             </div>
@@ -541,15 +550,30 @@ const evidenceMetrics = computed(() => {
   ]
 })
 const weakestSubskills = computed(() => {
+  const weak = currentStageEvidence.value?.weak_subskills
+  if (Array.isArray(weak)) {
+    return weak
+      .map((item) => ({ ...item, name: item.name, score: Number(item.score_percent || 0) }))
+      .filter((item) => item.name)
+      .sort((a, b) => a.score - b.score)
+  }
   const scores = currentStageEvidence.value?.core_subskill_scores || {}
   return Object.entries(scores)
     .map(([name, score]) => ({ name, score: Number(score || 0) }))
     .filter((item) => item.score < STAGE_REQUIREMENTS.coreSubskill)
     .sort((a, b) => a.score - b.score)
 })
+const underSampledSubskills = computed(() => {
+  const underSampled = currentStageEvidence.value?.under_sampled_subskills
+  if (!Array.isArray(underSampled)) return []
+  return underSampled.filter((item) => item?.name)
+})
 const currentBlockingReasonTexts = computed(() =>
   (currentStageEvidence.value?.blocking_reasons || []).map((reason) =>
-    friendlyReason(reason, { weakestSubskill: weakestSubskills.value[0]?.name }),
+    friendlyReason(reason, {
+      weakestSubskill: weakestSubskills.value[0]?.name,
+      underSampledSubskill: underSampledSubskills.value[0]?.name,
+    }),
   ),
 )
 const safeActivity = computed(() => stripSecrets(attempt.value?.activity || {}))
@@ -732,7 +756,12 @@ function stageReason(stage) {
   const reason = stage.recent_mastery?.locked_reason
   if (status === 'current') {
     const firstBlocker = currentStageEvidence.value?.blocking_reasons?.[0]
-    return firstBlocker ? friendlyReason(firstBlocker, { weakestSubskill: weakestSubskills.value[0]?.name }) : ''
+    return firstBlocker
+      ? friendlyReason(firstBlocker, {
+          weakestSubskill: weakestSubskills.value[0]?.name,
+          underSampledSubskill: underSampledSubskills.value[0]?.name,
+        })
+      : ''
   }
   if (stage.cefr_level !== overview.value?.current_cefr && stage.rank > currentRank.value) {
     return 'Pass the readiness test to unlock this level.'
@@ -782,6 +811,7 @@ function labelize(value) {
 
 function friendlyReason(reason, context = {}) {
   const weakSubskill = context.weakestSubskill ? `: ${labelize(context.weakestSubskill)}` : ''
+  const underSampledSubskill = context.underSampledSubskill ? `: ${labelize(context.underSampledSubskill)}` : ''
   const retake = context.retake || {}
   const target = context.targetLevel ? `${context.targetLevel} readiness test` : 'the readiness test'
   const currentLevel = overview.value?.current_cefr || 'this level'
@@ -793,6 +823,9 @@ function friendlyReason(reason, context = {}) {
     min_3_question_types: 'Try more question types.',
     recent_5_average_at_least_80: 'Improve your recent 5-attempt average to 80%.',
     no_recent_attempt_below_70: 'Keep every recent attempt at 70% or higher.',
+    each_core_subskill_has_min_evidence: underSampledSubskill
+      ? `Complete more ${labelize(context.underSampledSubskill)} practice to confirm readiness.`
+      : 'Complete more core subskill practice to confirm readiness.',
     each_core_subskill_at_least_70: `Strengthen weak subskill${weakSubskill}.`,
     no_core_subskill_two_recent_failures_below_60: 'Avoid repeated low scores in core subskills.',
     previous_stage_not_mastered: 'Complete the previous stage first.',
@@ -806,6 +839,9 @@ function friendlyReason(reason, context = {}) {
     overall_score_at_least_80: 'Score 80% or higher on readiness.',
     mvp_equivalent_evidence: 'Complete enough readiness evidence.',
     all_mvp_question_types_represented: 'Complete all required question types.',
+    each_tested_core_subskill_has_min_evidence: underSampledSubskill
+      ? `Complete more ${labelize(context.underSampledSubskill)} practice to confirm readiness.`
+      : 'Complete more core subskill practice to confirm readiness.',
     each_tested_core_subskill_at_least_70: 'Score at least 70% in each tested core subskill.',
     no_question_type_below_60: 'Keep every question type score at 60% or higher.',
   }
