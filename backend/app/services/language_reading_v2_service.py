@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
 from typing import Any
@@ -46,6 +47,19 @@ MIN_STAGE_EVIDENCE_ATTEMPTS = 6
 MASTERY_THRESHOLD = 80.0
 PRACTICE_PASS_THRESHOLD = 70.0
 READINESS_PASS_THRESHOLD = 80.0
+STAGE_MIN_PRACTICE_ATTEMPTS = 5
+STAGE_MIN_UNIQUE_ACTIVITIES = 4
+STAGE_MIN_ANSWERED_QUESTIONS = 12
+STAGE_MIN_QUESTION_TYPES = 3
+STAGE_RECENT_WINDOW = 5
+STAGE_RECENT_AVERAGE_THRESHOLD = 80.0
+STAGE_RECENT_MIN_ATTEMPT_SCORE = 70.0
+STAGE_CORE_SUBSKILL_THRESHOLD = 70.0
+STAGE_CORE_SUBSKILL_FAILURE_THRESHOLD = 60.0
+STAGE_CORE_SUBSKILL_MAX_RECENT_FAILURES = 1
+READINESS_MIN_ANSWERED_QUESTIONS = 12
+READINESS_MIN_QUESTION_TYPE_SCORE = 60.0
+READINESS_RETAKE_PRACTICE_ATTEMPTS = 3
 AI_PROVIDER_NAME = "ai"
 LOCAL_MOCK_PROVIDER_NAME = "local_mock"
 
@@ -166,7 +180,7 @@ async def build_generation_blueprint(
     cefr = _enum_value(state_row.current_cefr) or "A1"
     stage = state_row.current_stage
     word_min, word_max = _WORD_RANGES[cefr][stage]
-    question_count = 8 if mode == "readiness" else 4
+    question_count = 12 if mode == "readiness" else 4
     question_types = (QUESTION_TYPES * ((question_count // len(QUESTION_TYPES)) + 1))[:question_count]
     target_next = next_cefr_level(cefr) if mode == "readiness" else None
     topic = "everyday learning habits" if mode == "practice" else f"{target_next or cefr} readiness"
@@ -266,7 +280,7 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
             stem = f"Answer this {question_type.replace('_', ' ')} question about Mira's reading routine."
             answer_key = _fallback_answer_key(question_type)
             choices = _fallback_choices(question_type)
-            subskill = blueprint.reading_subskills[(i - 1) % len(blueprint.reading_subskills)]
+        subskill = blueprint.reading_subskills[(i - 1) % len(blueprint.reading_subskills)]
         questions.append(
             {
                 "id": f"q{i}",
@@ -706,6 +720,18 @@ def _normalize_text(value: str) -> str:
 async def create_reading_v2_attempt(
     db: AsyncSession, *, student_id: int, language_id: int, mode: ReadingV2Mode = "practice"
 ) -> ReadingV2AttemptOut:
+    state_row = await get_or_create_student_state(db, student_id=student_id, language_id=language_id)
+    if mode == "readiness":
+        readiness_gate = await build_readiness_gate(db, state_row=state_row)
+        if not readiness_gate["available"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Reading readiness test is not available yet.",
+                    "reason": readiness_gate["blocked_reason"],
+                    "readiness": readiness_gate,
+                },
+            )
     blueprint = await build_generation_blueprint(db, student_id=student_id, language_id=language_id, mode=mode)
     outcome = await generate_activity_for_blueprint(blueprint)
     activity = outcome.activity
@@ -763,15 +789,30 @@ def attempt_to_out(attempt: LanguageReadingV2Attempt) -> ReadingV2AttemptOut:
 
 async def build_reading_v2_overview(db: AsyncSession, *, student_id: int, language_id: int) -> ReadingV2OverviewOut:
     state_row = await get_or_create_student_state(db, student_id=student_id, language_id=language_id)
+    cefr = _enum_value(state_row.current_cefr) or "A1"
+    stage = state_row.current_stage
+    evidence = await evaluate_stage_evidence(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=cefr,
+        internal_stage=stage,
+    )
+    readiness_gate = await build_readiness_gate(db, state_row=state_row, current_stage_evidence=evidence)
+    mastery = dict(state_row.recent_mastery_json or {})
+    mastery["current_stage_evidence"] = evidence
+    mastery["readiness"] = readiness_gate
     return ReadingV2OverviewOut(
         student_id=student_id,
         language_id=language_id,
-        current_cefr=_enum_value(state_row.current_cefr) or "A1",
-        current_stage=state_row.current_stage,
+        current_cefr=cefr,
+        current_stage=stage,
         status=state_row.status,
         readiness_target_level=_enum_value(state_row.readiness_target_level),
-        recent_mastery=state_row.recent_mastery_json or {},
-        next_action="readiness" if state_row.readiness_target_level else "practice",
+        readiness_available=readiness_gate["available"],
+        readiness_blocked_reason=readiness_gate["blocked_reason"],
+        recent_mastery=mastery,
+        next_action="readiness" if readiness_gate["available"] else "practice",
     )
 
 
@@ -806,7 +847,9 @@ async def build_reading_v2_path(db: AsyncSession, *, student_id: int, language_i
                     status=row_status,
                     attempts_completed=progress.attempts_completed if progress else 0,
                     mastery_score=round(progress.mastery_score, 2) if progress else 0.0,
-                    recent_mastery=(progress.subskill_mastery_json or {}) if progress else {},
+                    recent_mastery=(
+                        _stage_path_summary(progress=progress, rank=rank, state_row=state_row, current_rank=current_rank)
+                    ),
                 )
             )
     return ReadingV2PathOut(student_id=student_id, language_id=language_id, stages=stages)
@@ -842,9 +885,9 @@ async def submit_reading_v2_attempt(
     attempt.submitted_at = datetime.now(timezone.utc)
     attempt.status = "submitted"
 
-    await record_attempt_evidence(db, attempt=attempt, question_results=question_results)
+    evidence_update = await record_attempt_evidence(db, attempt=attempt, question_results=question_results)
     state_row = await get_or_create_student_state(db, student_id=student_id, language_id=language_id)
-    passed = score_percent >= (READINESS_PASS_THRESHOLD if attempt.mode == "readiness" else PRACTICE_PASS_THRESHOLD)
+    passed = bool(evidence_update.get("passed", score_percent >= PRACTICE_PASS_THRESHOLD))
     return ReadingV2SubmitAttemptOut(
         attempt_id=attempt.id,
         score_percent=score_percent,
@@ -856,13 +899,16 @@ async def submit_reading_v2_attempt(
             "status": state_row.status,
             "recent_mastery": state_row.recent_mastery_json or {},
         },
-        next_action=_next_action(attempt, passed),
+        next_action=evidence_update.get("next_action") or _next_action(attempt, passed),
     )
 
 
 async def record_attempt_evidence(
     db: AsyncSession, *, attempt: LanguageReadingV2Attempt, question_results: list[ReadingV2QuestionResultOut]
-) -> None:
+) -> dict[str, Any]:
+    if attempt.mode == "readiness":
+        return await record_readiness_evidence(db, attempt=attempt, question_results=question_results)
+
     progress = (
         await db.execute(
             select(LanguageReadingV2StageProgress).where(
@@ -891,31 +937,367 @@ async def record_attempt_evidence(
 
     old_attempts = int(progress.attempts_completed or 0)
     progress.attempts_completed = old_attempts + 1
-    old_mastery = float(progress.mastery_score or 0.0)
-    new_score = float(attempt.score_percent or 0.0)
-    progress.mastery_score = round(((old_mastery * old_attempts) + new_score) / progress.attempts_completed, 2)
-    progress.subskill_mastery_json = _aggregate_results(question_results, "subskill")
-    progress.question_type_mastery_json = _aggregate_results(question_results, "question_type")
     recent_ids = list(progress.recent_attempt_ids_json or [])
     recent_ids.append(attempt.id)
     progress.recent_attempt_ids_json = recent_ids[-10:]
 
     state_row = await get_or_create_student_state(db, student_id=attempt.student_id, language_id=attempt.language_id)
-    state_row.recent_mastery_json = {
-        "attempts_completed": progress.attempts_completed,
-        "mastery_score": progress.mastery_score,
-        "subskills": progress.subskill_mastery_json,
-        "question_types": progress.question_type_mastery_json,
-        "evidence_sufficient": progress.attempts_completed >= MIN_STAGE_EVIDENCE_ATTEMPTS,
+    evidence = await evaluate_stage_evidence(
+        db,
+        student_id=attempt.student_id,
+        language_id=attempt.language_id,
+        cefr_level=_enum_value(attempt.cefr_level) or "A1",
+        internal_stage=attempt.internal_stage,
+    )
+    progress.mastery_score = float(evidence["recent_average_score"] or 0.0)
+    progress.subskill_mastery_json = evidence["subskills"]
+    progress.question_type_mastery_json = evidence["question_types"]
+    progress.status = "mastered" if progress.status == "mastered" else (
+        "current"
+        if stage_rank(progress.cefr_level, progress.internal_stage)
+        == stage_rank(state_row.current_cefr, state_row.current_stage)
+        else progress.status
+    )
+
+    state_row.recent_mastery_json = _merge_recent_mastery(
+        state_row.recent_mastery_json,
+        {
+            "current_stage_evidence": evidence,
+            "attempts_completed": progress.attempts_completed,
+            "mastery_score": progress.mastery_score,
+            "subskills": progress.subskill_mastery_json,
+            "question_types": progress.question_type_mastery_json,
+            "evidence_sufficient": evidence["mastered"],
+        },
+    )
+    if evidence["mastered"]:
+        await apply_stage_mastery(db, state_row=state_row, progress=progress)
+        state_row.recent_mastery_json = _merge_recent_mastery(
+            state_row.recent_mastery_json,
+            {"current_stage_evidence": evidence, "readiness": await build_readiness_gate(db, state_row=state_row)},
+        )
+    else:
+        state_row.recent_mastery_json = _merge_recent_mastery(
+            state_row.recent_mastery_json,
+            {"readiness": await build_readiness_gate(db, state_row=state_row, current_stage_evidence=evidence)},
+        )
+    return {"passed": float(attempt.score_percent or 0.0) >= PRACTICE_PASS_THRESHOLD, "next_action": "continue_practice", "evidence": evidence}
+
+
+async def evaluate_stage_evidence(
+    db: AsyncSession,
+    *,
+    student_id: int,
+    language_id: int,
+    cefr_level: str | LanguageLevel,
+    internal_stage: str,
+) -> dict[str, Any]:
+    attempts = await submitted_practice_attempts_for_stage(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=cefr_level,
+        internal_stage=internal_stage,
+    )
+    recent = attempts[-STAGE_RECENT_WINDOW:]
+    all_results = [result for row in attempts for result in _attempt_question_results(row)]
+    recent_results = [result for row in recent for result in _attempt_question_results(row)]
+    question_types = sorted({result.question_type for result in all_results})
+    unique_signatures = {_activity_signature(row.generated_activity_json) for row in attempts}
+    unique_signatures.discard("")
+    unique_count = len(unique_signatures)
+    recent_scores = [float(row.score_percent or 0.0) for row in recent]
+    recent_average = round(sum(recent_scores) / len(recent_scores), 2) if recent_scores else 0.0
+    recent_lowest = min(recent_scores) if recent_scores else 0.0
+    subskills = _aggregate_results(recent_results, "subskill")
+    question_type_mastery = _aggregate_results(recent_results, "question_type")
+    core_subskills = _SUBSKILLS_BY_STAGE[internal_stage]
+    core_scores = {subskill: float((subskills.get(subskill) or {}).get("score_percent") or 0.0) for subskill in core_subskills}
+    core_failure_counts = _recent_core_subskill_failure_counts(recent, core_subskills)
+    requirements = {
+        "min_5_submitted_practice_attempts": len(attempts) >= STAGE_MIN_PRACTICE_ATTEMPTS,
+        "min_4_unique_generated_activities": unique_count >= STAGE_MIN_UNIQUE_ACTIVITIES if unique_signatures else True,
+        "min_12_answered_questions": len(all_results) >= STAGE_MIN_ANSWERED_QUESTIONS,
+        "min_3_question_types": len(question_types) >= STAGE_MIN_QUESTION_TYPES,
+        "recent_5_average_at_least_80": len(recent) >= STAGE_RECENT_WINDOW and recent_average >= STAGE_RECENT_AVERAGE_THRESHOLD,
+        "no_recent_attempt_below_70": len(recent) >= STAGE_RECENT_WINDOW and all(score >= STAGE_RECENT_MIN_ATTEMPT_SCORE for score in recent_scores),
+        "each_core_subskill_at_least_70": bool(core_scores) and all(score >= STAGE_CORE_SUBSKILL_THRESHOLD for score in core_scores.values()),
+        "no_core_subskill_two_recent_failures_below_60": all(
+            count <= STAGE_CORE_SUBSKILL_MAX_RECENT_FAILURES for count in core_failure_counts.values()
+        ),
     }
-    if progress.attempts_completed < MIN_STAGE_EVIDENCE_ATTEMPTS:
+    blocking_reasons = [name for name, passed in requirements.items() if not passed]
+    return {
+        "mastered": not blocking_reasons,
+        "requirements": requirements,
+        "blocking_reasons": blocking_reasons,
+        "attempts_submitted": len(attempts),
+        "unique_generated_activities": unique_count,
+        "total_answered_questions": len(all_results),
+        "question_types_represented": question_types,
+        "recent_attempt_ids": [row.id for row in recent],
+        "recent_average_score": recent_average,
+        "recent_lowest_score": recent_lowest,
+        "core_subskills": core_subskills,
+        "core_subskill_scores": core_scores,
+        "core_subskill_failures_below_60_last_5": core_failure_counts,
+        "subskills": subskills,
+        "question_types": question_type_mastery,
+    }
+
+
+async def submitted_practice_attempts_for_stage(
+    db: AsyncSession,
+    *,
+    student_id: int,
+    language_id: int,
+    cefr_level: str | LanguageLevel,
+    internal_stage: str,
+) -> list[LanguageReadingV2Attempt]:
+    result = await db.execute(
+        select(LanguageReadingV2Attempt)
+        .where(
+            LanguageReadingV2Attempt.student_id == student_id,
+            LanguageReadingV2Attempt.language_id == language_id,
+            LanguageReadingV2Attempt.cefr_level == LanguageLevel(_enum_value(cefr_level) or "A1"),
+            LanguageReadingV2Attempt.internal_stage == internal_stage,
+            LanguageReadingV2Attempt.mode == "practice",
+            LanguageReadingV2Attempt.status == "submitted",
+        )
+        .order_by(LanguageReadingV2Attempt.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+def _attempt_question_results(attempt: LanguageReadingV2Attempt) -> list[ReadingV2QuestionResultOut]:
+    return [ReadingV2QuestionResultOut.model_validate(item) for item in (attempt.question_results_json or [])]
+
+
+def _activity_signature(activity: dict[str, Any] | None) -> str:
+    if not activity:
+        return ""
+    source = " ".join(str(activity.get(key) or "") for key in ("title", "passage")).strip()
+    if not source:
+        return ""
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _recent_core_subskill_failure_counts(
+    attempts: list[LanguageReadingV2Attempt], core_subskills: list[str]
+) -> dict[str, int]:
+    counts = {subskill: 0 for subskill in core_subskills}
+    for attempt in attempts:
+        subskill_scores = _aggregate_results(_attempt_question_results(attempt), "subskill")
+        for subskill in core_subskills:
+            score = float((subskill_scores.get(subskill) or {}).get("score_percent") or 0.0)
+            if score < STAGE_CORE_SUBSKILL_FAILURE_THRESHOLD:
+                counts[subskill] += 1
+    return counts
+
+
+async def apply_stage_mastery(
+    db: AsyncSession, *, state_row: LanguageReadingV2StudentState, progress: LanguageReadingV2StageProgress
+) -> None:
+    progress.status = "mastered"
+    progress.mastered_at = progress.mastered_at or datetime.now(timezone.utc)
+    cefr = _enum_value(progress.cefr_level) or "A1"
+    current_rank = stage_rank(cefr, progress.internal_stage)
+    state_row.unlocked_rank = max(int(state_row.unlocked_rank or 0), current_rank)
+    if progress.internal_stage != "Advanced":
+        next_stage = INTERNAL_STAGES[INTERNAL_STAGES.index(progress.internal_stage) + 1]
+        next_rank = stage_rank(cefr, next_stage)
+        state_row.current_stage = next_stage
+        state_row.unlocked_rank = max(int(state_row.unlocked_rank or 0), next_rank)
+        state_row.readiness_target_level = None
+        next_progress = await get_or_create_stage_progress(
+            db,
+            student_id=progress.student_id,
+            language_id=progress.language_id,
+            cefr_level=cefr,
+            internal_stage=next_stage,
+        )
+        if next_progress.status != "mastered":
+            next_progress.status = "current"
         return
-    if progress.mastery_score < MASTERY_THRESHOLD:
+
+    target = next_cefr_level(cefr)
+    if not target:
+        state_row.status = "mastered"
+        state_row.readiness_target_level = None
         return
-    if _has_major_weakness(progress.subskill_mastery_json):
-        return
-    if attempt.mode == "readiness" and attempt.score_percent and attempt.score_percent >= READINESS_PASS_THRESHOLD:
+    state_row.current_stage = "Advanced"
+    state_row.readiness_target_level = LanguageLevel(target)
+
+
+async def get_or_create_stage_progress(
+    db: AsyncSession,
+    *,
+    student_id: int,
+    language_id: int,
+    cefr_level: str | LanguageLevel,
+    internal_stage: str,
+) -> LanguageReadingV2StageProgress:
+    level = LanguageLevel(_enum_value(cefr_level) or "A1")
+    progress = (
+        await db.execute(
+            select(LanguageReadingV2StageProgress).where(
+                LanguageReadingV2StageProgress.student_id == student_id,
+                LanguageReadingV2StageProgress.language_id == language_id,
+                LanguageReadingV2StageProgress.cefr_level == level,
+                LanguageReadingV2StageProgress.internal_stage == internal_stage,
+            )
+        )
+    ).scalar_one_or_none()
+    if progress:
+        return progress
+    progress = LanguageReadingV2StageProgress(
+        student_id=student_id,
+        language_id=language_id,
+        cefr_level=level,
+        internal_stage=internal_stage,
+        status="locked",
+        attempts_completed=0,
+        mastery_score=0.0,
+        subskill_mastery_json={},
+        question_type_mastery_json={},
+        recent_attempt_ids_json=[],
+    )
+    db.add(progress)
+    await db.flush()
+    return progress
+
+
+async def build_readiness_gate(
+    db: AsyncSession,
+    *,
+    state_row: LanguageReadingV2StudentState,
+    current_stage_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    target = _enum_value(state_row.readiness_target_level)
+    if state_row.status == "mastered":
+        return {"available": False, "target_level": None, "blocked_reason": "reading_v2_mastered"}
+    if not target:
+        return {"available": False, "target_level": None, "blocked_reason": "advanced_stage_not_mastered"}
+    if state_row.current_stage != "Advanced":
+        return {"available": False, "target_level": target, "blocked_reason": "current_stage_is_not_advanced"}
+    retake = await readiness_retake_status(db, state_row=state_row)
+    if retake["blocked"]:
+        return {
+            "available": False,
+            "target_level": target,
+            "blocked_reason": "readiness_retake_requires_more_practice",
+            "retake": retake,
+        }
+    return {
+        "available": True,
+        "target_level": target,
+        "blocked_reason": None,
+        "current_stage_evidence": current_stage_evidence,
+        "retake": retake,
+    }
+
+
+async def readiness_retake_status(db: AsyncSession, *, state_row: LanguageReadingV2StudentState) -> dict[str, Any]:
+    mastery = state_row.recent_mastery_json or {}
+    block = ((mastery.get("readiness") or {}).get("retake_block") or {})
+    failed_attempt_id = block.get("failed_attempt_id")
+    if not failed_attempt_id:
+        return {"blocked": False, "required_additional_practice": 0, "completed_additional_practice": 0}
+    attempts = await submitted_practice_attempts_for_stage(
+        db,
+        student_id=state_row.student_id,
+        language_id=state_row.language_id,
+        cefr_level=_enum_value(state_row.current_cefr) or "A1",
+        internal_stage="Advanced",
+    )
+    completed = len([row for row in attempts if row.id > int(failed_attempt_id)])
+    remaining = max(0, READINESS_RETAKE_PRACTICE_ATTEMPTS - completed)
+    return {
+        "blocked": remaining > 0,
+        "failed_attempt_id": failed_attempt_id,
+        "required_additional_practice": READINESS_RETAKE_PRACTICE_ATTEMPTS,
+        "completed_additional_practice": completed,
+        "remaining_additional_practice": remaining,
+    }
+
+
+async def record_readiness_evidence(
+    db: AsyncSession, *, attempt: LanguageReadingV2Attempt, question_results: list[ReadingV2QuestionResultOut]
+) -> dict[str, Any]:
+    state_row = await get_or_create_student_state(db, student_id=attempt.student_id, language_id=attempt.language_id)
+    readiness = evaluate_readiness_attempt(attempt, question_results)
+    if readiness["passed"]:
         _apply_readiness_pass(state_row, attempt)
+        state_row.recent_mastery_json = _merge_recent_mastery(
+            state_row.recent_mastery_json,
+            {"readiness": {"last_result": readiness, "retake_block": None}},
+        )
+        return {"passed": True, "next_action": "next_level_unlocked" if _enum_value(attempt.target_next_cefr) else "mastered", "readiness": readiness}
+
+    state_row.recent_mastery_json = _merge_recent_mastery(
+        state_row.recent_mastery_json,
+        {
+            "readiness": {
+                "last_result": readiness,
+                "retake_block": {
+                    "failed_attempt_id": attempt.id,
+                    "target_level": _enum_value(attempt.target_next_cefr),
+                    "required_additional_practice": READINESS_RETAKE_PRACTICE_ATTEMPTS,
+                },
+            }
+        },
+    )
+    return {"passed": False, "next_action": "continue_practice", "readiness": readiness}
+
+
+def evaluate_readiness_attempt(
+    attempt: LanguageReadingV2Attempt, question_results: list[ReadingV2QuestionResultOut]
+) -> dict[str, Any]:
+    subskills = _aggregate_results(question_results, "subskill")
+    question_types = _aggregate_results(question_results, "question_type")
+    represented_types = set(question_types)
+    target_types = set(QUESTION_TYPES)
+    core_scores = {
+        name: float(value.get("score_percent") or 0.0)
+        for name, value in subskills.items()
+        if name in _SUBSKILLS_BY_STAGE.get(attempt.internal_stage, [])
+    }
+    total_questions = len(question_results)
+    evidence_units = max(1, total_questions // 6)
+    requirements = {
+        "overall_score_at_least_80": float(attempt.score_percent or 0.0) >= READINESS_PASS_THRESHOLD,
+        "mvp_equivalent_evidence": evidence_units >= 2,
+        "min_12_answered_questions": total_questions >= READINESS_MIN_ANSWERED_QUESTIONS,
+        "all_mvp_question_types_represented": target_types.issubset(represented_types),
+        "each_tested_core_subskill_at_least_70": bool(core_scores)
+        and all(score >= STAGE_CORE_SUBSKILL_THRESHOLD for score in core_scores.values()),
+        "no_question_type_below_60": bool(question_types)
+        and all(float(value.get("score_percent") or 0.0) >= READINESS_MIN_QUESTION_TYPE_SCORE for value in question_types.values()),
+    }
+    blocking_reasons = [name for name, passed in requirements.items() if not passed]
+    return {
+        "passed": not blocking_reasons,
+        "requirements": requirements,
+        "blocking_reasons": blocking_reasons,
+        "score_percent": float(attempt.score_percent or 0.0),
+        "total_answered_questions": total_questions,
+        "mvp_equivalent_evidence_units": evidence_units,
+        "question_types": question_types,
+        "subskills": subskills,
+        "target_next_cefr": _enum_value(attempt.target_next_cefr),
+    }
+
+
+def _merge_recent_mastery(existing: dict[str, Any] | None, updates: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(existing or {})
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            nested = dict(merged[key])
+            nested.update(value)
+            merged[key] = nested
+        else:
+            merged[key] = value
+    return merged
 
 
 def _aggregate_results(results: list[ReadingV2QuestionResultOut], key: str) -> dict[str, dict[str, float]]:
@@ -947,6 +1329,7 @@ def _apply_readiness_pass(state_row: LanguageReadingV2StudentState, attempt: Lan
     state_row.current_stage = "Beginner"
     state_row.unlocked_rank = stage_rank(target, "Beginner")
     state_row.readiness_target_level = None
+    state_row.status = "active"
 
 
 def _next_action(attempt: LanguageReadingV2Attempt, passed: bool) -> str:
@@ -985,3 +1368,30 @@ async def build_reading_v2_history(
             }
         )
     return ReadingV2HistoryOut(attempts=attempts)
+
+
+def _stage_path_summary(
+    *,
+    progress: LanguageReadingV2StageProgress | None,
+    rank: int,
+    state_row: LanguageReadingV2StudentState,
+    current_rank: int,
+) -> dict[str, Any]:
+    if progress:
+        summary = dict(progress.subskill_mastery_json or {})
+        summary["question_types"] = progress.question_type_mastery_json or {}
+        summary["recent_attempt_ids"] = progress.recent_attempt_ids_json or []
+        if rank == current_rank:
+            current_evidence = (state_row.recent_mastery_json or {}).get("current_stage_evidence") or {}
+            summary["current"] = True
+            summary["evidence"] = current_evidence
+            blocking = current_evidence.get("blocking_reasons") or []
+            summary["locked_reason"] = blocking[0] if blocking else None
+        if progress.status == "mastered":
+            summary["mastered_at"] = progress.mastered_at
+        return summary
+    if rank > int(state_row.unlocked_rank or 0):
+        return {"locked_reason": "previous_stage_not_mastered"}
+    if rank == current_rank:
+        return {"locked_reason": None, "current": True}
+    return {"locked_reason": None}

@@ -137,6 +137,8 @@ class ReadingV2OverviewOut(BaseModel):
     current_stage: InternalStage
     status: str
     readiness_target_level: CEFRLevel | None = None
+    readiness_available: bool = False
+    readiness_blocked_reason: str | None = None
     recent_mastery: dict[str, Any] = Field(default_factory=dict)
     next_action: str = "practice"
 
