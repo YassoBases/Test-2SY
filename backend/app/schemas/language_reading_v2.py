@@ -30,7 +30,7 @@ class GenerationBlueprint(BaseModel):
     inference_depth: str
     number_of_questions: int = Field(ge=1, le=20)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
-    prompt_version: str = "reading_v2_r5_gap_fill"
+    prompt_version: str = "reading_v2_r6_answer_ux"
     known_vocab_items: list[str] = Field(default_factory=list)
     weak_vocab_items: list[str] = Field(default_factory=list)
     grammar_mastery_profile: dict[str, float] = Field(default_factory=dict)
@@ -94,6 +94,9 @@ class ReadingV2QuestionResultOut(BaseModel):
     subskill: str
     correct: bool
     score: float
+    student_answer: str | None = None
+    expected_answer: str | None = None
+    explanation: str | None = None
 
 
 class ReadingV2AttemptOut(BaseModel):

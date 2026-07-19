@@ -41,7 +41,7 @@ from app.services.ai_service import generate_llm_json
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
-PROMPT_VERSION = "reading_v2_r5_gap_fill"
+PROMPT_VERSION = "reading_v2_r6_answer_ux"
 VALIDATOR_VERSION = "reading_v2_validator_r1"
 MODEL_USED = "local_mock"
 MIN_STAGE_EVIDENCE_ATTEMPTS = 6
@@ -63,6 +63,54 @@ READINESS_MIN_QUESTION_TYPE_SCORE = 60.0
 READINESS_RETAKE_PRACTICE_ATTEMPTS = 3
 AI_PROVIDER_NAME = "ai"
 LOCAL_MOCK_PROVIDER_NAME = "local_mock"
+_SHORT_ANSWER_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "for",
+    "from",
+    "he",
+    "her",
+    "his",
+    "i",
+    "in",
+    "is",
+    "it",
+    "its",
+    "my",
+    "of",
+    "on",
+    "or",
+    "our",
+    "she",
+    "that",
+    "the",
+    "their",
+    "they",
+    "this",
+    "to",
+    "we",
+    "with",
+    "you",
+    "your",
+}
+_SHORT_ANSWER_GENERIC_TOKENS = {
+    "answer",
+    "english",
+    "learn",
+    "learns",
+    "passage",
+    "read",
+    "reads",
+    "says",
+    "student",
+    "students",
+    "study",
+    "studies",
+    "text",
+}
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -606,6 +654,7 @@ Hard requirements:
 - Gap Fill questions need deterministic answer_key.accepted_answers and sentence_with_blank with exactly one visible ____ marker.
 - Gap Fill sentence_with_blank must be a meaningful sentence grounded in the passage and must not reveal the accepted answer.
 - Short Answer questions must be scoreable without AI using accepted_answers or required_key_terms.
+- Short Answer answer keys must include common natural variants when the answer is a short phrase. For example, if the passage says the student studies English at home, include accepted_answers like "home", "at home", "the student studies at home", and "she studies at home", or required_key_terms like "home".
 - Question stems must not reveal answer_key values.
 - Explanations and evidence_quote must be grounded in the passage.
 - Do not include any answer keys inside passage text, title, or stems in a way that leaks answers.
@@ -791,6 +840,9 @@ def score_generated_activity(
                 subskill=question.subskill,
                 correct=is_correct,
                 score=1.0 if is_correct else 0.0,
+                student_answer=_student_answer_summary(question, answer),
+                expected_answer=_expected_answer_summary(question),
+                explanation=question.explanation,
             )
         )
     score_percent = round((correct_count / len(parsed.questions)) * 100.0, 2) if parsed.questions else 0.0
@@ -798,14 +850,7 @@ def score_generated_activity(
 
 
 def _score_question(question_type: str, answer_key: dict[str, Any], answer: Any) -> bool:
-    if isinstance(answer, dict):
-        candidate = answer.get("choice_id")
-        if candidate is None:
-            candidate = answer.get("value")
-        if candidate is None:
-            candidate = answer.get("answer")
-    else:
-        candidate = answer
+    candidate = _answer_candidate(answer)
     if question_type == "mcq":
         return str(candidate or "") == str(answer_key.get("correct_choice_id") or "")
     if question_type == "true_false":
@@ -814,13 +859,97 @@ def _score_question(question_type: str, answer_key: dict[str, Any], answer: Any)
         normalized = _normalize_text(str(candidate or ""))
         return normalized in {_normalize_text(str(item)) for item in answer_key.get("accepted_answers") or []}
     if question_type == "short_answer":
-        normalized = _normalize_text(str(candidate or ""))
-        accepted = {_normalize_text(str(item)) for item in answer_key.get("accepted_answers") or []}
-        if normalized in accepted:
+        if _short_answer_matches(str(candidate or ""), answer_key):
             return True
-        required = [_normalize_text(str(item)) for item in answer_key.get("required_key_terms") or []]
-        return bool(required) and all(term in normalized for term in required)
     return False
+
+
+def _answer_candidate(answer: Any) -> Any:
+    if isinstance(answer, dict):
+        candidate = answer.get("choice_id")
+        if candidate is None:
+            candidate = answer.get("value")
+        if candidate is None:
+            candidate = answer.get("answer")
+        return candidate
+    return answer
+
+
+def _short_answer_matches(candidate: str, answer_key: dict[str, Any]) -> bool:
+    normalized = _normalize_text(candidate)
+    if not normalized:
+        return False
+
+    accepted = [_normalize_text(str(item)) for item in answer_key.get("accepted_answers") or [] if str(item).strip()]
+    if normalized in set(accepted):
+        return True
+
+    candidate_tokens = _meaningful_short_answer_tokens(normalized)
+    for accepted_answer in accepted:
+        accepted_tokens = _meaningful_short_answer_tokens(accepted_answer)
+        if _meaningful_tokens_match(candidate_tokens, accepted_tokens):
+            return True
+        if accepted_answer and (f" {normalized} " in f" {accepted_answer} " or f" {accepted_answer} " in f" {normalized} "):
+            if candidate_tokens and any(token in accepted_tokens for token in candidate_tokens):
+                return True
+
+    required = [_normalize_text(str(item)) for item in answer_key.get("required_key_terms") or [] if str(item).strip()]
+    if required:
+        return all(
+            _meaningful_tokens_match(candidate_tokens, _meaningful_short_answer_tokens(term))
+            for term in required
+        )
+    return False
+
+
+def _meaningful_short_answer_tokens(value: str) -> set[str]:
+    tokens = set(re.findall(r"[a-z0-9]+", value.lower()))
+    return {
+        token
+        for token in tokens
+        if token not in _SHORT_ANSWER_STOPWORDS
+        and token not in _SHORT_ANSWER_GENERIC_TOKENS
+        and len(token) > 1
+    }
+
+
+def _meaningful_tokens_match(candidate_tokens: set[str], expected_tokens: set[str]) -> bool:
+    if not candidate_tokens or not expected_tokens:
+        return False
+    return candidate_tokens.issubset(expected_tokens) or expected_tokens.issubset(candidate_tokens)
+
+
+def _student_answer_summary(question: Any, answer: Any) -> str:
+    candidate = _answer_candidate(answer)
+    if question.type == "mcq":
+        for choice in question.choices or []:
+            if choice.id == candidate:
+                return choice.text
+    if question.type == "true_false":
+        boolean = _as_bool(candidate)
+        if boolean is not None:
+            return "True" if boolean else "False"
+    return str(candidate or "").strip()
+
+
+def _expected_answer_summary(question: Any) -> str:
+    answer_key = question.answer_key or {}
+    if question.type == "mcq":
+        correct_id = str(answer_key.get("correct_choice_id") or "")
+        for choice in question.choices or []:
+            if choice.id == correct_id:
+                return choice.text
+    if question.type == "true_false":
+        correct = answer_key.get("correct")
+        if isinstance(correct, bool):
+            return "True" if correct else "False"
+    accepted = [str(item).strip() for item in answer_key.get("accepted_answers") or [] if str(item).strip()]
+    if accepted:
+        return " / ".join(accepted[:3])
+    required = [str(item).strip() for item in answer_key.get("required_key_terms") or [] if str(item).strip()]
+    if required:
+        return "Must include: " + ", ".join(required[:3])
+    return ""
 
 
 def _as_bool(value: Any) -> bool | None:

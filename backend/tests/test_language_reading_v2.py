@@ -86,7 +86,7 @@ def _blueprint(**overrides) -> GenerationBlueprint:
         "inference_depth": "mixed",
         "number_of_questions": 4,
         "safety_topic_restrictions": ["unsafe topics"],
-        "prompt_version": "reading_v2_r5_gap_fill",
+        "prompt_version": "reading_v2_r6_answer_ux",
     }
     values.update(overrides)
     return GenerationBlueprint(**values)
@@ -297,6 +297,28 @@ def test_deterministic_scoring_works_for_mvp_question_types():
     assert score == 100.0
     assert [result.question_type for result in results] == ["mcq", "true_false", "gap_fill", "short_answer"]
     assert all(result.correct for result in results)
+    assert results[0].student_answer == "Mira learns helpful ways to read more confidently."
+    assert results[0].expected_answer == "Mira learns helpful ways to read more confidently."
+    assert results[2].expected_answer == "margin"
+    assert results[3].explanation
+
+
+def test_short_answer_scoring_accepts_meaningful_phrase_variants():
+    blueprint = _blueprint(question_types=["short_answer"], number_of_questions=1)
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    question = activity["questions"][0]
+    question["stem"] = "Where does the student study English?"
+    question["answer_key"] = {
+        "accepted_answers": ["at home", "the student studies at home", "she studies at home"],
+        "required_key_terms": ["home"],
+    }
+
+    score, results = score_generated_activity(activity, {"q1": "home"})
+
+    assert score == 100.0
+    assert results[0].correct is True
+    assert results[0].student_answer == "home"
+    assert results[0].expected_answer == "at home / the student studies at home / she studies at home"
 
 
 def test_provider_selection_defaults_to_safe_local_mock(monkeypatch):
@@ -337,6 +359,7 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "exactly one visible ____ marker",
         "For A1 Beginner",
         "avoid abstract wording",
+        "common natural variants",
         "Return valid JSON only",
     ]:
         assert required in prompt_text

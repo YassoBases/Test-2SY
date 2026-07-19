@@ -252,10 +252,6 @@
               </div>
             </div>
 
-            <p v-if="question.type === 'gap_fill' && gapFillPrompt(question)" class="gap-fill-prompt">
-              {{ gapFillPrompt(question) }}
-            </p>
-
             <v-radio-group
               v-if="question.type === 'mcq'"
               v-model="answers[question.id]"
@@ -281,6 +277,21 @@
               <v-btn :value="true">True</v-btn>
               <v-btn :value="false">False</v-btn>
             </v-btn-toggle>
+
+            <div
+              v-else-if="question.type === 'gap_fill' && gapFillParts(question)"
+              class="gap-fill-inline"
+            >
+              <span>{{ gapFillParts(question).before }}</span>
+              <input
+                v-model="answers[question.id]"
+                class="gap-fill-inline__input"
+                type="text"
+                :aria-label="`Answer for question ${index + 1}`"
+                autocomplete="off"
+              />
+              <span>{{ gapFillParts(question).after }}</span>
+            </div>
 
             <v-text-field
               v-else-if="question.type === 'gap_fill'"
@@ -346,8 +357,21 @@
                 <div class="text-caption text-medium-emphasis">
                   {{ questionTypeLabel(item.question_type) }} · {{ labelize(item.subskill) }} · {{ item.correct ? 'Correct' : 'Not quite' }}
                 </div>
-                <div v-if="questionFeedback(item.question_id)" class="text-body-2 mt-1 result-feedback">
+                <div v-if="item.correct && questionFeedback(item.question_id)" class="text-body-2 mt-1 result-feedback">
                   {{ questionFeedback(item.question_id) }}
+                </div>
+                <div v-if="!item.correct" class="result-answer-details">
+                  <div v-if="item.student_answer" class="result-answer-details__row">
+                    <span>Your answer</span>
+                    <strong>{{ item.student_answer }}</strong>
+                  </div>
+                  <div v-if="item.expected_answer" class="result-answer-details__row">
+                    <span>Expected answer</span>
+                    <strong>{{ item.expected_answer }}</strong>
+                  </div>
+                  <div v-if="resultExplanation(item)" class="result-answer-details__explanation">
+                    {{ resultExplanation(item) }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -787,6 +811,10 @@ function hasBlank(value) {
   return /_{2,}|\[[^\]]*blank[^\]]*\]|\(\s*blank\s*\)/i.test(String(value || ''))
 }
 
+function blankPattern() {
+  return /_{2,}|\[[^\]]*blank[^\]]*\]|\(\s*blank\s*\)/i
+}
+
 function isGenericGapFillStem(value) {
   return /^answer this gap fill question/i.test(String(value || '').trim())
 }
@@ -809,6 +837,16 @@ function gapFillPrompt(question) {
   return 'Use one word or phrase that makes the sentence correct.'
 }
 
+function gapFillParts(question) {
+  const prompt = gapFillPrompt(question)
+  const match = blankPattern().exec(prompt)
+  if (!match) return null
+  return {
+    before: prompt.slice(0, match.index),
+    after: prompt.slice(match.index + match[0].length),
+  }
+}
+
 function questionById(questionId) {
   return questions.value.find((question) => question.id === questionId) || null
 }
@@ -821,6 +859,10 @@ function questionTitle(questionId) {
 function questionFeedback(questionId) {
   const question = questionById(questionId)
   return question?.explanation || question?.feedback || ''
+}
+
+function resultExplanation(item) {
+  return item?.explanation || questionFeedback(item?.question_id)
 }
 
 function formatDate(iso) {
@@ -1052,6 +1094,41 @@ function formatDate(iso) {
   line-height: 1.5;
 }
 
+.gap-fill-inline {
+  margin: -2px 0 12px 42px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.82);
+  font-size: 1rem;
+  line-height: 1.7;
+  direction: ltr;
+  text-align: left;
+}
+
+.gap-fill-inline__input {
+  width: min(190px, 100%);
+  min-width: 110px;
+  border: 0;
+  border-bottom: 2px solid rgba(var(--v-theme-secondary), 0.68);
+  border-radius: 0;
+  background: rgba(var(--v-theme-secondary), 0.08);
+  color: rgb(var(--v-theme-on-surface));
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 2px 8px;
+  direction: ltr;
+  text-align: left;
+  outline: none;
+}
+
+.gap-fill-inline__input:focus {
+  border-bottom-color: rgb(var(--v-theme-secondary));
+  background: rgba(var(--v-theme-secondary), 0.14);
+}
+
 .question-block {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 8px;
@@ -1084,6 +1161,32 @@ function formatDate(iso) {
 .result-item--bad {
   border-color: rgba(var(--v-theme-error), 0.3);
   background: rgba(var(--v-theme-error), 0.07);
+}
+
+.result-answer-details {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  direction: ltr;
+  text-align: left;
+}
+
+.result-answer-details__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.875rem;
+}
+
+.result-answer-details__row span {
+  color: rgba(var(--v-theme-on-surface), 0.64);
+  min-width: 104px;
+}
+
+.result-answer-details__explanation {
+  color: rgba(var(--v-theme-on-surface), 0.76);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {
