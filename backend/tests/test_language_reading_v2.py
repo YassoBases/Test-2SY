@@ -161,6 +161,17 @@ def _answers_for_activity(activity: dict, *, wrong_subskills: set[str] | None = 
     return answers
 
 
+def _nested_keys(value) -> set[str]:
+    if isinstance(value, list):
+        return {key for item in value for key in _nested_keys(item)}
+    if isinstance(value, dict):
+        keys = set(value)
+        for nested in value.values():
+            keys.update(_nested_keys(nested))
+        return keys
+    return set()
+
+
 async def _create_and_submit_practice(
     db,
     *,
@@ -562,6 +573,26 @@ def test_deterministic_scoring_works_for_mvp_question_types():
     assert results[3].explanation
 
 
+def test_post_submit_results_keep_allowed_feedback_fields():
+    blueprint = _blueprint()
+    activity = generate_reading_activity_from_blueprint(blueprint)
+
+    score, results = score_generated_activity(
+        activity,
+        {
+            "q1": {"choice_id": "b"},
+            "q2": False,
+            "q3": "wrong",
+            "q4": "wrong",
+        },
+    )
+
+    assert score < 100.0
+    assert any(result.student_answer for result in results)
+    assert any(result.expected_answer for result in results)
+    assert any(result.explanation for result in results)
+
+
 def test_generated_practice_with_extra_questions_uses_supported_types_and_scores():
     blueprint = _blueprint(
         cefr_level="B2",
@@ -607,6 +638,55 @@ def test_answer_key_stripping_works_with_adaptive_question_counts():
     assert "answer_key" not in str(stripped)
     assert "accepted_answers" not in str(stripped)
     assert "required_key_terms" not in str(stripped)
+
+
+def test_pre_submit_payload_strips_answer_help_fields_and_choice_markers():
+    blueprint = _blueprint(
+        cefr_level="C2",
+        internal_stage="Advanced",
+        question_count=8,
+        number_of_questions=8,
+        question_types=reading_service.question_types_for_count(8, mode="practice"),
+        reading_subskills=["scan_detail", "vocab_in_context", "infer_meaning", "author_purpose"],
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["validation_metadata"]["private_generation_metadata"] = {"seed": "hidden"}
+    activity["questions"][0].update(
+        {
+            "feedback": "Private feedback before submit",
+            "rationale": "The first option is correct.",
+            "expected_answer": "The hidden answer",
+            "correct_answer": "The hidden answer",
+            "correct_option": "a",
+            "correct_option_index": 0,
+            "rubric": {"private": True},
+            "scoring": {"private": True},
+            "scoring_metadata": {"private": True},
+            "private_generation_metadata": {"private": True},
+        }
+    )
+    activity["questions"][0]["choices"][0].update(
+        {
+            "correct": True,
+            "is_correct": True,
+            "correct_option": True,
+            "scoring_metadata": {"private": True},
+        }
+    )
+
+    stripped = reading_service.strip_answer_keys(activity)
+    stripped_keys = _nested_keys(stripped)
+    stripped_gap_fill = next(question for question in stripped["questions"] if question["type"] == "gap_fill")
+
+    assert len(stripped["questions"]) == 8
+    assert stripped["questions"][0]["choices"][0] == {
+        "id": "a",
+        "text": "Mira learns helpful ways to read more confidently.",
+    }
+    assert stripped_gap_fill["sentence_with_blank"].count("____") == 1
+    assert not stripped_keys.intersection(reading_service.PRE_SUBMIT_ANSWER_HELP_FIELDS)
+    assert "validation_metadata" not in stripped
+    assert "diversity_metadata" not in stripped
 
 
 def test_missing_answers_are_scored_incorrect_with_adaptive_question_counts():
@@ -977,9 +1057,11 @@ async def test_attempt_creation_stores_snapshots_and_strips_student_keys(postgre
     assert stored.validation_result_json["valid"] is True
     assert stored.validation_result_json["generation_provider"] == "local_mock"
     assert stored.model_used == "local_mock"
+    assert any(question.get("answer_key") for question in stored.generated_activity_json["questions"])
+    assert any(question.get("explanation") for question in stored.generated_activity_json["questions"])
     assert all("answer_key" not in question for question in out.activity["questions"])
-    assert "accepted_answers" not in str(out.activity)
-    assert "required_key_terms" not in str(out.activity)
+    assert not _nested_keys(out.activity).intersection(reading_service.PRE_SUBMIT_ANSWER_HELP_FIELDS)
+    assert all(set(choice) == {"id", "text"} for question in out.activity["questions"] for choice in question.get("choices", []))
 
 
 async def test_attempt_creation_uses_configured_ai_provider_with_mocked_ai(monkeypatch, postgres_session):

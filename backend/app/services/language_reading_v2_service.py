@@ -42,6 +42,61 @@ CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
 QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
 REQUIRED_PRACTICE_QUESTION_TYPES = ["mcq", "gap_fill", "true_false", "short_answer"]
+PRE_SUBMIT_ANSWER_HELP_FIELDS = {
+    "answer_key",
+    "accepted_answers",
+    "required_key_terms",
+    "explanation",
+    "evidence_quote",
+    "feedback",
+    "rationale",
+    "expected_answer",
+    "expected_answers",
+    "correct_answer",
+    "correct_answers",
+    "correct_option",
+    "correct_option_index",
+    "correct_choice",
+    "correct_choice_id",
+    "correct",
+    "is_correct",
+    "rubric",
+    "scoring",
+    "scoring_metadata",
+    "private_generation_metadata",
+    "validation_metadata",
+}
+SAFE_ACTIVITY_FIELDS = {
+    "cefr_level",
+    "internal_stage",
+    "title",
+    "passage",
+    "word_count",
+    "grammar_tags",
+    "vocab_tags",
+    "skill_tags",
+    "difficulty_score",
+    "topic",
+    "topic_tags",
+    "questions",
+    "safety_tags",
+    "instructions",
+    "question_count",
+    "number_of_questions",
+}
+SAFE_QUESTION_FIELDS = {
+    "id",
+    "type",
+    "subskill",
+    "stem",
+    "prompt",
+    "sentence_with_blank",
+    "display_sentence",
+    "blank_prompt",
+    "choices",
+    "instructions",
+}
+SAFE_CHOICE_FIELDS = {"id", "text"}
 PRACTICE_QUESTION_COUNT_POLICY = {
     "A1": {"Beginner": 4, "Intermediate": 4, "Advanced": 5},
     "A2": {"Beginner": 4, "Intermediate": 5, "Advanced": 5},
@@ -1291,16 +1346,48 @@ def _validate_mcq(question: Any, answer_key: dict[str, Any], issues: list[Valida
         issues.append(ValidationIssue(code="invalid_mcq_key", message="MCQ answer key must point to a choice", question_id=question.id))
 
 
+def _strip_pre_submit_answer_help(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_strip_pre_submit_answer_help(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    return {
+        key: _strip_pre_submit_answer_help(nested)
+        for key, nested in value.items()
+        if key not in PRE_SUBMIT_ANSWER_HELP_FIELDS
+    }
+
+
 def strip_answer_keys(activity: dict[str, Any] | GeneratedReadingActivity | None) -> dict[str, Any]:
     if not activity:
         return {}
     payload = activity.model_dump() if isinstance(activity, GeneratedReadingActivity) else dict(activity)
-    stripped_questions = []
+    safe_activity = {
+        key: _strip_pre_submit_answer_help(value)
+        for key, value in payload.items()
+        if key in SAFE_ACTIVITY_FIELDS and key not in PRE_SUBMIT_ANSWER_HELP_FIELDS
+    }
+    stripped_questions: list[dict[str, Any]] = []
     for question in payload.get("questions") or []:
-        safe_question = {key: value for key, value in question.items() if key != "answer_key"}
+        safe_question = {
+            key: _strip_pre_submit_answer_help(value)
+            for key, value in question.items()
+            if key in SAFE_QUESTION_FIELDS and key not in PRE_SUBMIT_ANSWER_HELP_FIELDS
+        }
+        safe_choices = []
+        for choice in question.get("choices") or []:
+            safe_choices.append(
+                {
+                    key: _strip_pre_submit_answer_help(value)
+                    for key, value in dict(choice).items()
+                    if key in SAFE_CHOICE_FIELDS and key not in PRE_SUBMIT_ANSWER_HELP_FIELDS
+                }
+            )
+        if safe_choices:
+            safe_question["choices"] = safe_choices
         stripped_questions.append(safe_question)
-    payload["questions"] = stripped_questions
-    return payload
+    safe_activity["questions"] = stripped_questions
+    return safe_activity
 
 
 def score_generated_activity(

@@ -465,7 +465,30 @@ import {
 
 const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const INTERNAL_STAGES = ['Beginner', 'Intermediate', 'Advanced']
-const SECRET_FIELDS = ['answer_key', 'accepted_answers', 'required_key_terms']
+const SECRET_FIELDS = [
+  'answer_key',
+  'accepted_answers',
+  'required_key_terms',
+  'explanation',
+  'evidence_quote',
+  'feedback',
+  'rationale',
+  'expected_answer',
+  'expected_answers',
+  'correct_answer',
+  'correct_answers',
+  'correct_option',
+  'correct_option_index',
+  'correct_choice',
+  'correct_choice_id',
+  'correct',
+  'is_correct',
+  'rubric',
+  'scoring',
+  'scoring_metadata',
+  'private_generation_metadata',
+  'validation_metadata',
+]
 const STAGE_REQUIREMENTS = {
   attempts: 5,
   uniqueActivities: 4,
