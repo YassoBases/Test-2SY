@@ -203,6 +203,201 @@ _WORD_RANGES: dict[str, dict[str, tuple[int, int]]] = {
     "C2": {"Beginner": (1550, 1800), "Intermediate": (1750, 2050), "Advanced": (2000, 2300)},
 }
 
+PASSAGE_DIFFICULTY_POLICY: dict[str, dict[str, dict[str, float | int]]] = {
+    "A1": {
+        "Beginner": {
+            "sentence_count_min": 4,
+            "sentence_count_max": 10,
+            "average_sentence_length_min": 5,
+            "average_sentence_length_max": 18,
+            "max_repeated_sentence_ratio": 0.25,
+            "max_repeated_ngram_ratio": 0.35,
+            "lexical_diversity_min": 0.28,
+            "paragraph_count_min": 1,
+        },
+        "Intermediate": {
+            "sentence_count_min": 5,
+            "sentence_count_max": 12,
+            "average_sentence_length_min": 6,
+            "average_sentence_length_max": 18,
+            "max_repeated_sentence_ratio": 0.22,
+            "max_repeated_ngram_ratio": 0.32,
+            "lexical_diversity_min": 0.30,
+            "paragraph_count_min": 1,
+        },
+        "Advanced": {
+            "sentence_count_min": 6,
+            "sentence_count_max": 16,
+            "average_sentence_length_min": 6,
+            "average_sentence_length_max": 18,
+            "max_repeated_sentence_ratio": 0.20,
+            "max_repeated_ngram_ratio": 0.30,
+            "lexical_diversity_min": 0.30,
+            "paragraph_count_min": 1,
+        },
+    },
+    "A2": {
+        "Beginner": {
+            "sentence_count_min": 7,
+            "sentence_count_max": 20,
+            "average_sentence_length_min": 7,
+            "average_sentence_length_max": 24,
+            "max_repeated_sentence_ratio": 0.18,
+            "max_repeated_ngram_ratio": 0.28,
+            "lexical_diversity_min": 0.30,
+            "paragraph_count_min": 1,
+        },
+        "Intermediate": {
+            "sentence_count_min": 8,
+            "sentence_count_max": 26,
+            "average_sentence_length_min": 8,
+            "average_sentence_length_max": 24,
+            "max_repeated_sentence_ratio": 0.16,
+            "max_repeated_ngram_ratio": 0.26,
+            "lexical_diversity_min": 0.30,
+            "paragraph_count_min": 1,
+        },
+        "Advanced": {
+            "sentence_count_min": 10,
+            "sentence_count_max": 32,
+            "average_sentence_length_min": 8,
+            "average_sentence_length_max": 24,
+            "max_repeated_sentence_ratio": 0.15,
+            "max_repeated_ngram_ratio": 0.25,
+            "lexical_diversity_min": 0.30,
+            "paragraph_count_min": 1,
+        },
+    },
+    "B1": {
+        "Beginner": {
+            "sentence_count_min": 14,
+            "sentence_count_max": 45,
+            "average_sentence_length_min": 9,
+            "average_sentence_length_max": 26,
+            "max_repeated_sentence_ratio": 0.12,
+            "max_repeated_ngram_ratio": 0.22,
+            "lexical_diversity_min": 0.36,
+            "paragraph_count_min": 1,
+        },
+        "Intermediate": {
+            "sentence_count_min": 16,
+            "sentence_count_max": 55,
+            "average_sentence_length_min": 9,
+            "average_sentence_length_max": 26,
+            "max_repeated_sentence_ratio": 0.12,
+            "max_repeated_ngram_ratio": 0.22,
+            "lexical_diversity_min": 0.36,
+            "paragraph_count_min": 1,
+        },
+        "Advanced": {
+            "sentence_count_min": 20,
+            "sentence_count_max": 65,
+            "average_sentence_length_min": 9,
+            "average_sentence_length_max": 26,
+            "max_repeated_sentence_ratio": 0.12,
+            "max_repeated_ngram_ratio": 0.22,
+            "lexical_diversity_min": 0.36,
+            "paragraph_count_min": 1,
+        },
+    },
+    "B2": {
+        "Beginner": {
+            "sentence_count_min": 24,
+            "sentence_count_max": 75,
+            "average_sentence_length_min": 10,
+            "average_sentence_length_max": 28,
+            "max_repeated_sentence_ratio": 0.10,
+            "max_repeated_ngram_ratio": 0.30,
+            "lexical_diversity_min": 0.38,
+            "paragraph_count_min": 2,
+        },
+        "Intermediate": {
+            "sentence_count_min": 28,
+            "sentence_count_max": 90,
+            "average_sentence_length_min": 10,
+            "average_sentence_length_max": 28,
+            "max_repeated_sentence_ratio": 0.10,
+            "max_repeated_ngram_ratio": 0.30,
+            "lexical_diversity_min": 0.38,
+            "paragraph_count_min": 2,
+        },
+        "Advanced": {
+            "sentence_count_min": 32,
+            "sentence_count_max": 110,
+            "average_sentence_length_min": 10,
+            "average_sentence_length_max": 28,
+            "max_repeated_sentence_ratio": 0.10,
+            "max_repeated_ngram_ratio": 0.30,
+            "lexical_diversity_min": 0.38,
+            "paragraph_count_min": 2,
+        },
+    },
+    "C1": {
+        "Beginner": {
+            "sentence_count_min": 40,
+            "sentence_count_max": 130,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 32,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.42,
+            "lexical_diversity_min": 0.40,
+            "paragraph_count_min": 3,
+        },
+        "Intermediate": {
+            "sentence_count_min": 46,
+            "sentence_count_max": 150,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 32,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.42,
+            "lexical_diversity_min": 0.40,
+            "paragraph_count_min": 3,
+        },
+        "Advanced": {
+            "sentence_count_min": 52,
+            "sentence_count_max": 175,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 32,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.42,
+            "lexical_diversity_min": 0.40,
+            "paragraph_count_min": 3,
+        },
+    },
+    "C2": {
+        "Beginner": {
+            "sentence_count_min": 60,
+            "sentence_count_max": 210,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 34,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.50,
+            "lexical_diversity_min": 0.42,
+            "paragraph_count_min": 4,
+        },
+        "Intermediate": {
+            "sentence_count_min": 66,
+            "sentence_count_max": 230,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 34,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.50,
+            "lexical_diversity_min": 0.42,
+            "paragraph_count_min": 4,
+        },
+        "Advanced": {
+            "sentence_count_min": 72,
+            "sentence_count_max": 260,
+            "average_sentence_length_min": 11,
+            "average_sentence_length_max": 34,
+            "max_repeated_sentence_ratio": 0.08,
+            "max_repeated_ngram_ratio": 0.50,
+            "lexical_diversity_min": 0.42,
+            "paragraph_count_min": 4,
+        },
+    },
+}
+
 _SUBSKILLS_BY_STAGE = {
     "Beginner": ["skim_gist", "scan_detail", "literal_comprehension"],
     "Intermediate": ["skim_gist", "scan_detail", "vocab_in_context", "infer_meaning"],
@@ -562,6 +757,54 @@ def _prioritized_subskills_for_questions(blueprint: GenerationBlueprint) -> list
     )
 
 
+def _word_tokens(text: str) -> list[str]:
+    return [token.lower() for token in re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", text)]
+
+
+def _sentence_texts(text: str) -> list[str]:
+    return [" ".join(sentence.split()) for sentence in re.split(r"[.!?]+", text) if sentence.strip()]
+
+
+def _paragraph_count(text: str) -> int:
+    paragraphs = [paragraph for paragraph in re.split(r"\n\s*\n", text.strip()) if paragraph.strip()]
+    return len(paragraphs) if paragraphs else 0
+
+
+def _paragraphize_sentences(sentences: list[str], paragraph_count_min: int) -> str:
+    if paragraph_count_min <= 1 or len(sentences) <= 1:
+        return " ".join(sentences)
+    chunk_size = max(1, round(len(sentences) / paragraph_count_min))
+    paragraphs = [
+        " ".join(sentences[index : index + chunk_size])
+        for index in range(0, len(sentences), chunk_size)
+        if sentences[index : index + chunk_size]
+    ]
+    return "\n\n".join(paragraphs)
+
+
+def _lexical_diversity(tokens: list[str]) -> float:
+    if not tokens:
+        return 0.0
+    sample = tokens[:400]
+    return len(set(sample)) / len(sample)
+
+
+def _repeated_sentence_ratio(sentences: list[str]) -> float:
+    if not sentences:
+        return 0.0
+    normalized = [re.sub(r"\s+", " ", sentence.lower()).strip() for sentence in sentences]
+    repeated = len(normalized) - len(set(normalized))
+    return repeated / len(normalized)
+
+
+def _repeated_ngram_ratio(tokens: list[str], *, size: int = 5) -> float:
+    if len(tokens) < size:
+        return 0.0
+    ngrams = [tuple(tokens[index : index + size]) for index in range(len(tokens) - size + 1)]
+    repeated = len(ngrams) - len(set(ngrams))
+    return repeated / len(ngrams)
+
+
 def get_practice_question_count(cefr_level: str | LanguageLevel, stage: str) -> int:
     cefr = _enum_value(cefr_level) or "A1"
     return PRACTICE_QUESTION_COUNT_POLICY.get(cefr, PRACTICE_QUESTION_COUNT_POLICY["A1"]).get(stage, 4)
@@ -639,6 +882,7 @@ async def build_generation_blueprint(
         inference_depth={"Beginner": "direct", "Intermediate": "mixed", "Advanced": "indirect"}[stage],
         question_count=question_count,
         number_of_questions=question_count,
+        passage_difficulty_policy=dict(PASSAGE_DIFFICULTY_POLICY[cefr][stage]),
         safety_topic_restrictions=sorted(_SENSITIVE_TERMS),
         prompt_version=PROMPT_VERSION,
         known_vocab_items=[],
@@ -654,21 +898,240 @@ async def build_generation_blueprint(
     )
 
 
-def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> GeneratedReadingActivity:
-    sentences = [
-        "Mira joins a small study group after school because she wants to read with more confidence.",
-        "The group chooses one short article, marks useful words, and writes simple notes in the margin.",
-        "At first, Mira reads slowly, but she checks the title, pictures, and first sentence before reading every detail.",
-        "This helps her understand the main idea before she looks for names, times, and reasons.",
-        "When a word is new, she reads the words around it and guesses the meaning before using a dictionary.",
-        "By the end of the week, she can explain the article to a friend and answer questions with clear evidence.",
+def _mock_base_sentences(cefr: str, stage: str) -> list[str]:
+    if cefr == "A1":
+        return [
+            "Mira has a blue school bag.",
+            "She puts a book, a pen, and a small card inside.",
+            "At break time, she sits near the window.",
+            "She looks at the title first.",
+            "Then she reads one short page.",
+            "A picture helps her understand the story.",
+            "Mira writes one new word in her notebook.",
+            "Her friend asks a simple question.",
+            "Mira answers with a smile.",
+            "She feels ready to read another page.",
+        ]
+    if cefr == "A2":
+        return [
+            "Ben goes to the market with his aunt on Saturday morning.",
+            "They need fruit, bread, and a small gift for his cousin.",
+            "Ben reads the shop signs before they choose a place to stop.",
+            "One sign says the apples are cheaper before lunch.",
+            "His aunt asks him to compare two prices.",
+            "Ben writes the cheaper price on a paper list.",
+            "Later, they miss the first bus home.",
+            "They wait at the stop and talk about the busy market.",
+            "Ben says the trip was useful because he practiced reading real information.",
+            "At home, he tells his cousin about the gift.",
+            "The family eats a snack and rests.",
+            "Ben keeps the paper list for his next visit.",
+        ]
+    if cefr == "B1":
+        return [
+            "Mira volunteers at a community garden that publishes a short newsletter each month.",
+            "The newest article explains why neighbors changed the watering schedule during a dry week.",
+            "At first, some readers thought the rule was unfair because their plants needed water in the evening.",
+            "The article gives a clear reason: morning watering saves more water and helps the soil stay cool.",
+            "Mira notices that the writer begins with a problem, then adds examples from three families.",
+            "One family grows tomatoes near a wall, so the plants stay warm longer than the others.",
+            "Another family uses a small barrel to collect rain after storms.",
+            "The last family shares tools with older neighbors who cannot carry heavy buckets.",
+            "After reading, Mira writes two notes about cause and effect.",
+            "She also marks words that show contrast, such as however and although.",
+            "The newsletter ends by asking people to try the schedule for two weeks.",
+            "Mira thinks the writer wants readers to cooperate before judging the new plan.",
+        ]
+    if cefr == "B2":
+        return [
+            "A neighborhood council is deciding whether to turn an empty shop into a shared reading room.",
+            "Supporters argue that the room would give teenagers a quiet place to study after school.",
+            "They also believe it could host language clubs, repair workshops, and talks by local writers.",
+            "However, several shop owners worry that the plan may reduce parking for customers on busy evenings.",
+            "The council report compares two possible designs and explains the likely effects of each one.",
+            "The cheaper design keeps most of the old shelves, but it leaves little space for group activities.",
+            "The more expensive design removes a wall, adds better lighting, and creates a small area for children.",
+            "Although the second design costs more at first, volunteers say it could attract donations later.",
+            "The report does not tell readers what to choose; instead, it presents evidence from similar towns.",
+            "In those towns, shared reading rooms worked best when residents helped plan the weekly schedule.",
+            "One example shows that evening events increased visits, while morning sessions served older adults.",
+            "By the end, the council asks readers to balance cost, access, and long-term community value.",
+        ]
+    if cefr == "C1":
+        return [
+            "A regional library network reviewed a public information campaign about digital reading access.",
+            "The campaign promised convenience, but its first posters treated internet access as if it were universal.",
+            "That assumption weakened the message for rural families, whose connection problems were practical rather than motivational.",
+            "A later version of the campaign changed its approach by pairing online resources with printed guides and local training sessions.",
+            "The revised text still promoted digital borrowing, yet it acknowledged that confidence grows through repeated support.",
+            "Researchers evaluating the campaign noted a useful distinction between awareness and meaningful participation.",
+            "Many residents had heard about the service before, but fewer understood how to search safely or save materials for offline use.",
+            "This gap matters because a campaign can appear successful if it measures only clicks and registrations.",
+            "A more careful evaluation asks whether people can use the service independently after the first introduction.",
+            "The report therefore recommends plain instructions, community mentors, and feedback loops with library staff.",
+            "Its argument is not that digital reading is simple, but that access improves when institutions remove predictable barriers.",
+            "The strongest section uses interviews to show why small design choices can either invite or exclude readers.",
+        ]
+    return [
+        "The essay examines a city archive project that presents ordinary letters as evidence of public memory.",
+        "At first glance, the curators appear merely to preserve fragile documents, yet their captions quietly shape interpretation.",
+        "They select domestic details, economic worries, and hesitant political remarks to show how private language enters civic history.",
+        "This method has clear value because it resists the habit of treating historical change as the work of famous leaders alone.",
+        "Still, the exhibition raises a subtle problem: intimacy can make archival evidence feel more transparent than it really is.",
+        "A reader may mistake an emotional sentence for a complete account of the writer's world.",
+        "The curators respond by placing each letter beside maps, wage records, and contradictory newspaper reports.",
+        "That arrangement does not remove uncertainty, but it teaches visitors to read sympathy and skepticism together.",
+        "The most persuasive panel explains why absence is also evidence, especially when some communities left fewer written traces.",
+        "Rather than filling those gaps with confident narration, the exhibition marks them as limits of the archive.",
+        "Its achievement lies in the disciplined tension between storytelling and restraint.",
+        "The final room suggests that responsible interpretation depends on noticing both what a document reveals and what it cannot know.",
     ]
-    words: list[str] = []
+
+
+def _mock_sequence_label(index: int) -> str:
+    words = [
+        "amber",
+        "brisk",
+        "clear",
+        "distant",
+        "even",
+        "fresh",
+        "gentle",
+        "honest",
+        "inner",
+        "joined",
+        "kind",
+        "local",
+        "modest",
+        "narrow",
+        "open",
+        "patient",
+        "quiet",
+        "ready",
+        "steady",
+        "useful",
+    ]
+    return f"{words[index % len(words)]} {words[(index // len(words)) % len(words)]}"
+
+
+def _mock_extension_sentence(cefr: str, index: int) -> str:
+    label = _mock_sequence_label(index)
+    connectors = ["Meanwhile", "Nevertheless", "Consequently", "For this reason", "In practice", "By contrast"]
+    focuses = ["survey", "meeting", "case note", "interview", "planning memo", "public comment", "design choice"]
+    actions = ["questions a simple assumption about", "adds evidence for", "places limits around", "compares responses to"]
+    details = ["access", "cost", "trust", "timing", "participation", "responsibility", "long-term use"]
+    outcomes = [
+        "helps readers weigh competing priorities",
+        "keeps the argument connected to daily experience",
+        "shows why the decision needs more than one measure",
+        "turns a general claim into a testable point",
+        "makes the writer's purpose easier to follow",
+    ]
+    connector = connectors[index % len(connectors)]
+    focus = focuses[(index // 2) % len(focuses)]
+    action = actions[(index // 3) % len(actions)]
+    detail = details[(index // 5) % len(details)]
+    outcome = outcomes[(index // 7) % len(outcomes)]
+    if cefr in {"A1", "A2"}:
+        options = [
+            "The next part is easy to follow.",
+            "The text gives one clear detail.",
+            "The reader can find the answer in the story.",
+            "The ending helps the reader remember the main idea.",
+        ]
+    elif cefr == "B1":
+        options = [
+            f"In the {label} example, a volunteer explains how the new rule changes weekend work.",
+            f"The {label} detail helps readers connect the writer's opinion with everyday choices.",
+            f"A short comment from the {label} group makes the reason easier to understand.",
+            f"The {label} note reminds readers that small changes can still need careful planning.",
+            f"Because of the {label} result, Mira can see why the neighbors test the plan slowly.",
+            f"The writer uses the {label} case to show both a problem and a possible answer.",
+        ]
+    elif cefr == "B2":
+        options = [
+            f"{connector}, the {label} {focus} {action} {detail}, which {outcome}.",
+            f"The {label} paragraph balances {detail} with community benefit before it reaches a cautious recommendation.",
+            f"A resident's {label} concern gives the report a practical example of {detail} rather than a vague opinion.",
+            f"The writer uses the {label} comparison to show how plans change when {detail} becomes visible.",
+            f"By adding the {label} perspective, the report links {detail} with evidence from a different town.",
+            f"The {label} observation explains why a strong proposal can still fail if {detail} is ignored.",
+            f"Although the {label} point is brief, it shifts the discussion from cost toward shared responsibility.",
+        ]
+    elif cefr == "C1":
+        options = [
+            f"{connector}, the {label} {focus} {action} {detail}, so the analysis avoids easy institutional optimism.",
+            f"This {label} implication separates symbolic inclusion from usable access through a focused example of {detail}.",
+            f"A {label} paragraph complicates the argument by showing how {detail} changes across different households.",
+            f"The {label} conclusion values adaptation over certainty, especially when {detail} remains unevenly measured.",
+            f"Through the {label} interview, the author connects personal hesitation with a wider pattern of {detail}.",
+            f"The {label} section contrasts quick publicity with the slower work required to sustain {detail}.",
+            f"A {label} qualification prevents the report from sounding certain where evidence about {detail} is incomplete.",
+            f"The {label} example treats accessibility as both a technical question and a social commitment to {detail}.",
+        ]
+    else:
+        options = [
+            f"{connector}, the {label} {focus} {action} {detail}, turning archival reading into a disciplined negotiation.",
+            f"That {label} distinction keeps partial testimony from becoming a falsely complete narrative about {detail}.",
+            f"The writer's {label} restraint works as an ethical position whenever {detail} tempts easy closure.",
+            f"Such {label} nuance asks readers to treat interpretation of {detail} as provisional and accountable.",
+            f"The {label} caption withholds certainty, forcing visitors to notice how {detail} survives unevenly.",
+            f"A {label} juxtaposition creates tension around {detail} without resolving it into a single moral lesson.",
+            f"The {label} paragraph implies that responsible memory depends on disciplined attention to missing {detail}.",
+            f"By the {label} turn, the review shifts from admiration toward a demanding trust in careful evidence.",
+        ]
+    return options[index % len(options)]
+
+
+def _mock_activity_title(cefr: str, stage: str) -> str:
+    titles = {
+        "A1": "A1 School Bag Story",
+        "A2": "A2 Market Trip",
+        "B1": "B1 Community Garden Newsletter",
+        "B2": "B2 Neighborhood Reading Room Plan",
+        "C1": "C1 Digital Reading Access Report",
+        "C2": "C2 City Archive Exhibition Review",
+    }
+    return f"{titles.get(cefr, 'Reading Practice')} - {stage}"
+
+
+def _build_mock_passage(blueprint: GenerationBlueprint) -> str:
+    cefr = _enum_value(blueprint.cefr_level) or "A1"
+    stage = blueprint.internal_stage
+    policy = PASSAGE_DIFFICULTY_POLICY[cefr][stage]
+    target_min = blueprint.word_count_min
+    target_max = blueprint.word_count_max
+    sentences = list(_mock_base_sentences(cefr, stage))
+    selected: list[str] = []
+    word_total = 0
+
     index = 0
-    while len(words) < blueprint.word_count_min:
-        words.extend(sentences[index % len(sentences)].split())
+    while word_total < target_min:
+        sentence = sentences[index] if index < len(sentences) else _mock_extension_sentence(cefr, index)
+        sentence_words = len(_word_tokens(sentence))
+        if selected and word_total + sentence_words > target_max:
+            break
+        selected.append(sentence)
+        word_total += sentence_words
         index += 1
-    passage = " ".join(words[: blueprint.word_count_min])
+
+    sentence_min = int(policy["sentence_count_min"])
+    while len(selected) < sentence_min:
+        sentence = _mock_extension_sentence(cefr, index)
+        sentence_words = len(_word_tokens(sentence))
+        if selected and word_total + sentence_words > target_max:
+            break
+        selected.append(sentence)
+        word_total += sentence_words
+        index += 1
+
+    return _paragraphize_sentences(selected, int(policy["paragraph_count_min"]))
+
+
+def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> GeneratedReadingActivity:
+    cefr = _enum_value(blueprint.cefr_level) or "A1"
+    stage = blueprint.internal_stage
+    passage = _build_mock_passage(blueprint)
     questions = []
     answer_specs = [
         (
@@ -741,9 +1204,9 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
     return GeneratedReadingActivity(
         cefr_level=blueprint.cefr_level,
         internal_stage=blueprint.internal_stage,
-        title=f"{blueprint.cefr_level} {blueprint.internal_stage} Reading Routine",
+        title=_mock_activity_title(cefr, stage),
         passage=passage,
-        word_count=len(passage.split()),
+        word_count=len(_word_tokens(passage)),
         grammar_tags=blueprint.target_grammar_tags[:3],
         vocab_tags=blueprint.target_vocab_tags[:3],
         skill_tags=blueprint.reading_subskills,
@@ -816,9 +1279,73 @@ def _sentence_word_counts(text: str) -> list[int]:
 
 
 def _validate_level_readability(passage: str, blueprint: GenerationBlueprint, issues: list[ValidationIssue]) -> None:
-    sentence_counts = _sentence_word_counts(passage)
+    cefr = _enum_value(blueprint.cefr_level) or "A1"
+    stage = blueprint.internal_stage
+    policy = blueprint.passage_difficulty_policy or PASSAGE_DIFFICULTY_POLICY[cefr][stage]
+    sentences = _sentence_texts(passage)
+    sentence_counts = [len(_word_tokens(sentence)) for sentence in sentences]
+    sentence_count = len(sentences)
     max_sentence_words = max(sentence_counts or [0])
-    if blueprint.cefr_level == "A1" and blueprint.internal_stage == "Beginner":
+    average_sentence_words = sum(sentence_counts) / sentence_count if sentence_count else 0.0
+    tokens = _word_tokens(passage)
+    repeated_sentence_ratio = _repeated_sentence_ratio(sentences)
+    repeated_ngram_ratio = _repeated_ngram_ratio(tokens)
+    lexical_diversity = _lexical_diversity(tokens)
+    paragraph_count = _paragraph_count(passage)
+
+    min_sentences = int(policy.get("sentence_count_min", 0))
+    max_sentences = int(policy.get("sentence_count_max", 9999))
+    if sentence_count < min_sentences or sentence_count > max_sentences:
+        issues.append(
+            ValidationIssue(
+                code="sentence_count_out_of_range",
+                message="Passage sentence count is outside the CEFR/stage difficulty policy",
+            )
+        )
+
+    min_average = float(policy.get("average_sentence_length_min", 0))
+    max_average = float(policy.get("average_sentence_length_max", 9999))
+    if average_sentence_words < min_average or average_sentence_words > max_average:
+        issues.append(
+            ValidationIssue(
+                code="average_sentence_length_out_of_range",
+                message="Passage average sentence length is outside the CEFR/stage difficulty policy",
+            )
+        )
+
+    if repeated_sentence_ratio > float(policy.get("max_repeated_sentence_ratio", 1)):
+        issues.append(
+            ValidationIssue(
+                code="repeated_sentence_ratio_too_high",
+                message="Passage repeats too many full sentences for the CEFR/stage difficulty policy",
+            )
+        )
+
+    if repeated_ngram_ratio > float(policy.get("max_repeated_ngram_ratio", 1)):
+        issues.append(
+            ValidationIssue(
+                code="repeated_phrase_ratio_too_high",
+                message="Passage repeats too many phrases for the CEFR/stage difficulty policy",
+            )
+        )
+
+    if lexical_diversity < float(policy.get("lexical_diversity_min", 0)):
+        issues.append(
+            ValidationIssue(
+                code="lexical_diversity_too_low",
+                message="Passage vocabulary is too repetitive for the CEFR/stage difficulty policy",
+            )
+        )
+
+    if paragraph_count < int(policy.get("paragraph_count_min", 1)):
+        issues.append(
+            ValidationIssue(
+                code="paragraph_count_too_low",
+                message="Passage needs more paragraph structure for the CEFR/stage difficulty policy",
+            )
+        )
+
+    if cefr == "A1" and stage == "Beginner":
         if max_sentence_words > 18:
             issues.append(
                 ValidationIssue(
@@ -834,7 +1361,7 @@ def _validate_level_readability(passage: str, blueprint: GenerationBlueprint, is
                     message="A1 Beginner passages need concrete daily vocabulary",
                 )
             )
-    elif blueprint.cefr_level == "A2" and max_sentence_words > 24:
+    elif cefr == "A2" and max_sentence_words > 24:
         issues.append(
             ValidationIssue(
                 code="a2_sentence_too_long",
@@ -919,7 +1446,7 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
         issues.append(ValidationIssue(code="stage_mismatch", message="Activity stage does not match blueprint"))
     if not parsed.passage.strip():
         issues.append(ValidationIssue(code="empty_passage", message="Passage must not be empty"))
-    actual_word_count = len(parsed.passage.split())
+    actual_word_count = len(_word_tokens(parsed.passage))
     if actual_word_count < blueprint.word_count_min or actual_word_count > blueprint.word_count_max:
         issues.append(ValidationIssue(code="word_count_out_of_range", message="Passage word count is outside blueprint range"))
     _validate_level_readability(parsed.passage, blueprint, issues)
@@ -1135,6 +1662,7 @@ Must include these control fields from the blueprint:
 - inference_depth
 - question_count
 - number_of_questions
+- passage_difficulty_policy
 - safety_topic_restrictions
 - recent_titles / recent_topics / recent_topic_tags / recent_passage_summaries / recent_character_names / recent_question_stems
 - preferred_topic_rotation
@@ -1142,11 +1670,17 @@ Must include these control fields from the blueprint:
 
 Hard requirements:
 - Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
+- Passage should follow passage_difficulty_policy for sentence count, average sentence length, repetition, lexical diversity, and paragraph count.
 - Activity cefr_level must be {blueprint.cefr_level}.
 - Activity internal_stage must be {blueprint.internal_stage}.
 - For A1 Beginner, use 55-80 words, very short sentences, simple present, concrete daily vocabulary, and direct literal questions.
 - For A1/A2, avoid abstract wording, long dense sentences, complex clauses, and above-level grammar.
 - For A1/A2, vary the setting and situation while preserving the same CEFR/stage simplicity.
+- For B1, use connected sentences with simple reasons, opinions, explanations, and clear discourse markers.
+- For B2, use developed paragraphs with viewpoints, contrast, causes, effects, and examples.
+- For C1, use complex but controlled prose with purpose, implication, stance, and argument structure.
+- For C2, use dense nuanced prose with perspective, rhetorical structure, and advanced inference while remaining age-appropriate.
+- Do not pad the passage by repeating the same sentence, sentence pattern, or phrase. Higher levels need richer discourse structure, not only more words.
 - Do not repeat recent topics, titles, topic_tags, character names, or passage patterns from the recent context.
 - Do not reuse the same character names listed in recent_character_names.
 - Do not generate another school/study/library/new-words routine if recent attempts already used that pattern.

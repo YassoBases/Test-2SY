@@ -89,6 +89,14 @@ def _blueprint(**overrides) -> GenerationBlueprint:
         "prompt_version": reading_service.PROMPT_VERSION,
     }
     values.update(overrides)
+    cefr = values["cefr_level"]
+    stage = values["internal_stage"]
+    if "word_count_min" not in overrides and "word_count_max" not in overrides:
+        word_min, word_max = reading_service._WORD_RANGES[cefr][stage]
+        values["word_count_min"] = word_min
+        values["word_count_max"] = word_max
+    if "passage_difficulty_policy" not in overrides:
+        values["passage_difficulty_policy"] = dict(reading_service.PASSAGE_DIFFICULTY_POLICY[cefr][stage])
     return GenerationBlueprint(**values)
 
 
@@ -170,6 +178,10 @@ def _nested_keys(value) -> set[str]:
             keys.update(_nested_keys(nested))
         return keys
     return set()
+
+
+def _issue_codes(result) -> set[str]:
+    return {issue.code for issue in result.issues}
 
 
 async def _create_and_submit_practice(
@@ -310,6 +322,80 @@ def test_generated_activity_validation_passes_for_valid_mock_activity():
     assert result.issues == []
 
 
+def test_validator_rejects_passages_outside_word_range():
+    blueprint = _blueprint(cefr_level="A1", internal_stage="Beginner")
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["passage"] = "Too short."
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert "word_count_out_of_range" in _issue_codes(result)
+
+
+def test_validator_rejects_a1_beginner_dense_sentences():
+    blueprint = _blueprint(cefr_level="A1", internal_stage="Beginner")
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    activity["passage"] = (
+        "Mira carefully studies several complicated explanations about transportation schedules because "
+        "her teacher expects detailed answers before the morning lesson begins today. "
+        "She opens a book. She sees a picture. She writes a word. Her friend smiles. "
+        "The page is short. The story is about a bus."
+    )
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert "a1_beginner_sentence_too_long" in _issue_codes(result)
+
+
+def test_validator_rejects_high_level_repeated_simple_padding():
+    blueprint = _blueprint(cefr_level="C1", internal_stage="Advanced")
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    sentence = "Mira reads a simple book at home and writes one new word in her notebook."
+    sentences = [sentence for _index in range(110)]
+    activity["passage"] = "\n\n".join(
+        " ".join(sentences[index : index + 28]) for index in range(0, len(sentences), 28)
+    )
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert _issue_codes(result).intersection(
+        {"repeated_sentence_ratio_too_high", "repeated_phrase_ratio_too_high", "lexical_diversity_too_low"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("cefr", "stage"),
+    [
+        ("B1", "Intermediate"),
+        ("B2", "Advanced"),
+        ("C1", "Advanced"),
+        ("C2", "Advanced"),
+    ],
+)
+def test_local_mock_high_level_passages_follow_difficulty_policy(cefr, stage):
+    blueprint = _blueprint(
+        cefr_level=cefr,
+        internal_stage=stage,
+        reading_subskills=reading_service._SUBSKILLS_BY_STAGE[stage],
+        question_count=reading_service.get_practice_question_count(cefr, stage),
+        number_of_questions=reading_service.get_practice_question_count(cefr, stage),
+        question_types=reading_service.question_types_for_count(
+            reading_service.get_practice_question_count(cefr, stage),
+            mode="practice",
+        ),
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint)
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is True
+    assert "Reading Routine" not in activity.title
+    assert reading_service._paragraph_count(activity.passage) >= blueprint.passage_difficulty_policy["paragraph_count_min"]
+
+
 @pytest.mark.parametrize(
     ("cefr", "stage", "expected_count"),
     [
@@ -360,6 +446,7 @@ async def test_generation_blueprint_uses_adaptive_practice_question_count(postgr
     assert blueprint.question_count == expected_count
     assert blueprint.number_of_questions == expected_count
     assert len(blueprint.question_types) == expected_count
+    assert blueprint.passage_difficulty_policy == dict(reading_service.PASSAGE_DIFFICULTY_POLICY[cefr.value][stage])
     assert set(reading_service.REQUIRED_PRACTICE_QUESTION_TYPES).issubset(set(blueprint.question_types))
     assert set(blueprint.question_types).issubset(set(reading_service.QUESTION_TYPES))
 
@@ -802,8 +889,17 @@ def test_ai_prompt_contains_required_blueprint_controls():
         "student_interest",
         "difficulty_score",
         "inference_depth",
+        "question_count",
         "number_of_questions",
+        "passage_difficulty_policy",
         "safety_topic_restrictions",
+        "sentence count",
+        "lexical diversity",
+        "For B1",
+        "For B2",
+        "For C1",
+        "For C2",
+        "Do not pad the passage",
         "sentence_with_blank",
         "exactly one visible ____ marker",
         "For A1 Beginner",

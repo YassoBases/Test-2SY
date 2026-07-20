@@ -30,6 +30,7 @@ class GenerationBlueprint(BaseModel):
     inference_depth: str
     question_count: int | None = Field(default=None, ge=1, le=20)
     number_of_questions: int = Field(ge=1, le=20)
+    passage_difficulty_policy: dict[str, Any] = Field(default_factory=dict)
     safety_topic_restrictions: list[str] = Field(default_factory=list)
     prompt_version: str = "reading_v2_r8_adaptive_question_counts"
     known_vocab_items: list[str] = Field(default_factory=list)
