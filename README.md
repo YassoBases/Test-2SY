@@ -180,26 +180,6 @@ pip install -r requirements-ai.txt             # extended AI helpers
 pip install -r requirements-language-ai.txt    # Language module speaking/STT stack
 ```
 
-#### GPU Acceleration (Optional)
-
-Language module **Supertonic TTS** can use an NVIDIA GPU for faster speech synthesis.
-**This is completely optional** — fresh clones and CPU-only machines work normally
-with no NVIDIA hardware and no extra packages.
-
-Only install if you have an NVIDIA GPU and want faster listening/conversation audio:
-
-```bash
-pip uninstall -y onnxruntime
-pip install -r requirements-supertonic-gpu.txt
-```
-
-Requirements: NVIDIA GPU, recent driver, and the backend venv with
-`requirements.txt` + `requirements-voice.txt` already installed.
-
-At startup the backend logs `Supertonic ONNX Provider: CUDAExecutionProvider` or
-`Supertonic ONNX Provider: CPUExecutionProvider`. Teammates without the GPU package
-always get CPU — no `.env` changes required.
-
 ### 5. Frontend
 
 ```bash
@@ -345,7 +325,7 @@ EduSpark-Syrian/
 │   │   └── main.py              FastAPI app entry point
 │   ├── alembic/                 Migrations (0001_baseline, 0002_reference_seed) + seeds/ + sql/
 │   ├── scripts/                 setup_local_db.sql, seed_test_users.py, verify_setup.py, ...
-│   ├── requirements*.txt        core + ai + language-ai + voice + optional supertonic-gpu
+│   ├── requirements*.txt        core + ai + language-ai + voice dependency sets
 │   └── uploads/                 local PDF/audio uploads (git-ignored, auto-created)
 ├── src/                         Vue 3 + Vuetify frontend
 │   ├── views/                   pages (student, teacher, parent, onboarding, languages, ...)

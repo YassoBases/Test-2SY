@@ -167,35 +167,6 @@ class ReadingLessonOut(BaseModel):
     glossary: list[GlossaryItemOut] = Field(default_factory=list)
     questions: list[LessonQuestionOut]
     progress: LessonProgressOut
-    target_component: str | None = None
-    target_focus: str | None = None
-    practice_hint: str | None = None
-    mini_lesson: dict | None = None
-    question_focus_counts: dict = Field(default_factory=dict)
-
-
-class ListeningLessonCoachOut(BaseModel):
-    learning_goal: str | None = None
-    learning_goal_label: str | None = None
-    situation: str | None = None
-    situation_label: str | None = None
-    title: str | None = None
-    lesson_level: str | None = None
-    official_cefr: str | None = None
-    difficulty_band: str | None = None
-    challenge_level: str | None = None
-    objectives: list[str] = Field(default_factory=list)
-    skill_focus: list[str] = Field(default_factory=list)
-    question_types: list[str] = Field(default_factory=list)
-    selection_reason: str | None = None
-    coach_focus: list[str] = Field(default_factory=list)
-    coach_why: str | None = None
-    coach_reward: str | None = None
-    level_mismatch: bool = False
-    level_mismatch_reason: str | None = None
-    estimated_minutes: int | None = None
-    narrative_format: str | None = None
-    lesson_intent: str | None = None
 
 
 class ListeningLessonOut(BaseModel):
@@ -207,7 +178,6 @@ class ListeningLessonOut(BaseModel):
     audio_url: str | None = None
     audio_available: bool = False
     progress: LessonProgressOut
-    coach: ListeningLessonCoachOut | None = None
 
 
 class LessonSubmitIn(BaseModel):
@@ -239,11 +209,6 @@ class LessonSubmitOut(BaseModel):
     question_results: list[ReadingQuestionResultOut] = Field(default_factory=list)
     reading_wpm: int | None = None  # reading speed (words/min) when a duration was reported
     transcript: str | None = None  # listening: the script, revealed after submitting
-    next_focus: dict = Field(default_factory=dict)
-    component_breakdown: list[dict] = Field(default_factory=list)
-    mini_lesson: dict | None = None
-    re_read_recommended: bool = False
-    summary_recommended: bool = False
 
 
 class VocabularySaveIn(BaseModel):
@@ -269,23 +234,6 @@ class ReadingTopicsIn(BaseModel):
     topics: list[str] = Field(default_factory=list)
 
 
-class LearnerMemoryOut(BaseModel):
-    interests: list[str] = Field(default_factory=list)
-    favorite_topics: list[str] = Field(default_factory=list)
-    learning_goals: list[str] = Field(default_factory=list)
-    preferred_lesson_types: list[str] = Field(default_factory=list)
-    recent_milestones: list[str] = Field(default_factory=list)
-    derived_weaknesses: list[str] = Field(default_factory=list)
-    last_session_summary: str | None = None
-
-
-class LearnerMemoryUpdateIn(BaseModel):
-    interests: list[str] | None = None
-    favorite_topics: list[str] | None = None
-    learning_goals: list[str] | None = None
-    preferred_lesson_types: list[str] | None = None
-
-
 class ReadingHistoryItemOut(BaseModel):
     id: int
     title: str
@@ -308,7 +256,6 @@ class ReadingInsightsOut(BaseModel):
     lessons_completed: int = 0
     weak_skills: list[SkillMasteryItemOut] = Field(default_factory=list)
     strong_skills: list[SkillMasteryItemOut] = Field(default_factory=list)
-    reading_profile: dict = Field(default_factory=dict)
 
 
 class ReadingExplainIn(BaseModel):
@@ -390,12 +337,28 @@ class WritingPromptOut(BaseModel):
     prompt_ar: str | None = None
     min_words: int = 20
     min_sentences: int = 2
+    target_component: str | None = None
+    target_focus: str | None = None
+    practice_hint: str | None = None
+    task_type: str | None = None
+    topic: str | None = None
+    exercise_type: str | None = None
+    word_bank: list[str] = Field(default_factory=list)
+    sentence_starters: list[str] = Field(default_factory=list)
+    checklist: list[str] = Field(default_factory=list)
+    mini_lesson: dict | None = None
+    rewrite_instruction: str | None = None
+    recommended: bool = False
+    recommendation_reason: str = ""
     progress: dict = Field(default_factory=dict)
 
 
 class WritingListOut(BaseModel):
     student_level: str
     lesson_level: str | None = None
+    recommended_prompt_id: int | None = None
+    recommended_reason: str = ""
+    writing_profile: dict = Field(default_factory=dict)
     prompts: list[WritingPromptOut] = Field(default_factory=list)
 
 
@@ -411,6 +374,20 @@ class WritingSubmitOut(BaseModel):
     sentence_count: int
     completed_at: datetime | None = None
     status: str
+    criteria: dict = Field(default_factory=dict)
+    flags: dict = Field(default_factory=dict)
+    feedback: str = ""
+    next_focus: dict = Field(default_factory=dict)
+    target_component: str | None = None
+    target_focus: str | None = None
+    scoring_version: str = ""
+    meets_threshold: bool = False
+    attempt_number: int = 1
+    previous_score_percent: float | None = None
+    improvement_percent: float | None = None
+    rewrite_required: bool = False
+    rewrite_prompt: str = ""
+    mini_lesson: dict | None = None
 
 
 class SpeakingPromptOut(BaseModel):

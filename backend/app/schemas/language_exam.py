@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CEFRLevel(str, Enum):
@@ -46,17 +46,16 @@ class ChatInputSchema(BaseModel):
 # ---------- AI structured output ----------
 
 class SpeakingTurnAssessment(BaseModel):
-    """Audio-native assessment of ONE spoken answer (google-genai structured output).
+    """Transcript-based assessment of one server-verified spoken answer.
 
-    Gemini judges the actual audio: ``transcription`` is what it heard; the feedback fields cover
-    both content and delivery; ``next_question`` is its adaptive follow-up (the backend still owns
-    when the speaking section ends).
+    ``transcription`` comes only from server STT. Text feedback must not claim that pronunciation
+    was measured; ``next_question`` is the adaptive follow-up.
     """
 
     transcription: str = Field(description="Verbatim text of what the student said.")
     grammar_vocab_feedback: str = Field(description="Short correction of grammar/vocabulary/phrasing.")
-    pronunciation_feedback: str = Field(description="Note on pronunciation/clarity from the audio.")
-    fluency_note: str = Field(description="Note on fluency: pace, hesitation, coherence.")
+    pronunciation_feedback: str = Field(description="Explicit unassessed note; no acoustic scorer is used.")
+    fluency_note: str = Field(description="Text-visible coherence/disfluency note only.")
     estimated_level: "CEFRLevel" = Field(description="CEFR level estimated from this answer.")
     next_question: str = Field(description="The next adaptive in-character question to ask.")
 
@@ -84,6 +83,81 @@ class FinalAcademicReportSchema(BaseModel):
     @classmethod
     def _round_scores(cls, v: float) -> float:
         return round(max(0.0, min(10.0, float(v))), 1)
+
+
+class SpeakingPromptEvidence(BaseModel):
+    """Which speaking prompts were actually used this session -- MVP bank vs. AI fallback,
+    subskill/task-type diversity, and whether curated-bank review metadata was resolvable."""
+
+    prompt_source: str = "unknown"  # mvp_speaking_prompt_bank | fallback_generated | unknown
+    prompt_review_status: str = ""
+    expected_turns: int = 0
+    turns_answered: int = 0
+    unique_bank_items_count: int = 0
+    unique_subskills_count: int = 0
+    repeated_subskills: bool = False
+    subskills_seen: list[str] = Field(default_factory=list)
+    bank_item_ids_present: bool = False
+    fallback_prompt_used: bool = False
+
+
+class SpeakingSttEvidence(BaseModel):
+    """Transcript-availability evidence only -- never a proxy for answer quality/score."""
+
+    provider: str = ""
+    transcripts_count: int = 0
+    empty_transcripts_count: int = 0
+    short_transcripts_count: int = 0
+    total_word_count: int = 0
+    average_words_per_turn: float = 0.0
+    confidence_available: bool = False
+    evidence_status: str = "unavailable"  # usable | limited | insufficient | unavailable
+
+
+class SpeakingLanguageEvaluation(BaseModel):
+    """A read-only restatement of the existing grade_speaking() result -- never a second LLM
+    call, never a new scoring formula. dimensions.pronunciation is always the literal string
+    "unassessed" because no acoustic pronunciation scorer exists for MVP."""
+
+    provider: str = ""
+    source: str = "grade_speaking"
+    dimensions: dict[str, float | str | None] = Field(default_factory=dict)
+    estimated_cefr: str = ""
+    score: float | None = None
+    scoring_changed: bool = False
+
+
+class SpeakingProsodyEvidence(BaseModel):
+    """MVP delivery evidence derived only from audio_duration_seconds + transcript word count
+    (no raw audio, no acoustic/pause/rhythm analysis, no Hume/EVI call of any kind)."""
+
+    provider: str = "derived_duration_transcript"
+    runtime_status: str = "not_implemented"  # available | partial | not_implemented | unavailable
+    speech_rate_wpm: list[float | None] = Field(default_factory=list)
+    average_speech_rate_wpm: float | None = None
+    response_duration_status: str = "unknown"  # under | within | over | unknown
+    short_response_turns: int = 0
+    very_short_response_turns: int = 0
+    acoustic_metrics_available: bool = False
+    pause_metrics_available: bool = False
+    rhythm_metrics_available: bool = False
+    evi_runtime_status: str = "not_implemented"
+
+
+class SpeakingAssessmentCore(BaseModel):
+    """Additive, MVP evidence/auditability layer for Speaking. Labels and evidence only -- never
+    changes final_level, confidence, or grade_speaking's own scoring (scoring_changed is always
+    false and exists only so a future task can grep for when that stops being true)."""
+
+    speaking_assessment_core_version: str = "speaking_assessment_core_mvp_v1"
+    speaking_rubric_version: str = "speaking_llm_transcript_rubric_v1"
+    scoring_changed: bool = False
+    prompt_evidence: SpeakingPromptEvidence = Field(default_factory=SpeakingPromptEvidence)
+    stt_evidence: SpeakingSttEvidence = Field(default_factory=SpeakingSttEvidence)
+    language_evaluation: SpeakingLanguageEvaluation = Field(default_factory=SpeakingLanguageEvaluation)
+    prosody_evidence: SpeakingProsodyEvidence = Field(default_factory=SpeakingProsodyEvidence)
+    review_flags: list[str] = Field(default_factory=list)
+    needs_human_review: bool = False
 
 
 class MultiSkillReportSchema(BaseModel):
@@ -120,7 +194,7 @@ class MultiSkillReportSchema(BaseModel):
     weeks_to_next_level: int = 0
     # Writing IELTS sub-scores: {task_achievement, coherence, lexical, grammar} (0-10).
     writing_breakdown: dict[str, float] = Field(default_factory=dict)
-    # Speaking IELTS sub-scores: {fluency, lexical, grammar, pronunciation} (0-10).
+    # Transcript-based sub-scores: {fluency, lexical, grammar}; pronunciation is unassessed.
     speaking_breakdown: dict[str, float] = Field(default_factory=dict)
     # Per-turn spoken detail (shown in the report, not during the exam).
     speaking_turns: list[SpeakingTurnDetailOut] = Field(default_factory=list)
@@ -129,6 +203,13 @@ class MultiSkillReportSchema(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=0.0)
     # consistent | speaking_stronger | writing_stronger | live_phase_unavailable
     cross_phase_consistency: str = "consistent"
+    # Components that were deliberately not scored because no authoritative signal exists.
+    unassessed_components: list[str] = Field(default_factory=list)
+
+    # Additive MVP evidence/auditability layer (see language_speaking_assessment_core_service.py).
+    # Labels and evidence only -- never changes any of the scoring fields above.
+    assessment_core_version: str = "ai_exam_assessment_core_v1"
+    speaking_assessment: SpeakingAssessmentCore = Field(default_factory=SpeakingAssessmentCore)
 
 
 class ExamNarrativeSchema(BaseModel):
@@ -143,14 +224,14 @@ class ExamNarrativeSchema(BaseModel):
 
 
 class SpeakingGradeSchema(BaseModel):
-    """Structured IELTS-style grade of the spoken answers (4 criteria, each 0-10)."""
+    """Structured transcript grade; pronunciation is 0/unassessed in this flow."""
 
     level: CEFRLevel
     fluency: float = Field(ge=0.0, le=10.0, default=0.0)
     lexical: float = Field(ge=0.0, le=10.0, default=0.0)
     grammar: float = Field(ge=0.0, le=10.0, default=0.0)
     pronunciation: float = Field(ge=0.0, le=10.0, default=0.0)
-    score: float = Field(ge=0.0, le=10.0)  # equal-weight average of the four
+    score: float = Field(ge=0.0, le=10.0)  # equal-weight average of assessed textual criteria
     feedback: str = ""
     detected_errors: list[GrammarErrorDetail] = Field(default_factory=list)
 
@@ -181,11 +262,60 @@ class WritingGradeSchema(BaseModel):
 # ---------- API: inputs ----------
 
 class McqAnswerIn(BaseModel):
-    choice_index: int = Field(ge=0)
+    """Shared answer submission for both mcq and gap_fill items. The client never declares which
+    type it's answering -- exactly one of choice_index/answer_text is supplied, and the backend
+    decides which is required only after resolving the server-side item via question_token."""
+
+    choice_index: int | None = Field(default=None, ge=0)
+    answer_text: str | None = Field(default=None, max_length=500)
+    # Listening bundles only (Phase 6): one entry per subquestion/blank. Never combined with the
+    # singular fields above -- exactly one of the four answer fields may be present.
+    choice_indices: list[int] | None = Field(default=None)
+    answer_texts: list[str] | None = Field(default=None)
+    # Free section navigation: which MCQ section this answers (listening/reading/grammar_vocab).
+    # Optional and defaults to the session's current cursor section for backward compatibility --
+    # only needed when the student jumped to a section other than the cursor's.
+    section: str | None = Field(default=None, max_length=32)
+    request_id: str = Field(min_length=8, max_length=100)
+    state_revision: int = Field(ge=1)
+    question_token: str = Field(min_length=16, max_length=200)
+
+    @model_validator(mode="after")
+    def _check_exactly_one_answer_field(self) -> "McqAnswerIn":
+        if self.answer_text is not None and not self.answer_text.strip():
+            raise ValueError("answer_text cannot be blank or whitespace-only")
+        if self.choice_indices is not None:
+            if not self.choice_indices:
+                raise ValueError("choice_indices cannot be empty")
+            if any(i < 0 for i in self.choice_indices):
+                raise ValueError("choice_indices entries must be non-negative")
+        if self.answer_texts is not None:
+            if not self.answer_texts:
+                raise ValueError("answer_texts cannot be empty")
+            if any(not t.strip() for t in self.answer_texts):
+                raise ValueError("answer_texts entries cannot be blank or whitespace-only")
+        present = [
+            self.choice_index is not None,
+            self.answer_text is not None,
+            self.choice_indices is not None,
+            self.answer_texts is not None,
+        ]
+        if sum(present) > 1:
+            raise ValueError(
+                "only one of choice_index/answer_text/choice_indices/answer_texts may be provided"
+            )
+        if sum(present) == 0:
+            raise ValueError(
+                "one of choice_index/answer_text/choice_indices/answer_texts is required"
+            )
+        return self
 
 
 class WritingAnswerIn(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    request_id: str = Field(min_length=8, max_length=100)
+    state_revision: int = Field(ge=1)
+    prompt_token: str = Field(min_length=16, max_length=200)
 
     @field_validator("text")
     @classmethod
@@ -204,6 +334,28 @@ class SpeakingPromptOut(BaseModel):
     examiner_message: str
     turn: int
     total_turns: int
+    turn_token: str
+
+
+class LiveTranscriptionSessionOut(BaseModel):
+    """A short-lived OpenAI Realtime ephemeral client secret for Speaking's live transcript
+    preview (MVP, display-only). Never used for grading; the official transcript remains the
+    backend's own post-submit STT pipeline. `available=False` (fields omitted) is the safe,
+    non-error response whenever live transcription is disabled, misconfigured, or the upstream
+    call fails -- the frontend must fall back to the normal recording UI without surfacing this
+    as an error."""
+
+    available: bool
+    client_secret: str | None = None
+    expires_at: int | None = None
+    model: str | None = None
+
+
+class ListeningSubquestionOut(BaseModel):
+    """One MCQ subquestion within a Listening bundle. No correct_index -- never expose the answer."""
+
+    question: str
+    options: list[str]
 
 
 class McqPromptOut(BaseModel):
@@ -212,17 +364,30 @@ class McqPromptOut(BaseModel):
     instructions: str
     passage: str | None = None
     audio_url: str | None = None
-    audio_text: str | None = None
     situation: str | None = None
     question: str
     options: list[str]
     item_index: int
     item_total: int
+    question_token: str
+    # Additive, backward-compatible: every current item is "mcq". Lets the frontend/tests
+    # distinguish task types once a non-MCQ type (e.g. gap_fill) is introduced later.
+    question_type: str = "mcq"
+    # Gap Fill only (A1/A2 always have one, B1+ optional). Display-only -- never used for scoring.
+    # accepted_answers/max_words/case_sensitive remain server-side and must never be added here.
+    word_bank: list[str] | None = None
+    # Listening bundles only (Phase 6). MCQ bundle: 3 subquestions, no correct_index anywhere.
+    subquestions: list[ListeningSubquestionOut] | None = None
+    # Gap Fill bundle only: note-completion template with {{1}}/{{2}}/{{3}} tokens, and how many
+    # blanks to render. accepted_answers/max_words/case_sensitive remain server-side only.
+    note_template: str | None = None
+    blank_count: int | None = None
 
 
 class WritingPromptOut(BaseModel):
     prompt: str
     min_words: int = 40
+    prompt_token: str
 
 
 class SpeakingTurnFeedbackOut(BaseModel):
@@ -230,14 +395,6 @@ class SpeakingTurnFeedbackOut(BaseModel):
     grammar_vocab_feedback: str | None = None
     pronunciation_feedback: str | None = None
     fluency_note: str | None = None
-
-
-class SpeakingTranscriptionOut(BaseModel):
-    """Speech-to-text preview returned before a spoken answer is submitted."""
-
-    transcription: str
-    engine: str
-    model: str
 
 
 class SpeakingTurnDetailOut(BaseModel):
@@ -256,15 +413,27 @@ class ExamStateOut(BaseModel):
     """One contract telling the frontend exactly what to render next."""
 
     session_id: str
+    state_revision: int = Field(ge=1)
     phase: str  # speaking | listening | reading | writing | evaluating | completed
-    section_index: int  # 0-based index of the current section
+    section_index: int  # 0-based index of the section actually being rendered (may differ from
+    # the session's internal progress cursor once free section navigation is in play)
     section_total: int
     sections: list[str] = Field(default_factory=list)
+    # Free section navigation: names (from `sections`) whose own progress is done=True, regardless
+    # of viewing order -- lets the frontend render per-tab completion indicators independent of
+    # which section is currently being viewed.
+    completed_sections: list[str] = Field(default_factory=list)
     speaking: SpeakingPromptOut | None = None
     mcq: McqPromptOut | None = None
     writing: WritingPromptOut | None = None
     last_feedback: SpeakingTurnFeedbackOut | None = None
     resumed: bool = False
+    question_token: str | None = None
+    turn_token: str | None = None
+    prompt_token: str | None = None
+    evidence_status: str = "missing_student_response"
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 class ExamProcessingOut(BaseModel):
@@ -279,3 +448,5 @@ class ExamReportOut(BaseModel):
     is_completed: bool
     report: MultiSkillReportSchema | None = None
     completed_at: datetime | None = None
+    error_code: str | None = None
+    error_message: str | None = None

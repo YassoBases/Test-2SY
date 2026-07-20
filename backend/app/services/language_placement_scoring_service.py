@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
-from app.models.language.enums import LanguageLevel, LanguageSkill, OverallLevelMethod
+from app.models.language.enums import LanguageLevel
 
 LEVEL_ORDER = [
     LanguageLevel.A1,
@@ -32,13 +31,6 @@ def percent_to_level(pct: float) -> LanguageLevel:
     if pct < 90:
         return LanguageLevel.C1
     return LanguageLevel.C2
-
-
-def bottleneck_overall(levels: dict[LanguageSkill, LanguageLevel]) -> LanguageLevel:
-    if not levels:
-        return LanguageLevel.A1
-    idx = min(LEVEL_ORDER.index(lv) for lv in levels.values() if lv in LEVEL_ORDER)
-    return LEVEL_ORDER[idx]
 
 
 def normalize_choice_answer(resp_json: dict) -> int | None:
@@ -108,10 +100,4 @@ def score_speaking(response_json: dict, min_seconds: int | None = None) -> tuple
         "min_seconds": min_seconds,
     }
     return _clamp(score_percent), metrics
-
-
-@dataclass
-class PlacementComputedResults:
-    overall_level: LanguageLevel
-    overall_calculation_method: str = OverallLevelMethod.bottleneck.value
 

@@ -30,7 +30,6 @@ from app.services.language_generation_gate import (
     note_success as note_generation_success,
 )
 from app.services.language_content_service import get_reading_lesson, lesson_body_for_student
-from app.services.language_learner_events import component_for_question
 from app.services.language_lesson_generation_service import generate_and_store
 from app.services.language_level_utils import CEFR_RANK, RANK_CEFR
 from app.services.language_subscription_service import get_default_language
@@ -46,99 +45,6 @@ READING_TOPIC_OPTIONS = [
     "News & current events", "History", "Money & shopping", "Education",
 ]
 _MAX_TOPICS = 5
-
-READING_COMPONENT_LABELS = {
-    "reading.skim_gist": "Main idea and gist",
-    "reading.scan_detail": "Finding details",
-    "reading.infer_meaning": "Inference",
-    "reading.vocab_in_context": "Vocabulary in context",
-    "reading.authors_purpose": "Author purpose",
-    "reading.implicit_attitude": "Tone and attitude",
-}
-
-READING_COMPONENT_HINTS = {
-    "reading.skim_gist": "Read the first and last sentences, then choose the answer that covers the whole text.",
-    "reading.scan_detail": "Underline keywords in the question, then find the matching detail in the passage.",
-    "reading.infer_meaning": "Use clues from two nearby sentences, not only one word.",
-    "reading.vocab_in_context": "Look before and after the word to guess its meaning from context.",
-    "reading.authors_purpose": "Ask why the writer included this idea: to explain, persuade, compare, or warn.",
-    "reading.implicit_attitude": "Notice opinion words and contrast words that show attitude.",
-}
-
-READING_LEVEL_DEFAULT_COMPONENT = {
-    "A1": "reading.scan_detail",
-    "A2": "reading.scan_detail",
-    "B1": "reading.infer_meaning",
-    "B2": "reading.authors_purpose",
-    "C1": "reading.implicit_attitude",
-    "C2": "reading.implicit_attitude",
-}
-
-READING_PROFILE_BASE = {
-    "A1": {
-        "reading.skim_gist": 40,
-        "reading.scan_detail": 35,
-        "reading.infer_meaning": 20,
-        "reading.vocab_in_context": 30,
-        "reading.authors_purpose": 15,
-        "reading.implicit_attitude": 15,
-    },
-    "A2": {
-        "reading.skim_gist": 52,
-        "reading.scan_detail": 50,
-        "reading.infer_meaning": 35,
-        "reading.vocab_in_context": 42,
-        "reading.authors_purpose": 25,
-        "reading.implicit_attitude": 25,
-    },
-    "B1": {
-        "reading.skim_gist": 64,
-        "reading.scan_detail": 62,
-        "reading.infer_meaning": 50,
-        "reading.vocab_in_context": 55,
-        "reading.authors_purpose": 42,
-        "reading.implicit_attitude": 40,
-    },
-    "B2": {
-        "reading.skim_gist": 74,
-        "reading.scan_detail": 72,
-        "reading.infer_meaning": 64,
-        "reading.vocab_in_context": 66,
-        "reading.authors_purpose": 58,
-        "reading.implicit_attitude": 55,
-    },
-    "C1": {
-        "reading.skim_gist": 82,
-        "reading.scan_detail": 80,
-        "reading.infer_meaning": 75,
-        "reading.vocab_in_context": 76,
-        "reading.authors_purpose": 72,
-        "reading.implicit_attitude": 68,
-    },
-    "C2": {
-        "reading.skim_gist": 88,
-        "reading.scan_detail": 86,
-        "reading.infer_meaning": 84,
-        "reading.vocab_in_context": 84,
-        "reading.authors_purpose": 82,
-        "reading.implicit_attitude": 80,
-    },
-}
-
-READING_WPM_TARGETS = {
-    "A1": (60, 100),
-    "A2": (80, 130),
-    "B1": (100, 160),
-    "B2": (120, 190),
-    "C1": (140, 220),
-    "C2": (160, 240),
-}
-
-READING_CHECKPOINT_REQUIREMENTS = {
-    "required_passages": 5,
-    "required_average": 75,
-    "required_components": 3,
-}
 
 _SUMMARY_SYSTEM = (
     "You are an English reading-comprehension examiner for German learners. Judge whether the "
@@ -302,183 +208,6 @@ def nudge_reading_level(current: LanguageLevel | None, score_percent: float) -> 
     return RANK_CEFR[rank]
 
 
-def _level_str(level) -> str:
-    value = getattr(level, "value", level)
-    value = str(value or "A2").upper()
-    return value if value in READING_LEVEL_DEFAULT_COMPONENT else "A2"
-
-
-def _clamp_percent(value, default: int = 0) -> int:
-    try:
-        number = float(value)
-    except Exception:
-        number = float(default)
-    return int(round(max(0.0, min(100.0, number))))
-
-
-def _mini_lesson_for_component(component: str) -> dict:
-    if component == "reading.skim_gist":
-        return {
-            "title": "Find the main idea",
-            "steps": [
-                "Read the title and first sentence.",
-                "Ask what the whole passage is mostly about.",
-                "Avoid answers that mention only one small detail.",
-            ],
-        }
-    if component == "reading.scan_detail":
-        return {
-            "title": "Scan for details",
-            "steps": [
-                "Circle the keywords in the question.",
-                "Find the same idea in the passage.",
-                "Check names, numbers, places, and time words carefully.",
-            ],
-        }
-    if component == "reading.infer_meaning":
-        return {
-            "title": "Make an inference",
-            "steps": [
-                "Use clues before and after the sentence.",
-                "Choose what must be true, not what only sounds possible.",
-                "Reject answers that add new information.",
-            ],
-        }
-    if component == "reading.vocab_in_context":
-        return {
-            "title": "Guess from context",
-            "steps": [
-                "Look at the sentence before and after the word.",
-                "Decide if the word is positive, negative, action, or object.",
-                "Replace it with each option and see which one fits.",
-            ],
-        }
-    if component == "reading.authors_purpose":
-        return {
-            "title": "Author purpose",
-            "steps": [
-                "Ask why the writer says this.",
-                "Look for signal words like because, however, and therefore.",
-                "Choose the option that explains the writer's goal.",
-            ],
-        }
-    return {
-        "title": "Tone and attitude",
-        "steps": [
-            "Look for opinion words.",
-            "Notice contrast words like although and however.",
-            "Choose the feeling or attitude supported by the text.",
-        ],
-    }
-
-
-def _profile_rows_from_components(components: list[dict], *, level: str) -> list[dict]:
-    base = dict(READING_PROFILE_BASE.get(level, READING_PROFILE_BASE["A2"]))
-    evidence = {code: 0 for code in READING_COMPONENT_LABELS}
-    for item in components:
-        code = str(item.get("code") or "")
-        if code not in base:
-            continue
-        base[code] = _clamp_percent(float(item.get("p_mastery") or 0.0) * 100.0)
-        evidence[code] = int(item.get("evidence_count") or 0)
-    rows = []
-    for code, label in READING_COMPONENT_LABELS.items():
-        score = _clamp_percent(base.get(code, 0))
-        rows.append({
-            "code": code,
-            "label": label,
-            "mastery_percent": score,
-            "hint": READING_COMPONENT_HINTS.get(code, ""),
-            "evidence_count": evidence.get(code, 0),
-            "status": "strong" if score >= 75 else ("developing" if score >= 55 else "needs_practice"),
-        })
-    rows.sort(key=lambda row: (row["mastery_percent"], row["evidence_count"]))
-    return rows
-
-
-def _reading_plan_steps(*, focus: dict, level: str) -> list[dict]:
-    focus_label = focus.get("label") or "Reading focus"
-    return [
-        {
-            "order": 1,
-            "status": "current",
-            "title": f"Practice {focus_label.lower()}",
-            "description": focus.get("hint") or "Use the strategy before answering.",
-        },
-        {
-            "order": 2,
-            "status": "active_reading",
-            "title": "Read with evidence",
-            "description": "After each answer, check the exact sentence that supports it.",
-        },
-        {
-            "order": 3,
-            "status": "summary",
-            "title": "Summarise the passage",
-            "description": "Write 1-2 sentences to prove you understood the main idea.",
-        },
-        {
-            "order": 4,
-            "status": "checkpoint",
-            "title": f"Checkpoint after {level}",
-            "description": "Unlock harder passages after stable comprehension across several focuses.",
-        },
-    ]
-
-
-def _checkpoint_status(*, lessons_completed: int, scores: list[float], components: list[dict], level: str) -> dict:
-    req = READING_CHECKPOINT_REQUIREMENTS
-    average = round(sum(scores) / len(scores), 1) if scores else None
-    covered = [c for c in components if int(c.get("mastery_percent") or 0) >= 60]
-    passage_ratio = min(1.0, lessons_completed / max(1, req["required_passages"]))
-    avg_ratio = min(1.0, (average or 0.0) / req["required_average"])
-    component_ratio = min(1.0, len(covered) / max(1, req["required_components"]))
-    progress_percent = _clamp_percent(((passage_ratio + avg_ratio + component_ratio) / 3.0) * 100)
-    missing = []
-    if lessons_completed < req["required_passages"]:
-        missing.append(f"Complete {req['required_passages'] - lessons_completed} more reading passages.")
-    if (average or 0.0) < req["required_average"]:
-        missing.append(f"Reach an average comprehension of {req['required_average']}%.")
-    if len(covered) < req["required_components"]:
-        missing.append("Strengthen one more reading focus.")
-    try:
-        next_rank = min(CEFR_RANK.get(LanguageLevel(level), 1) + 1, 6)
-        next_level = RANK_CEFR[next_rank].value if level != "C2" else None
-    except Exception:
-        next_level = "B1"
-    return {
-        "ready": not missing and level != "C2",
-        "level": level,
-        "next_level": next_level,
-        "progress_percent": progress_percent,
-        "lessons_completed": lessons_completed,
-        "required_passages": req["required_passages"],
-        "average_score_percent": average,
-        "required_average": req["required_average"],
-        "covered_components": [c["code"] for c in covered],
-        "required_components": req["required_components"],
-        "missing": missing,
-    }
-
-
-def _lesson_focus(item: LanguageContentItem, fallback_component: str | None = None) -> dict:
-    level = _level_str(item.level)
-    body = item.body_json or {}
-    counts: dict[str, int] = {}
-    for q in body.get("questions") or []:
-        code = component_for_question(LanguageSkill.reading, qtype=q.get("type"), level=level)
-        if code:
-            counts[code] = counts.get(code, 0) + 1
-    component = fallback_component or (max(counts, key=counts.get) if counts else READING_LEVEL_DEFAULT_COMPONENT.get(level))
-    return {
-        "target_component": component,
-        "target_focus": READING_COMPONENT_LABELS.get(component, component),
-        "practice_hint": READING_COMPONENT_HINTS.get(component, "Read carefully and use evidence from the passage."),
-        "mini_lesson": _mini_lesson_for_component(component),
-        "question_focus_counts": counts,
-    }
-
-
 async def _adaptive_level(db: AsyncSession, *, student_id: int, language_id: int) -> str:
     analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
     if analytics and analytics.reading_level:
@@ -488,7 +217,7 @@ async def _adaptive_level(db: AsyncSession, *, student_id: int, language_id: int
 
 async def _unseen_reading(
     db: AsyncSession, *, student_id: int, language_id: int, level: str, generated_only: bool = False,
-    length: str = "", newest: bool = False, focus_component: str | None = None,
+    length: str = "", newest: bool = False,
 ) -> LanguageContentItem | None:
     seen = select(LanguageReadingProgress.content_item_id).where(
         LanguageReadingProgress.student_id == student_id,
@@ -513,25 +242,9 @@ async def _unseen_reading(
         q = q.where(rl == "long")
     elif length == "medium":
         q = q.where(or_(rl == "medium", rl.is_(None)))
-    # newest=True serves the just-generated passage. Otherwise sample a small random pool and prefer
-    # a passage whose question mix matches the learner's weakest reading component.
-    q = q.order_by(LanguageContentItem.id.desc() if newest else func.random()).limit(1 if newest else 12)
-    candidates = list((await db.execute(q)).scalars().all())
-    if not candidates:
-        return None
-    if newest or not focus_component:
-        return candidates[0]
-
-    def _match_count(item: LanguageContentItem) -> int:
-        item_level = _level_str(item.level)
-        total = 0
-        for question in (item.body_json or {}).get("questions") or []:
-            code = component_for_question(LanguageSkill.reading, qtype=question.get("type"), level=item_level)
-            if code == focus_component:
-                total += 1
-        return total
-
-    return max(candidates, key=_match_count)
+    # newest=True serves the just-generated passage (id desc); otherwise a random unseen one.
+    q = q.order_by(LanguageContentItem.id.desc() if newest else func.random()).limit(1)
+    return (await db.execute(q)).scalar_one_or_none()
 
 
 async def _profile(db: AsyncSession, *, student_id: int, language_id: int) -> LanguageStudentProfile | None:
@@ -543,17 +256,6 @@ async def _profile(db: AsyncSession, *, student_id: int, language_id: int) -> La
             )
         )
     ).scalar_one_or_none()
-
-
-async def _next_focus_component(db: AsyncSession, *, student_id: int, language_id: int, level: str) -> str | None:
-    from app.services.language_learner_model_service import LanguageLearnerModelService
-
-    profile = await LanguageLearnerModelService(db).get_component_profile(
-        student_id=student_id, language_id=language_id
-    )
-    reading_comps = [c for c in profile if c.get("skill") == "reading"]
-    rows = _profile_rows_from_components(reading_comps, level=level)
-    return str(rows[0].get("code")) if rows else READING_LEVEL_DEFAULT_COMPONENT.get(level)
 
 
 async def get_reading_topics(db: AsyncSession, *, student_id: int) -> dict:
@@ -641,22 +343,6 @@ async def reading_insights(db: AsyncSession, *, student_id: int) -> dict:
         student_id=student_id, language_id=language.id
     )
     reading_comps = [c for c in profile if c.get("skill") == "reading"]
-    analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language.id})
-    level = _level_str(analytics.reading_level if analytics and analytics.reading_level else "A2")
-    skill_breakdown = _profile_rows_from_components(reading_comps, level=level)
-    next_focus = skill_breakdown[0] if skill_breakdown else {
-        "code": READING_LEVEL_DEFAULT_COMPONENT.get(level, "reading.scan_detail"),
-        "label": READING_COMPONENT_LABELS.get(READING_LEVEL_DEFAULT_COMPONENT.get(level, "reading.scan_detail")),
-        "mastery_percent": 0,
-        "hint": "Read carefully and use evidence from the passage.",
-    }
-    wpm_target = READING_WPM_TARGETS.get(level, READING_WPM_TARGETS["A2"])
-    checkpoint = _checkpoint_status(
-        lessons_completed=len(rows),
-        scores=scores,
-        components=skill_breakdown,
-        level=level,
-    )
 
     def _skill(c: dict) -> dict:
         return {"code": c["code"], "mastery": round((c.get("p_mastery") or 0.0) * 100)}
@@ -671,16 +357,6 @@ async def reading_insights(db: AsyncSession, *, student_id: int) -> dict:
         "lessons_completed": len(rows),
         "weak_skills": weak,
         "strong_skills": strong,
-        "reading_profile": {
-            "level": level,
-            "next_focus": next_focus,
-            "skill_breakdown": skill_breakdown,
-            "plan_steps": _reading_plan_steps(focus=next_focus, level=level),
-            "checkpoint": checkpoint,
-            "wpm_target_min": wpm_target[0],
-            "wpm_target_max": wpm_target[1],
-            "recommended_strategy": READING_COMPONENT_HINTS.get(str(next_focus.get("code") or ""), ""),
-        },
     }
 
 
@@ -691,14 +367,12 @@ async def next_reading(db: AsyncSession, *, student_id: int, length: str = "") -
     """
     language = await get_default_language(db)
     level = await _adaptive_level(db, student_id=student_id, language_id=language.id)
-    focus_component = await _next_focus_component(db, student_id=student_id, language_id=language.id, level=level)
 
     # Token-saving: serve an existing unseen AI passage first (free, instant). Generate ONLY when the
     # fresh-AI pool is exhausted — and even then, skip while the breaker is tripped (e.g. Gemini
     # credits depleted) so we don't waste calls. The seeded bank is the always-available fallback.
     item = await _unseen_reading(
-        db, student_id=student_id, language_id=language.id, level=level, generated_only=True, length=length,
-        focus_component=focus_component,
+        db, student_id=student_id, language_id=language.id, level=level, generated_only=True, length=length
     )
     if item is None and can_generate():
         profile = await _profile(db, student_id=student_id, language_id=language.id)
@@ -729,20 +403,13 @@ async def next_reading(db: AsyncSession, *, student_id: int, length: str = "") -
 
     # Fallbacks: any unseen AI passage (ignore length), then the seeded bank (always works offline).
     if item is None:
-        item = await _unseen_reading(
-            db, student_id=student_id, language_id=language.id, level=level,
-            generated_only=True, focus_component=focus_component,
-        )
+        item = await _unseen_reading(db, student_id=student_id, language_id=language.id, level=level, generated_only=True)
     if item is None:
-        item = await _unseen_reading(
-            db, student_id=student_id, language_id=language.id, level=level,
-            focus_component=focus_component,
-        )
+        item = await _unseen_reading(db, student_id=student_id, language_id=language.id, level=level)
     if item is None:
         return None
 
     body = lesson_body_for_student(item)
-    focus = _lesson_focus(item)
     return {
         "id": item.id,
         "title": item.title,
@@ -751,5 +418,4 @@ async def next_reading(db: AsyncSession, *, student_id: int, length: str = "") -
         "passage": body.get("passage") or "",
         "glossary": body.get("glossary") or [],
         "questions": body.get("questions") or [],
-        **focus,
     }

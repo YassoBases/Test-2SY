@@ -25,7 +25,7 @@ from app.models.language.enums import LanguageLevel
 from app.models.language.progress import LanguageCurriculumProgress
 from app.services.ai_service import generate_llm_json
 from app.services.claude_service import is_claude_configured
-from app.services.language_level_utils import CEFR_RANK, RANK_CEFR
+from app.services.language_level_utils import CEFR_RANK, RANK_CEFR, bottleneck_level
 from app.services.language_subscription_service import get_default_language
 
 PRACTICE_TO_MASTER = 3
@@ -164,17 +164,21 @@ async def get_level_curriculum(level: str) -> list[dict]:
 
 
 async def _current_level(db: AsyncSession, *, student_id: int, language_id: int) -> tuple[str, int]:
-    from app.services.language_progression_service import select_overall_level_str
-
-    level = await select_overall_level_str(
-        db, student_id=student_id, language_id=language_id, default=LanguageLevel.A1
-    )
-    progress = 0
     analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+    level: LanguageLevel | None = None
+    progress = 0
     if analytics:
+        level = analytics.overall_level_internal or bottleneck_level(
+            {
+                "reading": analytics.reading_level.value if analytics.reading_level else None,
+                "listening": analytics.listening_level.value if analytics.listening_level else None,
+                "writing": analytics.writing_level.value if analytics.writing_level else None,
+                "speaking": analytics.speaking_level.value if analytics.speaking_level else None,
+            }
+        )
         conv = (analytics.skill_growth_json or {}).get("speaking", {}).get("conversation", {})
         progress = int(conv.get("mastery_progress_percent") or 0)
-    return level, progress
+    return (level.value if level else "A1"), progress
 
 
 async def build_curriculum_overview(db: AsyncSession, *, student_id: int) -> dict:

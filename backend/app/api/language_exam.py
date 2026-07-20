@@ -20,7 +20,14 @@ told exactly what to render next via the unified ``ExamStateOut`` contract:
 
 from __future__ import annotations
 
+import asyncio
+import copy
+import hashlib
+import json
 import logging
+import secrets
+import unicodedata
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -53,33 +60,45 @@ from app.schemas.language_exam import (
     ExamProcessingOut,
     ExamReportOut,
     ExamStateOut,
+    LiveTranscriptionSessionOut,
+    ListeningSubquestionOut,
     McqAnswerIn,
     McqPromptOut,
     MultiSkillReportSchema,
     SpeakingPromptOut,
-    SpeakingTranscriptionOut,
     SpeakingTurnFeedbackOut,
     WritingAnswerIn,
     WritingPromptOut,
 )
 from app.services.language_access_service import require_active_language_subscription
-from app.services.language_exam_genai import ACCEPTED_AUDIO_MIME
+from app.services.language_audio_security_service import ValidatedAudio, validate_placement_audio
 from app.services.language_exam_service import (
     ALL_CEFR_LEVELS,
     adaptive_next_level,
     adaptive_result,
     ai_engine,
+    build_verified_speaking_evidence,
     cefr_from_rank,
     cefr_rank,
     overall_level,
 )
+from app.services.language_gap_fill_service import gap_fill_content_error, normalize_gap_fill_text
 from app.services.language_level_utils import primary_focus_and_strength
+from app.services.language_live_transcription_service import create_live_transcription_session
+from app.services.language_placement_policy_service import (
+    ensure_placement_retake_allowed,
+    next_allowed_retake_at,
+)
 from app.services.language_placement_question_bank_service import (
+    BoundaryTarget,
     bank_item_to_exam_item,
+    fetch_bank_item_metadata,
     record_bank_item_answer,
     select_placement_bank_items,
 )
-from app.services.language_subscription_service import get_default_language
+from app.services.language_rate_limit_service import check, check_or_raise
+from app.services.language_speaking_assessment_core_service import build_speaking_assessment_core
+from app.services.language_subscription_service import ensure_language_profile, get_default_language
 from app.services.language_transcription_service import transcribe_english_audio
 from app.services.language_tts_service import synthesize_exam_audio
 
@@ -87,15 +106,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/student/languages/exam", tags=["Language Exam"])
 
-SECTIONS = ["speaking", "listening", "reading", "grammar_vocab", "writing", "interview"]
+SECTIONS = ["speaking", "listening", "reading", "writing"]
 # Sections that work like the audio speaking flow (record -> assess -> next question).
+# "interview" stays in this set (not in SECTIONS) so any already-persisted session that still
+# has "interview" in its own exam_state["sections"] continues to route those turns correctly.
 SPEAKING_LIKE = {"speaking", "interview"}
+# "grammar_vocab" stays in MCQ_SECTIONS/PREPARED_SECTIONS (not SECTIONS) so any already-persisted
+# session that still has "grammar_vocab" in its own exam_state["sections"] continues to route,
+# render, and self-heal content for it correctly. New sessions never gain a "grammar_vocab" key
+# (see initiate_exam) and every PREPARED_SECTIONS loop below is filtered to the session's own
+# "sections" list, so this no longer runs for new sessions.
 MCQ_SECTIONS = {"listening", "reading", "grammar_vocab"}
 PREPARED_SECTIONS = {"listening", "reading", "grammar_vocab", "writing"}
 SPEAKING_TURNS = 3
 INTERVIEW_TURNS = 2  # Phase 2 — guided follow-up seeded by Phase 1 evidence.
 ADAPTIVE_MAX_STEPS = 5  # MCQ sections: max adaptive questions before settling on a level.
+MIN_MCQ_EVIDENCE_ITEMS = 3  # MCQ sections: don't settle on a level from fewer answered items than this.
 WRITING_MIN_WORDS = 40
+EVALUATION_LEASE_SECONDS = 15 * 60
 
 
 # ---------------------------------------------------------------------------------------
@@ -115,21 +143,92 @@ async def _student_grade(db: AsyncSession, *, student_id: int) -> int | None:
     ).scalar_one_or_none()
 
 
-def _new_adaptive_section(pool: dict[str, dict], start_level: str) -> dict:
-    """Build the adaptive section state. Starts at the nearest available level to the estimate."""
+def _new_adaptive_section(pool: dict[str, dict], start_level: str, *, dual_slot: bool = False) -> dict:
+    """Build the adaptive section state. Starts at the nearest available level to the estimate.
+
+    dual_slot: Listening-only. When True, each pool[level] is {"mcq": item_or_none,
+    "gap_fill": item_or_none} instead of a single flat item -- each present variant gets its own
+    independent question_token. Reading/grammar_vocab/legacy listening never set this."""
     if pool and start_level not in pool:
         # Snap to the closest available rung.
         start_level = min(pool.keys(), key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(start_level))))
+    if dual_slot:
+        tokenized_pool = {
+            level: {
+                variant: (
+                    {**item, "question_token": str(item.get("question_token") or _new_exam_token())}
+                    if item else None
+                )
+                for variant, item in slots.items()
+            }
+            for level, slots in pool.items()
+        }
+    else:
+        tokenized_pool = {
+            level: {**item, "question_token": str(item.get("question_token") or _new_exam_token())}
+            for level, item in pool.items()
+        }
     return {
         "mode": "adaptive",
-        "pool": pool,
-        "current_level": start_level if pool else "",
+        "pool": tokenized_pool,
+        "current_level": start_level if tokenized_pool else "",
         "start_level": start_level,
         "asked": [],
         "max_steps": ADAPTIVE_MAX_STEPS,
-        "ready": True,
-        "done": not pool,
+        "ready": bool(tokenized_pool),
+        "done": False,
+        "evidence_status": "missing_student_response" if tokenized_pool else "content_unavailable",
     }
+
+
+def _new_exam_token() -> str:
+    """Return an opaque per-prompt token; it is never derived from a database identifier."""
+    return secrets.token_urlsafe(24)
+
+
+def _state_revision(state: dict) -> int:
+    try:
+        return max(1, int(state.get("state_revision") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _bump_state_revision(state: dict) -> int:
+    revision = _state_revision(state) + 1
+    state["state_revision"] = revision
+    return revision
+
+
+def _ensure_state_protocol(state: dict) -> bool:
+    """Upgrade an existing JSON state in-place without changing historical answers."""
+    changed = False
+    if not isinstance(state.get("state_revision"), int) or int(state.get("state_revision") or 0) < 1:
+        state["state_revision"] = 1
+        changed = True
+    for section in MCQ_SECTIONS:
+        for slot in (state.get(section, {}).get("pool") or {}).values():
+            # Listening-only dual-slot shape: {"mcq": item_or_none, "gap_fill": item_or_none}.
+            # A legacy in-flight listening pool (predating this shape) is still a flat item, not
+            # a dict of only "mcq"/"gap_fill" keys -- handled by the isinstance/key check below.
+            if section == "listening" and isinstance(slot, dict) and set(slot.keys()) <= {"mcq", "gap_fill"}:
+                for item in slot.values():
+                    if item and not item.get("question_token"):
+                        item["question_token"] = _new_exam_token()
+                        changed = True
+                continue
+            if not slot.get("question_token"):
+                slot["question_token"] = _new_exam_token()
+                changed = True
+    for section in SPEAKING_LIKE:
+        spoken = state.get(section, {})
+        if spoken.get("pending_question") and not spoken.get("turn_token"):
+            spoken["turn_token"] = _new_exam_token()
+            changed = True
+    writing = state.get("writing", {})
+    if writing.get("prompt") and not writing.get("prompt_token"):
+        writing["prompt_token"] = _new_exam_token()
+        changed = True
+    return changed
 
 
 def _is_usable_audio_url(url: str | None) -> bool:
@@ -215,8 +314,212 @@ def _is_valid_mcq_item(item: dict) -> bool:
     return isinstance(options, list) and len(options) >= 2 and isinstance(ci, int) and 0 <= ci < len(options)
 
 
+def _is_valid_gap_fill_item(item: dict) -> bool:
+    return gap_fill_content_error(item) is None
+
+
+# Phase 6: Listening task bundles. A bundle is still one adaptive-pool item/passage (the
+# staircase moves one CEFR level per passage exactly as before) -- only the *scoring* of that one
+# passage now rolls up from several sub-answers. Strict majority: a 1-1 tie (2 blanks/subquestions)
+# does NOT count as correct, only counts >half.
+_BUNDLE_SUBQUESTION_COUNT = 3
+_BUNDLE_BLANK_COUNT = 3
+_NOTE_TEMPLATE_TOKENS = ("{{1}}", "{{2}}", "{{3}}")
+
+
+def _majority_correct(flags: list[bool]) -> bool:
+    return sum(flags) * 2 > len(flags)
+
+
+def _is_valid_mcq_bundle_item(item: dict) -> bool:
+    subquestions = item.get("subquestions")
+    if not isinstance(subquestions, list) or len(subquestions) != _BUNDLE_SUBQUESTION_COUNT:
+        return False
+    for sq in subquestions:
+        if not isinstance(sq, dict) or not str(sq.get("question") or "").strip():
+            return False
+        options = sq.get("options")
+        ci = sq.get("correct_index")
+        if not isinstance(options, list) or len(options) != 4:
+            return False
+        if not isinstance(ci, int) or isinstance(ci, bool) or not (0 <= ci < len(options)):
+            return False
+    return True
+
+
+def _is_valid_gap_fill_bundle_item(item: dict) -> bool:
+    blanks = item.get("blanks")
+    note_template = item.get("note_template")
+    if not isinstance(blanks, list) or len(blanks) != _BUNDLE_BLANK_COUNT:
+        return False
+    if not isinstance(note_template, str) or not note_template.strip():
+        return False
+    for token in _NOTE_TEMPLATE_TOKENS:
+        if note_template.count(token) != 1:
+            return False
+    for blank in blanks:
+        if not isinstance(blank, dict) or gap_fill_content_error(blank) is not None:
+            return False
+    return True
+
+
+def _is_valid_mcq_pool_item(item: dict, *, skill: str) -> bool:
+    """Accepts either the legacy single-question shape (all skills) or, Listening only, the
+    Phase 6 bundle shape -- so existing single-question rows keep working as a fallback while
+    bundled rows are the new primary content."""
+    if _is_valid_mcq_item(item):
+        return True
+    return skill == "listening" and _is_valid_mcq_bundle_item(item)
+
+
+def _is_valid_gap_fill_pool_item(item: dict) -> bool:
+    """Listening only. Accepts either the legacy single-blank shape or the Phase 6 bundle shape."""
+    return _is_valid_gap_fill_item(item) or _is_valid_gap_fill_bundle_item(item)
+
+
+# Every 3rd Listening item (0-indexed position 2, 5, 8, ...) prefers Gap Fill; all other
+# positions prefer MCQ. Position-based, not count-based, because the adaptive staircase can end
+# at any point -- this keeps MCQ the majority for any attempt length without needing a fixed
+# batch ratio.
+_GAP_FILL_POSITION_MODULUS = 3
+_GAP_FILL_POSITION_REMAINDER = 2
+
+
+def _resolve_current_exam_item(sec: dict, current_level: str, *, dual_slot: bool = False) -> dict | None:
+    """Resolve the single exam item to serve/score for this section at its current level.
+
+    dual_slot=True (Listening only): sec["pool"][current_level] is
+    {"mcq": item_or_none, "gap_fill": item_or_none}. Chooses a variant by position
+    (len(sec["asked"]) % 3 == 2 prefers gap_fill, else mcq) and falls back to whichever variant
+    is actually present if the preferred one is missing -- never blocks the exam over an absent
+    Gap Fill candidate (e.g. while real Gap Fill rows remain inactive).
+
+    dual_slot=False: unchanged flat-pool lookup (reading/grammar_vocab/legacy listening state).
+
+    _build_state_out and answer_mcq must both call this the same way for the same section/level
+    so the item shown to the student is always the item scored.
+    """
+    slot = (sec.get("pool") or {}).get(current_level)
+    if not dual_slot:
+        return slot
+    if not isinstance(slot, dict):
+        return None
+    if "mcq" not in slot and "gap_fill" not in slot:
+        # Not actually dual-slot shaped (e.g. a legacy in-flight session's flat listening item) --
+        # use it as-is rather than misreading it as an empty dual-slot container.
+        return slot
+    asked_count = len(sec.get("asked") or [])
+    prefer_gap_fill = asked_count % _GAP_FILL_POSITION_MODULUS == _GAP_FILL_POSITION_REMAINDER
+    preferred, other = ("gap_fill", "mcq") if prefer_gap_fill else ("mcq", "gap_fill")
+    return slot.get(preferred) or slot.get(other)
+
+
+def _already_used_bank_item_ids(state: dict, skill: str) -> set[int]:
+    """Bank item ids already asked for this skill in this exam session (session-scoped, P1.1).
+
+    Reads state[skill]["asked"] only — sections with no "asked" list (e.g. "writing") naturally
+    yield an empty set. Does not touch usage_count/correct_count or any lifetime/cross-session
+    history."""
+    asked = state.get(skill, {}).get("asked", []) or []
+    return {int(a["bank_item_id"]) for a in asked if a.get("bank_item_id")}
+
+
+def _mcq_continuation_level(
+    *, pool_levels: set[str], asked_levels: set[str], asked_count: int, current: str
+) -> str | None:
+    """When the adaptive staircase converges/plateaus, decide whether to keep probing instead of
+    settling on a level (P1.2 minimum evidence floor).
+
+    Returns the next unasked pool level to ask (nearest to `current` by CEFR rank distance, same
+    selection style as _new_adaptive_section's initial-level snap), or None if evidence is already
+    sufficient (asked_count >= MIN_MCQ_EVIDENCE_ITEMS) or the pool has no unasked levels left — in
+    which case the caller should fall through to its existing completion path."""
+    if asked_count >= MIN_MCQ_EVIDENCE_ITEMS:
+        return None
+    remaining = [lv for lv in pool_levels if lv not in asked_levels]
+    if not remaining:
+        return None
+    return min(remaining, key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(current))))
+
+
+def _boundary_situation(asked: list[dict]) -> tuple[str, str] | None:
+    """Detect uncertainty between two adjacent CEFR levels from the two most-recently-answered
+    items: one correct and the other, at the adjacent level, incorrect (P1.3).
+
+    Returns the (low, high) level strings to confirm, or None if the last two answers don't
+    straddle a single-band boundary (fewer than 2 answered, non-adjacent levels, or matching
+    correctness — agreement isn't uncertainty)."""
+    if len(asked) < 2:
+        return None
+    a, b = asked[-2], asked[-1]
+    if bool(a.get("correct")) == bool(b.get("correct")):
+        return None
+    try:
+        rank_a = cefr_rank(CEFRLevel(a["level"]))
+        rank_b = cefr_rank(CEFRLevel(b["level"]))
+    except ValueError:
+        return None
+    if abs(rank_a - rank_b) != 1:
+        return None
+    return (a["level"], b["level"]) if rank_a < rank_b else (b["level"], a["level"])
+
+
+async def _boundary_confirmation_item(
+    db: AsyncSession, *, language_id: int, skill: str, low: str, high: str, used_item_ids: set[int]
+) -> dict | None:
+    """Fetch one genuine boundary-tagged bank item for the (low, high) CEFR pair (P1.3), or None
+    if the bank has no such item.
+
+    select_placement_bank_items() falls back to a plain level-matched item when no boundary item
+    exists, so the returned row's own boundary_low_level/boundary_high_level are checked here to
+    confirm it's a real boundary hit and not that fallback in disguise."""
+    boundary = BoundaryTarget(low=LanguageLevel(low), high=LanguageLevel(high))
+    rows = await select_placement_bank_items(
+        db,
+        language_id=language_id,
+        skill=skill,
+        level=high,
+        count=1,
+        used_item_ids=used_item_ids,
+        boundary=boundary,
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    if row.boundary_low_level != boundary.low or row.boundary_high_level != boundary.high:
+        return None
+
+    item = bank_item_to_exam_item(row)
+    if not _is_valid_mcq_pool_item(item, skill=skill):
+        return None
+    if skill == "listening":
+        if not _is_usable_audio_url(item.get("audio_url")):
+            item["audio_url"] = None
+        body = item.get("body") or {}
+        audio_text = _listening_text_from_body(body)
+        if item.get("content_id"):
+            content = await db.get(LanguageContentItem, item["content_id"])
+            body = content.body_json if content else body
+            if not audio_text:
+                audio_text = _listening_text_from_body(body)
+        audio_url = (body or {}).get("audio_url")
+        if not item.get("audio_url") and audio_text and _is_usable_audio_url(audio_url):
+            item["audio_url"] = str(audio_url)
+        if audio_text:
+            item["audio_text"] = audio_text
+        if not item.get("audio_url") and not item.get("audio_text"):
+            return None
+    item["source"] = "placement_qbank"
+    return item
+
+
 async def _question_bank_pool(
-    db: AsyncSession, *, language_id: int, skill: str, levels: list[str]
+    db: AsyncSession,
+    *,
+    language_id: int,
+    skill: str,
+    levels: list[str],
+    used_item_ids: set[int] | None = None,
 ) -> dict[str, dict]:
     """Reviewed question-bank items: one internal MCQ item per requested CEFR level."""
     pool: dict[str, dict] = {}
@@ -227,9 +530,10 @@ async def _question_bank_pool(
             skill=skill,
             level=lvl,
             count=4 if skill == "listening" else 1,
+            used_item_ids=used_item_ids,
         ):
             item = bank_item_to_exam_item(row)
-            if not _is_valid_mcq_item(item):
+            if not _is_valid_mcq_pool_item(item, skill=skill):
                 continue
             if skill == "listening":
                 if not _is_usable_audio_url(item.get("audio_url")):
@@ -248,6 +552,61 @@ async def _question_bank_pool(
                     item["audio_text"] = audio_text
                 if not item.get("audio_url") and not item.get("audio_text"):
                     continue
+            item["source"] = "placement_qbank"
+            pool[lvl] = item
+            break
+    return pool
+
+
+async def _gap_fill_listening_pool(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    levels: list[str],
+    used_item_ids: set[int] | None = None,
+) -> dict[str, dict]:
+    """Listening-only: one internal Gap Fill candidate per requested CEFR level, when available.
+
+    This is the only call site anywhere in the codebase permitted to pass allow_gap_fill=True.
+    Still fully gated by is_active/is_verified like every other bank query -- while the real Gap
+    Fill rows remain is_active=false (pending a separate, later activation phase), this returns
+    nothing for every level and the Listening dual-slot pool degrades to MCQ-only, exactly as
+    Listening behaves today.
+    """
+    pool: dict[str, dict] = {}
+    for lvl in levels:
+        for row in await select_placement_bank_items(
+            db,
+            language_id=language_id,
+            skill="listening",
+            level=lvl,
+            count=4,
+            used_item_ids=used_item_ids,
+            allow_gap_fill=True,
+        ):
+            if row.question_type != "gap_fill":
+                # allow_gap_fill=True also returns mcq rows -- the mcq variant is fetched
+                # separately by _question_bank_pool; this loop only ever keeps gap_fill.
+                continue
+            item = bank_item_to_exam_item(row)
+            if not _is_valid_gap_fill_pool_item(item):
+                continue
+            if not _is_usable_audio_url(item.get("audio_url")):
+                item["audio_url"] = None
+            body = item.get("body") or {}
+            audio_text = _listening_text_from_body(body)
+            if item.get("content_id"):
+                content = await db.get(LanguageContentItem, item["content_id"])
+                body = content.body_json if content else body
+                if not audio_text:
+                    audio_text = _listening_text_from_body(body)
+            audio_url = (body or {}).get("audio_url")
+            if not item.get("audio_url") and audio_text and _is_usable_audio_url(audio_url):
+                item["audio_url"] = str(audio_url)
+            if audio_text:
+                item["audio_text"] = audio_text
+            if not item.get("audio_url") and not item.get("audio_text"):
+                continue
             item["source"] = "placement_qbank"
             pool[lvl] = item
             break
@@ -297,105 +656,314 @@ async def _generated_pool(
     return pool
 
 
-async def _prepare_content(session_id: str, language_id: int, level: str) -> None:
-    """Background: generate fresh reading/listening/writing content (AI), voice listening clips
-    with edge-tts, and write them into exam_state. Falls back to the seeded bank per skill if AI
-    generation is unavailable, so the exam is never left without content.
-    """
-    async with AsyncSessionLocal() as db:
-        sess = await db.get(LanguageExamSession, session_id)
-        if not sess or not sess.exam_state:
+async def _mark_content_prep_unavailable(
+    *, session_id: str, prep_token: str, error_code: str
+) -> None:
+    async with AsyncSessionLocal() as mark_db:
+        sess = (
+            await mark_db.execute(
+                select(LanguageExamSession)
+                .where(LanguageExamSession.id == session_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not sess or sess.status != "in_progress":
             return
-        # Adaptive comprehension covers the whole CEFR range; start near the student's estimate.
-        start_level = level if level in ALL_CEFR_LEVELS else "B1"
-
-        # NOTE: generation below is slow (LLM + several edge-tts calls) and runs WHILE the student
-        # is doing the speaking section. We therefore build everything into locals first and only
-        # merge the three sections into the LATEST state at the end ΓÇö never write back a stale
-        # snapshot, which would clobber the speaking progress made meanwhile.
-
-        # --- Reading: reviewed bank first, then AI/legacy fallbacks for missing levels. ---
-        r_pool = await _question_bank_pool(
-            db, language_id=language_id, skill="reading", levels=ALL_CEFR_LEVELS
-        )
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
-        try:
-            gen = await ai_engine.generate_comprehension_set(skill="reading", levels=missing) if missing else None
-        except Exception:  # pragma: no cover
-            gen = None
-        for it in (gen or {}).get("items", []):
-            r_pool[it["level"]] = {
-                "passage": it["text"], "situation": "", "question": it["question"],
-                "options": it["options"], "correct_index": it["correct_index"], "level": it["level"],
-            }
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
-        if missing:
-            for lv, item in (await _seeded_pool(db, language_id=language_id, skill=LanguageSkill.reading, levels=missing)).items():
-                r_pool[lv] = item
-        # Last resort: verified AI-generated question bank, so a level is never content-starved.
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
-        if missing:
-            for lv, item in (await _generated_pool(db, language_id=language_id, levels=missing)).items():
-                r_pool[lv] = item
-        reading_section = _new_adaptive_section(r_pool, start_level)
-
-        # --- Grammar/vocabulary: reviewed bank only; it is diagnostic, not generated live. ---
-        g_pool = await _question_bank_pool(
-            db, language_id=language_id, skill="grammar_vocab", levels=ALL_CEFR_LEVELS
-        )
-        grammar_vocab_section = _new_adaptive_section(g_pool, start_level)
-
-        # --- Listening: reviewed bank first, then AI/legacy fallbacks for missing levels. ---
-        l_pool = await _question_bank_pool(
-            db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS
-        )
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
-        try:
-            gen = await ai_engine.generate_comprehension_set(skill="listening", levels=missing) if missing else None
-        except Exception:  # pragma: no cover
-            gen = None
-        for it in (gen or {}).get("items", []):
-            audio_url = await synthesize_exam_audio(it["text"])
-            l_pool[it["level"]] = {
-                "audio_url": audio_url, "audio_text": it["text"], "situation": it["situation"], "question": it["question"],
-                "options": it["options"], "correct_index": it["correct_index"], "level": it["level"],
-            }
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
-        if missing:
-            for lv, item in (await _seeded_pool(db, language_id=language_id, skill=LanguageSkill.listening, levels=missing)).items():
-                l_pool[lv] = item
-        listening_section = _new_adaptive_section(l_pool, start_level)
-        current_listening = listening_section.get("pool", {}).get(listening_section.get("current_level"))
-        if current_listening:
-            await _materialize_listening_audio(db, current_listening)
-
-        # --- Writing: reviewed bank first, AI next, legacy/generic final fallback. ---
-        wp = await _writing_prompt(db, language_id=language_id, level_str=level, include_generic=False)
-        if not wp:
-            try:
-                wp = await ai_engine.generate_writing_prompt(level=level)
-            except Exception:  # pragma: no cover
-                wp = None
-        if not wp:
-            wp = await _writing_prompt(db, language_id=language_id, level_str=level, include_generic=True)
-        writing_section = {
-            "prompt": wp, "min_words": WRITING_MIN_WORDS, "response": None, "ready": True, "done": False,
-        }
-
-        # --- Merge into the freshest state (re-read to avoid clobbering concurrent progress) ---
-        await db.refresh(sess, ["exam_state"])
-        state = dict(sess.exam_state or {})
-        state["reading"] = reading_section
-        state["listening"] = listening_section
-        state["grammar_vocab"] = grammar_vocab_section
-        state["writing"] = writing_section
+        state = copy.deepcopy(sess.exam_state or {})
+        if str(state.get("content_prep_token") or "") != prep_token:
+            return
+        state["content_prep_status"] = "content_unavailable"
+        state["content_prep_error_code"] = error_code
+        session_sections = state.get("sections") or SECTIONS
+        for section in PREPARED_SECTIONS:
+            if section not in session_sections:
+                continue
+            if not state.get(section, {}).get("ready"):
+                state.setdefault(section, {})["evidence_status"] = "content_unavailable"
+        _bump_state_revision(state)
         sess.exam_state = state
         flag_modified(sess, "exam_state")
-        await db.commit()
+        await mark_db.commit()
+
+
+async def _prepare_content(session_id: str, language_id: int, level: str) -> None:
+    """Prepare placement content in two phases without a DB transaction during AI/TTS.
+
+    Phase one snapshots all database-backed candidates and closes its transaction.  Phase two runs
+    external generation and TTS using only detached dictionaries, then merges only the prepared
+    sections into the latest JSON state under a short row lock.
+    """
+    prep_token = ""
+    source_revision = 1
+    l_pool: dict[str, dict] = {}
+    l_gap_fill_pool: dict[str, dict] = {}
+    try:
+        # Database-only preparation.  Do not add AI/TTS calls inside this context.
+        async with AsyncSessionLocal() as db:
+            sess = await db.get(LanguageExamSession, session_id)
+            if not sess or not sess.exam_state or sess.status != "in_progress":
+                return
+            source_state = copy.deepcopy(sess.exam_state or {})
+            source_revision = _state_revision(source_state)
+            prep_token = str(source_state.get("content_prep_token") or "")
+            # New sessions no longer carry "grammar_vocab" in their own "sections" list (see
+            # initiate_exam); only an already-persisted session that still lists it needs its
+            # content (re)prepared here.
+            needs_grammar_vocab = "grammar_vocab" in (source_state.get("sections") or SECTIONS)
+            student_id = int(sess.student_id)
+            if not check("placement_generation", f"{student_id}:{session_id}"):
+                logger.warning(
+                    "Placement content generation rate-limited session_id=%s user_id=%s",
+                    session_id,
+                    student_id,
+                )
+                await db.rollback()
+                await _mark_content_prep_unavailable(
+                    session_id=session_id,
+                    prep_token=prep_token,
+                    error_code="content_generation_rate_limited",
+                )
+                return
+
+            r_pool = await _question_bank_pool(
+                db, language_id=language_id, skill="reading", levels=ALL_CEFR_LEVELS,
+                used_item_ids=_already_used_bank_item_ids(source_state, "reading"),
+            )
+            r_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
+            r_seeded = await _seeded_pool(
+                db,
+                language_id=language_id,
+                skill=LanguageSkill.reading,
+                levels=r_missing,
+            )
+            r_generated_bank = await _generated_pool(
+                db, language_id=language_id, levels=r_missing
+            )
+            g_pool = (
+                await _question_bank_pool(
+                    db,
+                    language_id=language_id,
+                    skill="grammar_vocab",
+                    levels=ALL_CEFR_LEVELS,
+                    used_item_ids=_already_used_bank_item_ids(source_state, "grammar_vocab"),
+                )
+                if needs_grammar_vocab
+                else {}
+            )
+            l_used_item_ids = _already_used_bank_item_ids(source_state, "listening")
+            l_pool = await _question_bank_pool(
+                db, language_id=language_id, skill="listening", levels=ALL_CEFR_LEVELS,
+                used_item_ids=l_used_item_ids,
+            )
+            l_gap_fill_pool = await _gap_fill_listening_pool(
+                db, language_id=language_id, levels=ALL_CEFR_LEVELS,
+                used_item_ids=l_used_item_ids,
+            )
+            l_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
+            l_seeded = await _seeded_pool(
+                db,
+                language_id=language_id,
+                skill=LanguageSkill.listening,
+                levels=l_missing,
+            )
+            writing_used_ids = _already_used_bank_item_ids(source_state, "writing")
+            reviewed_writing_prompt = await _writing_prompt(
+                db,
+                language_id=language_id,
+                level_str=level,
+                include_generic=False,
+                used_item_ids=writing_used_ids,
+            )
+            generic_writing_prompt = reviewed_writing_prompt or await _writing_prompt(
+                db,
+                language_id=language_id,
+                level_str=level,
+                include_generic=True,
+                used_item_ids=writing_used_ids,
+            )
+            await db.rollback()
+
+        # External-only preparation.  The database session above is closed before reaching here.
+        start_level = level if level in ALL_CEFR_LEVELS else "B1"
+        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
+        try:
+            generated_reading = (
+                await ai_engine.generate_comprehension_set(skill="reading", levels=missing)
+                if missing
+                else None
+            )
+        except Exception:
+            generated_reading = None
+        for item in (generated_reading or {}).get("items", []):
+            r_pool[item["level"]] = {
+                "passage": item["text"],
+                "situation": "",
+                "question": item["question"],
+                "options": item["options"],
+                "correct_index": item["correct_index"],
+                "level": item["level"],
+            }
+        for fallback_pool in (r_seeded, r_generated_bank):
+            for fallback_level, item in fallback_pool.items():
+                r_pool.setdefault(fallback_level, item)
+        reading_section = _new_adaptive_section(r_pool, start_level)
+        grammar_vocab_section = _new_adaptive_section(g_pool, start_level) if needs_grammar_vocab else None
+
+        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
+        try:
+            generated_listening = (
+                await ai_engine.generate_comprehension_set(skill="listening", levels=missing)
+                if missing
+                else None
+            )
+        except Exception:
+            generated_listening = None
+        for item in (generated_listening or {}).get("items", []):
+            l_pool[item["level"]] = {
+                "audio_text": item["text"],
+                "situation": item["situation"],
+                "question": item["question"],
+                "options": item["options"],
+                "correct_index": item["correct_index"],
+                "level": item["level"],
+            }
+        for fallback_level, item in l_seeded.items():
+            l_pool.setdefault(fallback_level, item)
+        # Every TTS call runs after the DB context closed.  Missing audio removes that rung instead
+        # of exposing its transcript or fabricating listening evidence.
+        for listening_level, item in list(l_pool.items()):
+            audio_url, _audio_text, _created = await _materialize_listening_audio(None, item)
+            if not audio_url:
+                l_pool.pop(listening_level, None)
+        for gap_fill_level, item in list(l_gap_fill_pool.items()):
+            audio_url, _audio_text, _created = await _materialize_listening_audio(None, item)
+            if not audio_url:
+                l_gap_fill_pool.pop(gap_fill_level, None)
+        # Listening-only dual-slot pool: each level may hold an MCQ candidate, a Gap Fill
+        # candidate, or both. Gap Fill only ever comes from reviewed bank rows (never the
+        # seeded/AI-generated fallback paths, which are MCQ-only) and only appears once
+        # allow_gap_fill=True finds an active+verified row for that level -- inert today since the
+        # real Gap Fill rows are still is_active=false.
+        l_dual_pool = {
+            lvl: {"mcq": l_pool.get(lvl), "gap_fill": l_gap_fill_pool.get(lvl)}
+            for lvl in set(l_pool) | set(l_gap_fill_pool)
+        }
+        listening_section = _new_adaptive_section(l_dual_pool, start_level, dual_slot=True)
+
+        writing_prompt = reviewed_writing_prompt
+        if not writing_prompt:
+            try:
+                writing_prompt = await ai_engine.generate_writing_prompt(level=level)
+            except Exception:
+                writing_prompt = None
+        writing_prompt = writing_prompt or generic_writing_prompt
+        writing_section = {
+            "prompt": writing_prompt or "",
+            "prompt_token": _new_exam_token() if writing_prompt else "",
+            "min_words": WRITING_MIN_WORDS,
+            "response": None,
+            "ready": bool(writing_prompt),
+            "done": False,
+            "evidence_status": (
+                "missing_student_response" if writing_prompt else "content_unavailable"
+            ),
+        }
+        prepared = {
+            "reading": reading_section,
+            "listening": listening_section,
+            "writing": writing_section,
+        }
+        if needs_grammar_vocab:
+            prepared["grammar_vocab"] = grammar_vocab_section
+        await _merge_prepared_content(
+            session_id=session_id,
+            prep_token=prep_token,
+            source_revision=source_revision,
+            prepared=prepared,
+        )
+    except Exception as exc:
+        _cleanup_exam_audio(
+            {"listening": {"pool": {**l_pool, **{f"gf_{lvl}": item for lvl, item in l_gap_fill_pool.items()}}}}
+        )
+        logger.warning(
+            "Placement content preparation failed session_id=%s error_type=%s",
+            session_id,
+            type(exc).__name__,
+        )
+        if prep_token:
+            await _mark_content_prep_unavailable(
+                session_id=session_id,
+                prep_token=prep_token,
+                error_code="content_preparation_failed",
+            )
+
+
+async def _merge_prepared_content(
+    *,
+    session_id: str,
+    prep_token: str,
+    source_revision: int,
+    prepared: dict[str, dict],
+) -> bool:
+    """Merge only prepared sections into the latest row under a short PostgreSQL lock."""
+    async with AsyncSessionLocal() as merge_db:
+        sess = (
+            await merge_db.execute(
+                select(LanguageExamSession)
+                .where(LanguageExamSession.id == session_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not sess or sess.status in {"abandoned", "completed", "failed", "evaluating"}:
+            _cleanup_exam_audio(prepared)
+            return False
+
+        latest = copy.deepcopy(sess.exam_state or {})
+        if str(latest.get("content_prep_token") or "") != prep_token:
+            _cleanup_exam_audio(prepared)
+            return False
+
+        merged_any = False
+        for section, value in prepared.items():
+            current = latest.get(section, {})
+            already_answered = bool(current.get("asked")) or bool(current.get("response")) or bool(current.get("done"))
+            if already_answered or current.get("ready") is True:
+                if section == "listening":
+                    _cleanup_exam_audio({"listening": value})
+                continue
+            latest[section] = value
+            merged_any = True
+
+        if not merged_any:
+            _cleanup_exam_audio(prepared)
+            return False
+
+        latest_sections = latest.get("sections") or SECTIONS
+        latest["content_prep_status"] = (
+            "completed"
+            if all(
+                latest.get(section, {}).get("ready")
+                for section in PREPARED_SECTIONS
+                if section in latest_sections
+            )
+            else "content_unavailable"
+        )
+        latest["content_prepared_from_revision"] = source_revision
+        latest["content_prepared_at"] = datetime.now(timezone.utc).isoformat()
+        _bump_state_revision(latest)
+        sess.exam_state = latest
+        flag_modified(sess, "exam_state")
+        await merge_db.commit()
+        return True
 
 
 async def _writing_prompt(
-    db: AsyncSession, *, language_id: int, level_str: str, include_generic: bool = True
+    db: AsyncSession,
+    *,
+    language_id: int,
+    level_str: str,
+    include_generic: bool = True,
+    used_item_ids: set[int] | None = None,
 ) -> str | None:
     """Pull a reviewed/seeded writing prompt near the level; optionally fall back to generic."""
     try:
@@ -408,6 +976,7 @@ async def _writing_prompt(
         skill="writing_prompt",
         level=lvl,
         count=1,
+        used_item_ids=used_item_ids,
     ):
         item = bank_item_to_exam_item(row)
         prompt = str(item.get("question") or "").strip()
@@ -439,6 +1008,132 @@ async def _writing_prompt(
     )
 
 
+_SPEAKING_BANK_SCENARIO = {
+    "scenario": "AI placement speaking assessment",
+    "ai_persona": "an English placement examiner",
+    "student_role": "a test-taker",
+    "setting": "a spoken placement exam",
+}
+
+
+_SPEAKING_LEVEL_ORDER = [
+    LanguageLevel.A1,
+    LanguageLevel.A2,
+    LanguageLevel.B1,
+    LanguageLevel.B2,
+    LanguageLevel.C1,
+    LanguageLevel.C2,
+]
+
+
+def _adjacent_speaking_levels(level: LanguageLevel) -> list[LanguageLevel]:
+    """CEFR levels exactly one band above/below the given level (closer direction first: up,
+    then down), e.g. B1 -> [B2, A1]; A1 (no lower neighbor) -> [A2]; C2 (no higher neighbor) ->
+    [C1]. Used only by _speaking_bank_prompt's diversity fallback -- never for scoring/level
+    estimation, and never for any other bank skill."""
+    try:
+        rank = _SPEAKING_LEVEL_ORDER.index(level)
+    except ValueError:
+        return []
+    neighbors = []
+    if rank + 1 < len(_SPEAKING_LEVEL_ORDER):
+        neighbors.append(_SPEAKING_LEVEL_ORDER[rank + 1])
+    if rank - 1 >= 0:
+        neighbors.append(_SPEAKING_LEVEL_ORDER[rank - 1])
+    return neighbors
+
+
+async def _speaking_bank_prompt(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    level_str: str,
+    used_item_ids: set[int] | None = None,
+    used_subskills: set[str] | None = None,
+) -> dict | None:
+    """Pull one verified, unused, MVP-marked speaking_prompt bank item at the target level, or
+    None if the bank has nothing usable (caller falls back to live scenario/question generation)
+    -- mirrors _writing_prompt's exact-level-then-fallback pattern.
+
+    require_mvp_marker=True restricts selection to the curated MVP bank
+    (body_json.review_status="mvp_approved_pending_full_review"), excluding older/legacy
+    speaking_prompt rows seeded by the generic seed_placement_question_bank.py script that
+    predate it -- those legacy rows are untouched (not deleted/deactivated), just never
+    selected here.
+
+    used_subskills, if given, is a soft diversity preference applied in priority order (never a
+    hard requirement -- a thin bank can never fail to produce a prompt just because every
+    remaining item shares an already-seen subskill):
+      1. Target level, preferring an item whose subskill/task_type hasn't appeared this session.
+      2. An adjacent CEFR level (+/-1 band), still preferring an unused subskill -- covers levels
+         that today have exactly one subskill of their own (e.g. A1 = self_intro only, A2 =
+         routine_description only), where a second turn at the same level would otherwise always
+         repeat it even though a neighboring level has something fresh.
+      3. Target level again, unused bank_item_id only -- subskill may repeat.
+      4. None -- caller falls back to live AI generation."""
+    try:
+        lvl = LanguageLevel(level_str)
+    except ValueError:
+        lvl = LanguageLevel.A2
+
+    async def _at_level(level: LanguageLevel, *, exclude_subskills: set[str] | None) -> dict | None:
+        for row in await select_placement_bank_items(
+            db,
+            language_id=language_id,
+            skill="speaking_prompt",
+            level=level,
+            count=1,
+            used_item_ids=used_item_ids,
+            require_mvp_marker=True,
+            exclude_subskills=exclude_subskills,
+        ):
+            item = bank_item_to_exam_item(row)
+            if str(item.get("question") or "").strip():
+                return item
+        return None
+
+    if used_subskills:
+        item = await _at_level(lvl, exclude_subskills=used_subskills)
+        if item is not None:
+            return item
+        for neighbor in _adjacent_speaking_levels(lvl):
+            item = await _at_level(neighbor, exclude_subskills=used_subskills)
+            if item is not None:
+                return item
+
+    return await _at_level(lvl, exclude_subskills=None)
+
+
+def _speaking_bank_question_text(item: dict) -> str:
+    situation = str(item.get("situation") or "").strip()
+    question = str(item.get("question") or "").strip()
+    return f"{situation} {question}".strip() if situation else question
+
+
+def _speaking_scenario_from_bank_item(item: dict) -> dict:
+    """A generic, honest scenario descriptor for bank-sourced speaking turns -- curated items are
+    independent semi-structured prompts, not a continuous roleplay, so persona/setting stay
+    fixed for the session rather than switching per item (MVP simplification)."""
+    return {**_SPEAKING_BANK_SCENARIO, "opening_question": _speaking_bank_question_text(item)}
+
+
+def _already_used_speaking_bank_item_ids(state: dict, section: str) -> set[int]:
+    """Bank item ids already asked in this session's speaking-like section. Mirrors
+    _already_used_bank_item_ids (P1.1) for MCQ sections, but speaking's turn history lives under
+    "results", not "asked"."""
+    results = state.get(section, {}).get("results", []) or []
+    return {int(r["bank_item_id"]) for r in results if r.get("bank_item_id")}
+
+
+def _already_used_speaking_subskills(state: dict, section: str) -> set[str]:
+    """Subskill/task_type values already asked in this session's speaking-like section -- used
+    only as _speaking_bank_prompt's soft diversity preference (never a hard exclusion), so
+    back-to-back turns avoid repeating the same task type (e.g. self_intro, self_intro) when a
+    fresher one is available at the target level."""
+    results = state.get(section, {}).get("results", []) or []
+    return {str(r["bank_item_subskill"]) for r in results if r.get("bank_item_subskill")}
+
+
 # ---------------------------------------------------------------------------------------
 # state -> output contract
 # ---------------------------------------------------------------------------------------
@@ -457,32 +1152,70 @@ async def _build_state_out(
     *,
     last_feedback: SpeakingTurnFeedbackOut | None = None,
     resumed: bool = False,
+    requested_section: str | None = None,
 ) -> ExamStateOut:
-    """Render the current section into the frontend contract (lazily resolving listening audio)."""
+    """Render a state snapshot without locks or external AI/STT/TTS work.
+
+    requested_section: free section navigation. When given and it's a real member of
+    state["sections"], render THAT section instead of the session's internal progress cursor's
+    section -- the cursor itself is never touched by viewing a different section (it still only
+    ever advances past sections that are actually done, see _advance_if_section_done), so this is
+    purely a rendering choice, not a state mutation. Falls back to the cursor's section when
+    omitted or invalid, which is the exact prior behavior.
+    """
+    _ = db
     state = sess.exam_state or {}
     sections = state.get("sections", SECTIONS)
     cursor = state.get("cursor", 0)
+    revision = _state_revision(state)
+    completed_sections = [s for s in sections if state.get(s, {}).get("done")]
 
     if sess.status in ("evaluating", "completed", "failed") or cursor >= len(sections):
-        phase = "completed" if sess.status == "completed" else "evaluating"
+        phase = sess.status if sess.status in ("completed", "failed") else "evaluating"
+        evaluation = dict(state.get("evaluation") or {})
+        evaluation_status = str(
+            evaluation.get("evaluation_status") or evaluation.get("status") or "retry_required"
+        )
         return ExamStateOut(
-            session_id=sess.id, phase=phase, section_index=len(sections),
-            section_total=len(sections), sections=sections, resumed=resumed,
+            session_id=sess.id, state_revision=revision, phase=phase, section_index=len(sections),
+            section_total=len(sections), sections=sections, completed_sections=completed_sections,
+            resumed=resumed,
+            evidence_status="completed" if sess.status == "completed" else evaluation_status,
+            error_code=evaluation.get("error_code"),
+            error_message=evaluation.get("error_message"),
         )
 
-    section = sections[cursor]
+    section = requested_section if requested_section in sections else sections[cursor]
+    section_index = sections.index(section)
 
     # Reading/listening/writing content is generated in the background; until it's ready, tell the
     # frontend to show a loader and poll. (Older sessions without the flag are treated as ready.)
     if section in PREPARED_SECTIONS and not state.get(section, {}).get("ready", True):
+        unavailable = (
+            state.get(section, {}).get("evidence_status") == "content_unavailable"
+            or state.get("content_prep_status") == "content_unavailable"
+        )
         return ExamStateOut(
-            session_id=sess.id, phase="preparing", section_index=cursor,
-            section_total=len(sections), sections=sections, resumed=resumed,
+            session_id=sess.id,
+            state_revision=revision,
+            phase="content_unavailable" if unavailable else "preparing",
+            section_index=section_index,
+            section_total=len(sections), sections=sections, completed_sections=completed_sections,
+            resumed=resumed,
+            evidence_status="content_unavailable" if unavailable else "retry_required",
+            error_code="content_unavailable" if unavailable else None,
+            error_message=(
+                "Required placement content is temporarily unavailable. Please retry."
+                if unavailable
+                else None
+            ),
         )
 
     out = ExamStateOut(
-        session_id=sess.id, phase=section, section_index=cursor, section_total=len(sections),
-        sections=sections, last_feedback=last_feedback, resumed=resumed,
+        session_id=sess.id, state_revision=revision, phase=section, section_index=section_index,
+        section_total=len(sections),
+        sections=sections, completed_sections=completed_sections, last_feedback=last_feedback, resumed=resumed,
+        evidence_status=str(state.get(section, {}).get("evidence_status") or "missing_student_response"),
     )
 
     if section in SPEAKING_LIKE:
@@ -495,59 +1228,143 @@ async def _build_state_out(
             examiner_message=sp.get("pending_question", ""),
             turn=sp.get("turn", 1),
             total_turns=sp.get("total_turns", INTERVIEW_TURNS if section == "interview" else SPEAKING_TURNS),
+            turn_token=str(sp.get("turn_token") or ""),
         )
+        out.turn_token = out.speaking.turn_token
     elif section in MCQ_SECTIONS:
         sec = state[section]
-        item = sec.get("pool", {}).get(sec.get("current_level"))
+        item = _resolve_current_exam_item(sec, sec.get("current_level"), dual_slot=(section == "listening"))
         if item and not sec.get("done"):
             audio_url = None
-            audio_text = None
             passage = item.get("passage") or None if section == "reading" else None
             situation = item.get("situation") or None if section == "listening" else None
             instructions = "Choose the best answer."
             if section == "listening":
                 instructions = "Listen to the clip, then answer."
-                audio_url, audio_text, audio_created = await _materialize_listening_audio(db, item)
-                if audio_created:
-                    sess.exam_state = state
-                    flag_modified(sess, "exam_state")
-                    await db.commit()
-                audio_text = None if audio_url else audio_text
+                audio_url = str(item.get("audio_url") or "") or None
+                if not audio_url:
+                    out.phase = "content_unavailable"
+                    out.evidence_status = "content_unavailable"
+                    out.error_code = "listening_audio_unavailable"
+                    out.error_message = "Listening audio is temporarily unavailable. Please retry."
+                    return out
             elif section == "reading":
                 instructions = "Read the passage, then answer."
             elif section == "grammar_vocab":
                 instructions = "Choose the most accurate English option."
+            subquestions = item.get("subquestions")
+            blanks = item.get("blanks")
             out.mcq = McqPromptOut(
                 instructions=instructions,
                 passage=passage,
                 audio_url=audio_url,
-                audio_text=audio_text,
                 situation=situation,
                 question=item.get("question", ""),
                 options=item.get("options", []),
                 item_index=len(sec.get("asked", [])),
                 item_total=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
+                question_token=str(item.get("question_token") or ""),
+                question_type=item.get("question_type", "mcq"),
+                word_bank=item.get("word_bank"),
+                subquestions=(
+                    [ListeningSubquestionOut(question=sq.get("question", ""), options=sq.get("options", []))
+                     for sq in subquestions]
+                    if isinstance(subquestions, list) else None
+                ),
+                note_template=item.get("note_template"),
+                blank_count=len(blanks) if isinstance(blanks, list) else None,
             )
+            out.question_token = out.mcq.question_token
     elif section == "writing":
         wr = state["writing"]
-        out.writing = WritingPromptOut(prompt=wr.get("prompt", ""), min_words=wr.get("min_words", WRITING_MIN_WORDS))
+        out.writing = WritingPromptOut(
+            prompt=wr.get("prompt", ""),
+            min_words=wr.get("min_words", WRITING_MIN_WORDS),
+            prompt_token=str(wr.get("prompt_token") or ""),
+        )
+        out.prompt_token = out.writing.prompt_token
 
     return out
 
 
-async def _resolve_listening_audio(db: AsyncSession, item: dict) -> str | None:
+# Persistent Listening bank-audio cache (Phase 1: language_listening_bank_audio_backfill_service.py
+# populates audio_meta_json for reachable rows). Kept as a literal here, not imported from that
+# service module, to avoid a circular import -- that module already imports
+# _listening_text_from_body from this one.
+_LISTENING_BANK_CACHE_URL_PREFIX = "/uploads/language_placement_bank_audio/"
+# Matches MIN_VALID_AUDIO_BYTES in the backfill service -- the same "is this a real clip or a
+# truncated/corrupt write" sanity floor, re-applied here since the file on disk could have been
+# deleted, corrupted, or truncated by something entirely outside the backfill script since then.
+_MIN_VALID_BANK_CACHE_BYTES = 512
+
+
+def _safe_upload_relative_path(relative: str | None) -> Path | None:
+    """Resolve a candidate UPLOAD_DIR-relative path safely, refusing anything that would escape
+    UPLOAD_DIR (parent traversal, an absolute path smuggled in as "relative", etc). Returns None
+    if the input is empty, not a string, or resolves outside UPLOAD_DIR."""
+    if not relative or not isinstance(relative, str):
+        return None
+    upload_root = Path(get_settings().UPLOAD_DIR).resolve()
+    try:
+        candidate = (upload_root / relative).resolve()
+    except (OSError, ValueError):
+        return None
+    if not candidate.is_relative_to(upload_root):
+        return None
+    return candidate
+
+
+def _is_valid_bank_cache_file(path: Path) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size >= _MIN_VALID_BANK_CACHE_BYTES
+    except OSError:
+        return False
+
+
+def _validate_local_bank_cache_url(
+    url: str, audio_meta: dict | None, *, bank_item_id: int | None
+) -> str | None:
+    """For a persistent Listening bank-cache URL, confirm the underlying local file genuinely
+    exists (and clears a trivial-size floor) before trusting it, so a deleted/corrupted/truncated
+    cache entry falls through to runtime synthesis instead of serving a dead link. Any other URL
+    (remote http(s)://, the source-controlled static listening assets) is returned unchanged --
+    only this specific persistent local cache gets the extra scrutiny. Never logs the transcript,
+    and only ever logs on rejection -- a normal valid cache hit produces no log output."""
+    if not url.startswith(_LISTENING_BANK_CACHE_URL_PREFIX):
+        return url
+
+    relative = (audio_meta or {}).get("storage_key") or url[len("/uploads/") :]
+    path = _safe_upload_relative_path(relative)
+    if path is None:
+        logger.warning(
+            "Listening bank-cache audio rejected: unsafe cache path bank_item_id=%s", bank_item_id
+        )
+        return None
+    if not _is_valid_bank_cache_file(path):
+        logger.warning(
+            "Listening bank-cache audio rejected: missing or invalid file bank_item_id=%s", bank_item_id
+        )
+        return None
+    return url
+
+
+async def _resolve_listening_audio(db: AsyncSession | None, item: dict) -> str | None:
     """Return only audio that is tied to the same transcript as the question.
 
-    Placement listening is transcript-led: if we cannot prove the audio belongs to this item, the
-    frontend will read `audio_text` with browser speech instead of playing a mismatched lesson clip.
+    If the audio cannot be tied to this item, the caller must generate it server-side or fail closed;
+    the private transcript is never sent to the browser.
     """
 
     audio_url = item.get("audio_url")
     if _is_usable_audio_url(audio_url):
-        return str(audio_url)
+        validated = _validate_local_bank_cache_url(
+            str(audio_url), item.get("audio_meta"), bank_item_id=item.get("bank_item_id")
+        )
+        if validated:
+            return validated
 
     content_item_id = item.get("content_id")
-    if not content_item_id:
+    if not content_item_id or db is None:
         return None
 
     content = await db.get(LanguageContentItem, content_item_id)
@@ -558,13 +1375,13 @@ async def _resolve_listening_audio(db: AsyncSession, item: dict) -> str | None:
     return None
 
 
-async def _resolve_listening_audio_text(db: AsyncSession, item: dict) -> str | None:
+async def _resolve_listening_audio_text(db: AsyncSession | None, item: dict) -> str | None:
     text = str(item.get("audio_text") or "").strip()
     if text:
         return text
 
     content_item_id = item.get("content_id")
-    if not content_item_id:
+    if not content_item_id or db is None:
         return None
     content = await db.get(LanguageContentItem, content_item_id)
     body = content.body_json if content else {}
@@ -572,8 +1389,22 @@ async def _resolve_listening_audio_text(db: AsyncSession, item: dict) -> str | N
     return text or None
 
 
-async def _materialize_listening_audio(db: AsyncSession, item: dict) -> tuple[str | None, str | None, bool]:
-    """Ensure a listening item has a real audio URL generated from its own transcript."""
+_LISTENING_TTS_TIMEOUT_S = 25
+
+
+async def _materialize_listening_audio(
+    db: AsyncSession | None, item: dict
+) -> tuple[str | None, str | None, bool]:
+    """Ensure a listening item has a real audio URL generated from its own transcript.
+
+    Bounded by _LISTENING_TTS_TIMEOUT_S: a cold Supertonic engine can take minutes to load on the
+    very first synthesis of a fresh process (one-time model download). Rather than letting that
+    block this item -- and every later item in the same _prepare_content pass -- indefinitely, a
+    slow attempt times out and this rung is dropped (existing graceful-degradation policy: missing
+    audio removes the rung instead of exposing its transcript). The underlying engine load itself
+    is not cancelled by this timeout (see _ensure_engine_loaded's asyncio.shield) -- it keeps
+    warming up in the background, so the next item, the next retry, or the next session's attempt
+    finds it already loaded and completes quickly."""
 
     audio_url = await _resolve_listening_audio(db, item)
     audio_text = await _resolve_listening_audio_text(db, item)
@@ -584,9 +1415,11 @@ async def _materialize_listening_audio(db: AsyncSession, item: dict) -> tuple[st
 
     generated_url = None
     try:
-        generated_url = await synthesize_exam_audio(audio_text)
+        generated_url = await asyncio.wait_for(
+            synthesize_exam_audio(audio_text), timeout=_LISTENING_TTS_TIMEOUT_S
+        )
     except Exception as exc:  # pragma: no cover - model/runtime variance
-        logger.warning("Placement listening TTS failed: %s", exc)
+        logger.warning("Placement listening TTS failed error_type=%s", type(exc).__name__)
 
     if _is_usable_audio_url(generated_url):
         item["audio_url"] = str(generated_url)
@@ -606,6 +1439,249 @@ def _advance_if_section_done(state: dict) -> None:
             state["cursor"] += 1
         else:
             break
+
+
+_REQUEST_RECEIPT_LIMIT = 100
+
+
+def _normalise_writing_text(text: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", text or "").split())
+
+
+def canonical_payload_hash(*, kind: str, payload: dict) -> str:
+    """Hash a canonical operation payload for durable idempotency receipts."""
+    encoded = json.dumps(
+        {"kind": kind, **payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _request_receipt(
+    state: dict,
+    *,
+    kind: str,
+    request_id: str,
+    payload_hash: str,
+) -> dict | None:
+    """Return the completed receipt, or reject reuse of an id with different input."""
+    for receipt in state.get("request_receipts", []):
+        # ``id`` is accepted only to read receipts produced by early phase-zero builds.
+        stored_request_id = receipt.get("request_id") or receipt.get("id")
+        if stored_request_id != request_id:
+            continue
+        if receipt.get("kind") == kind and secrets.compare_digest(
+            str(receipt.get("payload_hash") or ""), payload_hash
+        ):
+            return receipt
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "idempotency_conflict",
+                "message": "request_id was already used with a different payload.",
+                "current_state_revision": _state_revision(state),
+            },
+        )
+    return None
+
+
+def _record_request(
+    state: dict,
+    *,
+    kind: str,
+    request_id: str,
+    payload_hash: str,
+    request_revision: int,
+    token: str,
+    result_reference: str,
+) -> None:
+    receipts = list(state.get("request_receipts", []))
+    receipts.append(
+        {
+            "request_id": request_id,
+            "kind": kind,
+            "payload_hash": payload_hash,
+            "state_revision": request_revision,
+            "token": token,
+            "result_reference": result_reference,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    state["request_receipts"] = receipts[-_REQUEST_RECEIPT_LIMIT:]
+
+
+def _require_current_state(
+    state: dict,
+    *,
+    supplied_revision: int,
+    supplied_token: str,
+    expected_token: str,
+) -> None:
+    _require_state_revision(state, supplied_revision=supplied_revision)
+    current_revision = _state_revision(state)
+    if not expected_token or not secrets.compare_digest(
+        str(supplied_token), str(expected_token)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale_exam_state",
+                "message": "The exam moved forward. Refresh the current question before retrying.",
+                "current_state_revision": current_revision,
+            },
+        )
+
+
+def _require_state_revision(state: dict, *, supplied_revision: int) -> None:
+    current_revision = _state_revision(state)
+    if supplied_revision != current_revision:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale_exam_state",
+                "message": "The exam moved forward. Refresh the current question before retrying.",
+                "current_state_revision": current_revision,
+            },
+        )
+
+
+def _audio_hash_already_used(state: dict, audio_sha256: str) -> bool:
+    return any(
+        str(result.get("audio_sha256") or "") == audio_sha256
+        for spoken_section in SPEAKING_LIKE
+        for result in state.get(spoken_section, {}).get("results", [])
+    )
+
+
+def exam_evidence_statuses(state: dict) -> dict[str, str]:
+    """Classify evidence without blaming the student for missing server-side content."""
+    statuses: dict[str, str] = {}
+    # Gated on the section's own key being present in state at all (not just "sections"
+    # membership): a session that never had this section persists no dict for it (e.g. a
+    # narrower exam variant, or an isolated single-section test fixture), and answer_mcq now
+    # reaches this same finalize check that submit_writing/speaking_turn always have (free
+    # navigation's _maybe_finalize fix) -- such a state must not be blocked on evidence for a
+    # section it never had. A session that DOES carry a (possibly incomplete) dict for the
+    # section is still held to the existing requirement regardless of "sections" membership,
+    # preserving the original incomplete-exam guard exactly.
+    session_sections = state.get("sections") or SECTIONS
+    for section in (s for s in ("listening", "reading", "grammar_vocab") if s in state):
+        section_state = state.get(section, {})
+        declared = str(section_state.get("evidence_status") or "")
+        if declared in {"content_unavailable", "retry_required", "unassessed"}:
+            statuses[section] = declared
+            continue
+        if not section_state.get("ready", True) or not section_state.get("pool"):
+            statuses[section] = "content_unavailable"
+            continue
+        asked = section_state.get("asked") or []
+        valid = [
+            answer
+            for answer in asked
+            if isinstance(answer.get("correct"), bool)
+            and bool(answer.get("level"))
+            and (
+                # Legacy single-answer MCQ/Gap-Fill, or a Listening bundle's multi-part answer
+                # (chosen_indices/answer_texts) -- any one of these shapes is a real recorded
+                # student answer; requiring "chosen_index" specifically (pre-bundle behavior)
+                # wrongly reported bundle evidence as missing once a section could complete.
+                isinstance(answer.get("chosen_index"), int)
+                or isinstance(answer.get("chosen_indices"), list)
+                or isinstance(answer.get("answer_text"), str)
+                or isinstance(answer.get("answer_texts"), list)
+            )
+        ]
+        if not valid or section_state.get("done") is not True:
+            statuses[section] = "missing_student_response"
+        else:
+            statuses[section] = "completed"
+
+    if "writing" in state:
+        writing = state.get("writing", {})
+        min_words = max(WRITING_MIN_WORDS, int(writing.get("min_words") or WRITING_MIN_WORDS))
+        declared = str(writing.get("evidence_status") or "")
+        if declared in {"content_unavailable", "retry_required", "unassessed"}:
+            statuses["writing"] = declared
+        elif not writing.get("ready", True) or not str(writing.get("prompt") or "").strip():
+            statuses["writing"] = "content_unavailable"
+        elif writing.get("done") is not True or len(str(writing.get("response") or "").split()) < min_words:
+            statuses["writing"] = "missing_student_response"
+        else:
+            statuses["writing"] = "completed"
+
+    # New sessions have no "interview" entry and must not be blocked on it; old sessions that
+    # still have "interview" must keep requiring it (same session_sections rule as above).
+    spoken_defaults = [("speaking", SPEAKING_TURNS), ("interview", INTERVIEW_TURNS)]
+    for section, default_turns in [(s, t) for s, t in spoken_defaults if s in session_sections]:
+        spoken = state.get(section, {})
+        declared = str(spoken.get("evidence_status") or "")
+        if declared in {"content_unavailable", "retry_required", "unassessed"}:
+            statuses[section] = declared
+            continue
+        required = max(1, int(spoken.get("total_turns") or default_turns))
+        results = spoken.get("results") or []
+        valid = [
+            result
+            for result in results
+            if str(result.get("transcription") or "").strip()
+            and str(result.get("audio_sha256") or "").strip()
+            and str(result.get("question") or "").strip()
+        ]
+        distinct_audio = {str(result.get("audio_sha256")) for result in valid}
+        if spoken.get("done") is not True or len(valid) < required or len(distinct_audio) < required:
+            statuses[section] = "missing_student_response"
+        else:
+            statuses[section] = "completed"
+    return statuses
+
+
+def missing_exam_evidence(state: dict) -> dict[str, str]:
+    """Return incomplete sections with a stable, report-safe reason."""
+    messages = {
+        "missing_student_response": "A required student response is missing.",
+        "content_unavailable": "Required exam content is temporarily unavailable.",
+        "scorer_unavailable": "The authoritative scorer is temporarily unavailable.",
+        "retry_required": "This section must be retried.",
+        "unassessed": "This section has not been authoritatively assessed.",
+    }
+    return {
+        section: messages[section_status]
+        for section, section_status in exam_evidence_statuses(state).items()
+        if section_status != "completed"
+    }
+
+
+def _ensure_exam_evidence_complete(state: dict) -> None:
+    missing = missing_exam_evidence(state)
+    if missing:
+        statuses = exam_evidence_statuses(state)
+        technical = {
+            section: section_status
+            for section, section_status in statuses.items()
+            if section_status in {"content_unavailable", "scorer_unavailable", "retry_required", "unassessed"}
+        }
+        if technical:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "exam_evidence_unavailable",
+                    "message": "Required exam evidence is temporarily unavailable. Please retry.",
+                    "section_statuses": statuses,
+                    "retry_sections": list(technical),
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "incomplete_exam",
+                "message": "The placement test is missing required evidence.",
+                "missing_sections": list(missing),
+                "missing_evidence": missing,
+                "section_statuses": statuses,
+            },
+        )
 
 
 def _provisional_from_phase1(state: dict) -> tuple[CEFRLevel, str]:
@@ -669,6 +1745,8 @@ async def _ensure_interview_ready(state: dict) -> None:
         scenario=state.get("speaking", {}).get("scenario", {}),
         learner_grade=state.get("learner_grade"),
     )
+    iv["turn_token"] = _new_exam_token()
+    iv["evidence_status"] = "missing_student_response"
 
 
 # ---------------------------------------------------------------------------------------
@@ -683,46 +1761,217 @@ def _weeks_to_next_level(level: CEFRLevel) -> int:
     return _WEEKS_TO_NEXT.get(level.value, 14)
 
 
-async def _run_evaluation(session_id: str) -> None:
-    """Fuse all four sections into a per-skill report, persist it, and unlock the module."""
-    async with AsyncSessionLocal() as db:
-        sess = await db.get(LanguageExamSession, session_id)
-        if not sess or sess.status != "evaluating":
-            return
-        try:
-            state = sess.exam_state or {}
-            now = datetime.now(timezone.utc)
+def _parse_utc(value: object) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
+
+def evaluation_lease_expired(state: dict, *, now: datetime | None = None) -> bool:
+    evaluation = dict(state.get("evaluation") or {})
+    current_status = str(evaluation.get("evaluation_status") or evaluation.get("status") or "")
+    if current_status != "running":
+        return True
+    expiry = _parse_utc(evaluation.get("evaluation_lease_expires_at") or evaluation.get("lease_expires_at"))
+    return expiry is None or expiry <= (now or datetime.now(timezone.utc))
+
+
+def _evaluation_should_run(state: dict) -> bool:
+    evaluation = dict(state.get("evaluation") or {})
+    current_status = str(evaluation.get("evaluation_status") or evaluation.get("status") or "pending")
+    return current_status in {"pending", "retry_required", "scorer_unavailable", "failed"} or (
+        current_status == "running" and evaluation_lease_expired(state)
+    )
+
+
+async def _claim_evaluation_lease(session_id: str) -> tuple[str, dict, int, int] | None:
+    """Atomically own an evaluation attempt, returning an immutable evidence snapshot."""
+    now = datetime.now(timezone.utc)
+    owner = uuid.uuid4().hex
+    async with AsyncSessionLocal() as claim_db:
+        sess = (
+            await claim_db.execute(
+                select(LanguageExamSession)
+                .where(LanguageExamSession.id == session_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not sess or sess.status != "evaluating" or sess.is_completed:
+            return None
+        if not check("placement_evaluation", f"{sess.student_id}:{session_id}"):
+            return None
+        state = copy.deepcopy(sess.exam_state or {})
+        _ensure_exam_evidence_complete(state)
+        evaluation = dict(state.get("evaluation") or {})
+        current_status = str(evaluation.get("evaluation_status") or evaluation.get("status") or "pending")
+        if current_status == "running" and not evaluation_lease_expired(state, now=now):
+            return None
+        evaluation.update(
+            {
+                "evaluation_status": "running",
+                "evaluation_started_at": now.isoformat(),
+                "evaluation_lease_expires_at": (
+                    now + timedelta(seconds=EVALUATION_LEASE_SECONDS)
+                ).isoformat(),
+                "evaluation_attempt": int(
+                    evaluation.get("evaluation_attempt") or evaluation.get("attempt") or 0
+                )
+                + 1,
+                "evaluation_owner": owner,
+            }
+        )
+        for old_key in ("status", "started_at", "attempt", "lease_expires_at"):
+            evaluation.pop(old_key, None)
+        state["evaluation"] = evaluation
+        _bump_state_revision(state)
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await claim_db.commit()
+        return owner, copy.deepcopy(state), sess.student_id, sess.language_id
+
+
+async def _renew_evaluation_lease(session_id: str, owner: str) -> bool:
+    """Extend a live owner's lease in a short, owner-fenced transaction."""
+    async with AsyncSessionLocal() as lease_db:
+        sess = (
+            await lease_db.execute(
+                select(LanguageExamSession)
+                .where(LanguageExamSession.id == session_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not sess or sess.status != "evaluating" or sess.is_completed:
+            return False
+        state = copy.deepcopy(sess.exam_state or {})
+        evaluation = dict(state.get("evaluation") or {})
+        if (
+            str(evaluation.get("evaluation_status") or "") != "running"
+            or not secrets.compare_digest(str(evaluation.get("evaluation_owner") or ""), owner)
+        ):
+            return False
+        evaluation["evaluation_lease_expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=EVALUATION_LEASE_SECONDS)
+        ).isoformat()
+        state["evaluation"] = evaluation
+        _bump_state_revision(state)
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await lease_db.commit()
+        return True
+
+
+async def _evaluation_lease_heartbeat(
+    session_id: str,
+    owner: str,
+    stop: asyncio.Event,
+) -> None:
+    """Keep a healthy long-running scorer from being mistaken for a stale worker."""
+    interval = max(0.1, min(30.0, EVALUATION_LEASE_SECONDS / 3.0))
+    while True:
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+            return
+        except asyncio.TimeoutError:
+            try:
+                if not await _renew_evaluation_lease(session_id, owner):
+                    return
+            except Exception as exc:  # A lost heartbeat leaves the ordinary expiry recovery intact.
+                logger.warning(
+                    "Evaluation lease heartbeat failed session_id=%s error_type=%s",
+                    session_id,
+                    type(exc).__name__,
+                )
+                return
+
+
+async def _run_evaluation(session_id: str) -> None:
+    """Own and heartbeat one evaluation; a live worker cannot be duplicated after lease expiry."""
+    claim = await _claim_evaluation_lease(session_id)
+    if claim is None:
+        return
+    owner = claim[0]
+    stop_heartbeat = asyncio.Event()
+    heartbeat = asyncio.create_task(
+        _evaluation_lease_heartbeat(session_id, owner, stop_heartbeat)
+    )
+    try:
+        await _run_claimed_evaluation(session_id, claim)
+    finally:
+        stop_heartbeat.set()
+        await heartbeat
+
+
+async def _run_claimed_evaluation(
+    session_id: str,
+    claim: tuple[str, dict, int, int],
+) -> None:
+    """Fuse the immutable claimed evidence, then owner-fence the atomic DB projection."""
+    evaluation_owner, state, student_id, language_id = claim
+    async with AsyncSessionLocal() as db:
+        try:
+            now = datetime.now(timezone.utc)
             # --- Shared: per-turn evidence block + effective-level guess.
             def _block(results: list[dict]) -> str:
                 return "\n".join(
-                    f"- Q: {r.get('question','')}\n  Said: {r.get('transcription','')}\n  "
-                    f"Notes: {r.get('grammar_vocab_feedback','')} | {r.get('pronunciation_feedback','')} | {r.get('fluency_note','')}"
+                    "<spoken_turn>\n"
+                    f"<question>{r.get('question', '')}</question>\n"
+                    f"<server_transcript>{r.get('transcription', '')}</server_transcript>\n"
+                    f"<audio_duration_seconds>{r.get('audio_duration_seconds', '')}</audio_duration_seconds>\n"
+                    "</spoken_turn>"
                     for r in results
                 ) or "(none)"
-
-            guess = await _effective_level(db, student_id=sess.student_id, language_id=sess.language_id)
 
             # --- Speaking: independent 4-criteria rubric over Phase-1 + Phase-2 turns.
             ph1_results = state.get("speaking", {}).get("results", [])
             ph2_results = state.get("interview", {}).get("results", [])
             sp_results = ph1_results + ph2_results
-            live_available = bool(ph2_results)
-            sp_evidence = (
-                f"PHASE 1 ΓÇö ROLE-PLAY SPEAKING:\n{_block(ph1_results)}\n\n"
-                f"PHASE 2 ΓÇö GUIDED INTERVIEW:\n{_block(ph2_results)}"
-            )
+            # "interview" was a deliberate, intentional Phase-2 addition for sessions that have it
+            # in their own persisted sections — for those, live_available still means "did the
+            # interview actually produce results" (unchanged). For sessions with no "interview"
+            # section at all (the new, no-interview design), there is no Phase 2 to be
+            # "unavailable" — Phase-1 speaking evidence being complete is what "available" means.
+            if "interview" in (state.get("sections") or SECTIONS):
+                live_available = bool(ph2_results)
+            else:
+                live_available = len(ph1_results) >= SPEAKING_TURNS
+            sp_evidence = build_verified_speaking_evidence(ph1_results, ph2_results)
+
+            # Speaking Assessment Core (MVP evidence/auditability layer, additive/report-only --
+            # see language_speaking_assessment_core_service.py): a read-only lookup of the
+            # body_json metadata (review_status, expected_response_seconds) for whichever bank
+            # items this session's speaking turns actually used, if any. Never mutates bank rows.
+            speaking_bank_item_ids = {int(r["bank_item_id"]) for r in sp_results if r.get("bank_item_id")}
+            speaking_bank_item_metadata = await fetch_bank_item_metadata(db, speaking_bank_item_ids)
+
+            guess = await _effective_level(db, student_id=student_id, language_id=language_id)
+            # Release the read transaction before any scorer call; no DB connection or row lock is
+            # held while external AI work is in flight.
+            await db.rollback()
+
             sp_detected: list = []
             if sp_results:
                 sp_grade = await ai_engine.grade_speaking(evidence=sp_evidence, effective_level=guess)
                 speaking_level, speaking_score = sp_grade.level, sp_grade.score
                 speaking_breakdown = {
                     "fluency": sp_grade.fluency, "lexical": sp_grade.lexical,
-                    "grammar": sp_grade.grammar, "pronunciation": sp_grade.pronunciation,
+                    "grammar": sp_grade.grammar,
                 }
                 sp_detected = list(sp_grade.detected_errors)
             else:
-                speaking_level, speaking_score, speaking_breakdown = CEFRLevel.A2, 0.0, {}
+                raise RuntimeError("Verified speaking evidence is unavailable")
+
+            speaking_assessment_core = build_speaking_assessment_core(
+                results=sp_results,
+                grade=sp_grade,
+                expected_turns=SPEAKING_TURNS,
+                llm_provider=get_settings().LLM_PROVIDER,
+                prosody_provider=get_settings().SPEAKING_PROSODY_PROVIDER,
+                bank_item_metadata=speaking_bank_item_metadata,
+            )
 
             # --- Reading / Listening: adaptive (staircase) result.
             r_asked = state.get("reading", {}).get("asked", [])
@@ -764,17 +2013,20 @@ async def _run_evaluation(session_id: str) -> None:
             else:
                 consistency = "speaking_stronger" if gap > 0 else "writing_stronger"
                 confidence = 0.6
+            # No acoustic scorer is present. Make that limitation visible and reduce confidence;
+            # pronunciation is never inserted as a fabricated numeric criterion.
+            confidence = min(confidence * 0.85, 0.78)
 
-            # --- Narrative from all evidence (weight spoken for fluency/pronunciation,
-            #     written for grammar/vocab).
+            # --- Narrative from all evidence. Pronunciation is deliberately unassessed because
+            #     final grading receives verified transcripts, not the raw audio signal.
             grammar_evidence = (
                 f"GRAMMAR/VOCAB: {g_correct}/{g_total} correct -> {grammar_vocab_level.value}\n\n"
                 if g_asked
                 else "GRAMMAR/VOCAB: not measured\n\n"
             )
             evidence = (
-                "Weighting: spoken speech is the stronger signal for fluency & pronunciation; "
-                "written items anchor grammar & vocabulary.\n\n"
+                "Weighting: verified speech transcripts support spoken coherence, grammar and "
+                "vocabulary; pronunciation is unassessed. Written items anchor grammar and vocabulary.\n\n"
                 f"PHASE 1 ΓÇö ROLE-PLAY SPEAKING:\n{_block(ph1_results)}\n\n"
                 f"PHASE 2 ΓÇö GUIDED INTERVIEW:\n{_block(ph2_results)}\n\n"
                 f"LISTENING: {l_correct}/{l_total} correct -> {listening_level.value}\n"
@@ -807,7 +2059,7 @@ async def _run_evaluation(session_id: str) -> None:
                     "question": r.get("question", ""),
                     "transcription": r.get("transcription", ""),
                     "grammar_vocab_feedback": r.get("grammar_vocab_feedback", ""),
-                    "pronunciation_feedback": r.get("pronunciation_feedback", ""),
+                    "pronunciation_feedback": "Unassessed: no acoustic pronunciation scorer was used.",
                     "fluency_note": r.get("fluency_note", ""),
                 }
                 for r in sp_results
@@ -839,8 +2091,33 @@ async def _run_evaluation(session_id: str) -> None:
                 speaking_turns=speaking_turns,
                 confidence=round(confidence, 2),
                 cross_phase_consistency=consistency,
+                unassessed_components=["speaking.pronunciation"],
+                speaking_assessment=speaking_assessment_core,
             )
 
+            # Reacquire a short lock only after every external scorer has completed. The owner
+            # check makes a stale worker harmless if another worker recovered an expired lease.
+            await db.rollback()
+            sess = (
+                await db.execute(
+                    select(LanguageExamSession)
+                    .where(LanguageExamSession.id == session_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if not sess or sess.status != "evaluating" or sess.is_completed:
+                return
+            latest_state = copy.deepcopy(sess.exam_state or {})
+            latest_evaluation = dict(latest_state.get("evaluation") or {})
+            if (
+                str(latest_evaluation.get("evaluation_status") or "") != "running"
+                or not secrets.compare_digest(
+                    str(latest_evaluation.get("evaluation_owner") or ""), evaluation_owner
+                )
+            ):
+                return
+            state = latest_state
+            now = datetime.now(timezone.utc)
             sess.assessment_report = report.model_dump(mode="json")
             sess.status = "completed"
             sess.is_completed = True
@@ -903,7 +2180,7 @@ async def _run_evaluation(session_id: str) -> None:
             if not prof.placement_completed_at:
                 prof.placement_completed_at = now
             prof.last_assessment_date = now
-            prof.next_allowed_retake_date = now + timedelta(days=90)
+            prof.next_allowed_retake_date = next_allowed_retake_at(now)
             prof.onboarding_step = LanguageOnboardingStep.dashboard
 
             # Feed the exam's detected errors into Error Intelligence (same bank as conversation),
@@ -920,8 +2197,21 @@ async def _run_evaluation(session_id: str) -> None:
                         context_sentence=e.original_text,
                     )
             except Exception:
-                logger.warning("exam error-intelligence logging failed", exc_info=True)
+                logger.warning(
+                    "Exam error-intelligence logging failed session_id=%s user_id=%s",
+                    session_id,
+                    sess.student_id,
+                )
 
+            state["evaluation"] = {
+                **dict(state.get("evaluation") or {}),
+                "evaluation_status": "completed",
+                "evaluation_completed_at": now.isoformat(),
+                "evaluation_lease_expires_at": None,
+            }
+            _bump_state_revision(state)
+            sess.exam_state = state
+            flag_modified(sess, "exam_state")
             await db.commit()
             _cleanup_exam_audio(state)  # generated listening clips are no longer needed
             # Additive: seed the unified Learner Model from this placement (best-effort, never blocks).
@@ -946,12 +2236,43 @@ async def _run_evaluation(session_id: str) -> None:
                         skill_levels=seed_levels,
                     )
             except Exception:  # pragma: no cover - never let seeding break the exam
-                logger.warning("Learner-model placement seeding failed (non-blocking)", exc_info=True)
-        except Exception:  # pragma: no cover - safety net
-            logger.exception("Exam evaluation failed for session %s", session_id)
+                logger.warning(
+                    "Learner-model placement seeding failed session_id=%s user_id=%s",
+                    session_id,
+                    sess.student_id,
+                )
+        except Exception as exc:  # pragma: no cover - safety net
+            logger.error(
+                "Exam evaluation failed session_id=%s error_type=%s",
+                session_id,
+                type(exc).__name__,
+            )
             await db.rollback()
-            sess = await db.get(LanguageExamSession, session_id)
-            if sess:
+            sess = (
+                await db.execute(
+                    select(LanguageExamSession)
+                    .where(LanguageExamSession.id == session_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if sess and sess.status != "completed":
+                failed_state = dict(sess.exam_state or {})
+                current_evaluation = dict(failed_state.get("evaluation") or {})
+                if not secrets.compare_digest(
+                    str(current_evaluation.get("evaluation_owner") or ""), evaluation_owner
+                ):
+                    return
+                failed_state["evaluation"] = {
+                    **current_evaluation,
+                    "evaluation_status": "scorer_unavailable",
+                    "evaluation_lease_expires_at": None,
+                    "error_code": "scorer_unavailable",
+                    "error_message": "The authoritative scorer is temporarily unavailable. Retry evaluation.",
+                    "evaluation_failed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                _bump_state_revision(failed_state)
+                sess.exam_state = failed_state
+                flag_modified(sess, "exam_state")
                 sess.status = "failed"
                 await db.commit()
 
@@ -960,9 +2281,22 @@ async def _run_evaluation(session_id: str) -> None:
 # endpoints
 # ---------------------------------------------------------------------------------------
 
-async def _load_session(db: AsyncSession, session_id: str, student: User) -> LanguageExamSession:
-    sess = await db.get(LanguageExamSession, session_id)
-    if not sess or sess.student_id != student.id:
+async def _load_session(
+    db: AsyncSession,
+    session_id: str,
+    student: User | int,
+    *,
+    for_update: bool = False,
+) -> LanguageExamSession:
+    student_id = int(student if isinstance(student, int) else student.id)
+    stmt = select(LanguageExamSession).where(
+        LanguageExamSession.id == session_id,
+        LanguageExamSession.student_id == student_id,
+    )
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    sess = (await db.execute(stmt)).scalar_one_or_none()
+    if not sess:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam session not found")
     return sess
 
@@ -970,7 +2304,15 @@ async def _load_session(db: AsyncSession, session_id: str, student: User) -> Lan
 def _cleanup_exam_audio(state: dict) -> None:
     """Delete the edge-tts listening clips generated for this attempt (best-effort)."""
     base = Path(get_settings().UPLOAD_DIR)
-    for item in (state.get("listening", {}).get("pool") or {}).values():
+    items: list[dict] = []
+    for slot in (state.get("listening", {}).get("pool") or {}).values():
+        # Listening-only dual-slot shape: {"mcq": item_or_none, "gap_fill": item_or_none}.
+        # A legacy in-flight session's flat listening item is used as-is.
+        if isinstance(slot, dict) and set(slot.keys()) <= {"mcq", "gap_fill"}:
+            items.extend(v for v in slot.values() if v)
+        elif slot:
+            items.append(slot)
+    for item in items:
         url = item.get("audio_url") or ""
         if not (url.startswith("/uploads/language_exam_audio/") or url.startswith("/uploads/exam_audio/")):
             continue
@@ -980,30 +2322,72 @@ def _cleanup_exam_audio(state: dict) -> None:
             pass
 
 
-_PREP_RETRY_AFTER_S = 20
+_PREP_RETRY_AFTER_S = 150
+# Root cause (confirmed from logs): the Supertonic TTS engine is loaded lazily and cached for the
+# lifetime of the process (see _tts_engine in language_supertonic_service.py). The very first
+# synthesis after a fresh process start can trigger a one-time model download observed to take
+# several minutes ("Fetching 26 files... [04:02<...]"); every listening bank row's audio_meta_json
+# is empty (confirmed), so a normal run needs up to six sequential per-level TTS calls with no
+# cache to fall back on. Each call is now individually bounded by _LISTENING_TTS_TIMEOUT_S (a slow
+# item's rung is dropped, existing graceful-degradation policy -- the shared engine load itself is
+# never cancelled, see _ensure_engine_loaded's asyncio.shield), so 150s (6 x 25s) comfortably covers
+# the worst realistic case for one _prepare_content pass. A too-short value here causes
+# _maybe_retrigger_prep to fire again while the first attempt is still legitimately in flight: the
+# redundant second _prepare_content both wastes the first attempt's work (discarded at merge time
+# as stale, see _merge_prepared_content's content_prep_token check) and burns an extra hit from the
+# "placement_generation" rate limit (3 per 300s, keyed per session) for no benefit -- eventually
+# exhausting it and landing the section in content_unavailable purely from self-inflicted retries,
+# not genuine abuse.
 
 
-def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, background_tasks: BackgroundTasks) -> None:
+def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, background_tasks: BackgroundTasks) -> bool:
     """Self-heal: if the current section's content never got generated (background task died /
-    server restarted), re-launch _prepare_content ΓÇö but not more often than every 20s."""
+    server restarted), re-launch _prepare_content -- but not more often than every
+    _PREP_RETRY_AFTER_S seconds (see that constant's comment for why the value matters).
+
+    Clears the stale content_unavailable markers (per-section evidence_status and the top-level
+    content_prep_error_code) that a prior failed attempt may have left behind. Without this, a
+    freshly retriggered attempt would still read back as content_unavailable to the caller (see
+    get_state's `unavailable` check, which also looks at the per-section evidence_status) even
+    though a brand new _prepare_content is genuinely running -- silently defeating retry."""
     state = sess.exam_state or {}
     section = _current_section(state)
     if section not in PREPARED_SECTIONS:
-        return
+        return False
     if state.get(section, {}).get("ready", True):
-        return
+        return False
     last = state.get("content_prep_at")
     now = datetime.now(timezone.utc)
     if last:
         try:
             if (now - datetime.fromisoformat(last)).total_seconds() < _PREP_RETRY_AFTER_S:
-                return
+                return False
         except (ValueError, TypeError):
             pass
     state["content_prep_at"] = now.isoformat()
+    state["content_prep_token"] = _new_exam_token()
+    state["content_prep_status"] = "preparing"
+    state.pop("content_prep_error_code", None)
+    session_sections = state.get("sections") or SECTIONS
+    for prepared_section in PREPARED_SECTIONS:
+        if prepared_section not in session_sections:
+            continue
+        if not state.get(prepared_section, {}).get("ready"):
+            state.setdefault(prepared_section, {})["evidence_status"] = "retry_required"
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     background_tasks.add_task(_prepare_content, sess.id, language_id, state.get("start_level_hint") or "A2")
+    return True
+
+
+def _schedule_evaluation_recovery(
+    sess: LanguageExamSession,
+    background_tasks: BackgroundTasks,
+) -> bool:
+    if sess.status != "evaluating" or not _evaluation_should_run(sess.exam_state or {}):
+        return False
+    background_tasks.add_task(_run_evaluation, sess.id)
+    return True
 
 
 @router.post("/initiate", response_model=ExamStateOut)
@@ -1016,35 +2400,84 @@ async def initiate_exam(
     writing content is generated fresh in the background while the student does the speaking part)."""
     language = await get_default_language(db)
 
-    existing = (
-        await db.execute(
-            select(LanguageExamSession)
-            .where(
-                LanguageExamSession.student_id == student.id,
-                LanguageExamSession.status == "in_progress",
-                LanguageExamSession.exam_state.isnot(None),
-            )
-            .order_by(LanguageExamSession.created_at.desc())
-            .limit(1)
+    active_stmt = (
+        select(LanguageExamSession)
+        .where(
+            LanguageExamSession.student_id == student.id,
+            LanguageExamSession.language_id == language.id,
+            LanguageExamSession.status.in_(("in_progress", "evaluating")),
+            LanguageExamSession.exam_state.isnot(None),
         )
-    ).scalar_one_or_none()
+        .order_by(LanguageExamSession.created_at.desc())
+        .limit(1)
+    )
+
+    # Phase 1: serialize the decision, then release the lock before scenario generation.
+    await db.execute(select(User.id).where(User.id == student.id).with_for_update())
+    profile = await ensure_language_profile(db, student.id, language.id)
+    existing = (await db.execute(active_stmt.with_for_update())).scalar_one_or_none()
     if existing:
-        # Self-heal a stuck attempt whose background content generation never finished.
-        _maybe_retrigger_prep(existing, language.id, background_tasks)
+        check_or_raise("placement_poll", f"{student.id}:{existing.id}")
+        state = copy.deepcopy(existing.exam_state or {})
+        protocol_changed = _ensure_state_protocol(state)
+        if protocol_changed:
+            existing.exam_state = state
+            flag_modified(existing, "exam_state")
+        if existing.status == "in_progress":
+            protocol_changed = _maybe_retrigger_prep(existing, language.id, background_tasks) or protocol_changed
+        else:
+            _schedule_evaluation_recovery(existing, background_tasks)
+        if protocol_changed:
+            state = copy.deepcopy(existing.exam_state or state)
+            _bump_state_revision(state)
+            existing.exam_state = state
+            flag_modified(existing, "exam_state")
         await db.commit()
         return await _build_state_out(db, existing, resumed=True)
 
-    level = await _effective_level(db, student_id=student.id, language_id=language.id)
-    learner_grade = await _student_grade(db, student_id=student.id)
-    scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
+    ensure_placement_retake_allowed(profile)
+    check_or_raise("placement_start", student.id)
+    # Captured before commit: expire_on_commit would otherwise force a lazy reload of these
+    # attributes on next access, which crashes (MissingGreenlet) once a slow external await
+    # (the AI scenario call below) separates the commit from that access.
+    student_id = int(student.id)
+    language_id = int(language.id)
+    await db.commit()
+
+    # No row lock or database transaction remains open while the external examiner is called.
+    level = await _effective_level(db, student_id=student_id, language_id=language_id)
+    learner_grade = await _student_grade(db, student_id=student_id)
+    await db.rollback()
+    # MVP: prefer a curated, MVP-approved speaking_prompt bank item over live scenario/question
+    # generation; fall back to the existing AI-generated (or grade-banded) path unchanged if the
+    # bank has nothing usable for this level/language.
+    opening_bank_item = await _speaking_bank_prompt(db, language_id=language_id, level_str=level)
+    if opening_bank_item is not None:
+        scenario = _speaking_scenario_from_bank_item(opening_bank_item)
+    else:
+        scenario = await ai_engine.generate_scenario_and_opening(effective_level=level, learner_grade=learner_grade)
+
+    # Phase 2: recheck under the same per-user lock. A concurrent initiate may have won while AI
+    # was running, in which case its session is returned and this generated scenario is discarded.
+    await db.execute(select(User.id).where(User.id == student_id).with_for_update())
+    existing = (await db.execute(active_stmt.with_for_update())).scalar_one_or_none()
+    if existing:
+        _schedule_evaluation_recovery(existing, background_tasks)
+        await db.commit()
+        return await _build_state_out(db, existing, resumed=True)
+    profile = await ensure_language_profile(db, student_id, language_id)
+    ensure_placement_retake_allowed(profile)
 
     state = {
-        "version": 2,
+        "version": 3,
+        "state_revision": 1,
         "sections": list(SECTIONS),
         "cursor": 0,
         "start_level_hint": level,
         "learner_grade": learner_grade,
         "content_prep_at": datetime.now(timezone.utc).isoformat(),
+        "content_prep_token": _new_exam_token(),
+        "content_prep_status": "preparing",
         "speaking": {
             "scenario": {
                 "scenario": scenario["scenario"],
@@ -1055,30 +2488,38 @@ async def initiate_exam(
             "total_turns": SPEAKING_TURNS,
             "turn": 1,
             "pending_question": scenario["opening_question"],
+            # Retained so the turn-1 answer can record which bank item it came from (or None for
+            # AI-generated/fallback questions), mirroring bank_item_id retention in MCQ sections.
+            "pending_bank_item_id": opening_bank_item.get("bank_item_id") if opening_bank_item is not None else None,
+            # Retained so the next turn's selection can prefer an unseen subskill/task_type (soft
+            # diversity preference) -- never read by scoring.
+            "pending_bank_item_subskill": opening_bank_item.get("subskill") if opening_bank_item is not None else None,
+            "turn_token": _new_exam_token(),
             "results": [],
             "done": False,
+            "evidence_status": "missing_student_response",
         },
         # Filled in by the background _prepare_content task (until then: not ready).
-        "listening": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
-        "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
-        "grammar_vocab": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False},
-        "writing": {"prompt": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False},
-        "interview": {
-            "priming": "",
-            "total_turns": INTERVIEW_TURNS,
-            "turn": 1,
-            "pending_question": "",
-            "results": [],
-            "done": False,
-        },
+        "listening": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
+        "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
+        "writing": {"prompt": "", "prompt_token": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False, "evidence_status": "retry_required"},
+        # No "interview" section for new sessions (product decision: guided interview removed).
+        # _ensure_interview_ready/_provisional_from_phase1/interview_opening stay in place as
+        # dormant compatibility code for any already-persisted session whose own "sections" list
+        # still includes "interview".
+        # No "grammar_vocab" section for new sessions either (product decision: dropped from the
+        # active exam). _prepare_content/_maybe_retrigger_prep/_merge_prepared_content stay
+        # gated on the session's own "sections" list so any already-persisted session that still
+        # includes "grammar_vocab" keeps generating and scoring it exactly as before.
+        "request_receipts": [],
     }
     sess = LanguageExamSession(
-        student_id=student.id, language_id=language.id, current_step=1, max_steps=len(SECTIONS),
+        student_id=student_id, language_id=language_id, current_step=1, max_steps=len(SECTIONS),
         exam_state=state, status="in_progress",
     )
     db.add(sess)
     await db.commit()
-    background_tasks.add_task(_prepare_content, sess.id, language.id, level)
+    background_tasks.add_task(_prepare_content, sess.id, language_id, level)
     return await _build_state_out(db, sess)
 
 
@@ -1086,14 +2527,32 @@ async def initiate_exam(
 async def get_state(
     session_id: str,
     background_tasks: BackgroundTasks,
+    section: str | None = None,
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
-    sess = await _load_session(db, session_id, student)
+    """section: free section navigation -- render a specific section (e.g. after a tab click)
+    instead of the session's internal progress cursor's section. Purely a rendering choice; never
+    mutates the cursor or any section's progress (see _build_state_out)."""
+    sess = await _load_session(db, session_id, student, for_update=True)
+    check_or_raise("placement_poll", f"{student.id}:{session_id}")
+    state = copy.deepcopy(sess.exam_state or {})
+    changed = _ensure_state_protocol(state)
+    if changed:
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
     if sess.status == "in_progress":
-        _maybe_retrigger_prep(sess, sess.language_id, background_tasks)
+        changed = _maybe_retrigger_prep(sess, sess.language_id, background_tasks) or changed
+    elif sess.status == "evaluating":
+        _schedule_evaluation_recovery(sess, background_tasks)
+    if changed:
+        state = copy.deepcopy(sess.exam_state or state)
+        _bump_state_revision(state)
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+    if changed or sess.status in {"in_progress", "evaluating"}:
         await db.commit()
-    return await _build_state_out(db, sess)
+    return await _build_state_out(db, sess, requested_section=section)
 
 
 @router.post("/{session_id}/abandon")
@@ -1103,69 +2562,136 @@ async def abandon_exam(
     db: AsyncSession = Depends(get_db),
 ):
     """Abandon an unfinished attempt so the student can start a fresh one (escape a stuck state)."""
-    sess = await _load_session(db, session_id, student)
-    if sess.status not in ("completed",):
+    sess = await _load_session(db, session_id, student, for_update=True)
+    check_or_raise("placement_abandon", f"{student.id}:{session_id}")
+    if sess.status == "evaluating":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "evaluation_in_progress", "message": "Evaluation is already in progress."},
+        )
+    if sess.status in ("in_progress", "failed"):
+        abandoned_state = copy.deepcopy(sess.exam_state or {})
+        _ensure_state_protocol(abandoned_state)
+        abandoned_state["abandoned_at"] = datetime.now(timezone.utc).isoformat()
+        _bump_state_revision(abandoned_state)
+        sess.exam_state = abandoned_state
+        flag_modified(sess, "exam_state")
         sess.status = "abandoned"
-        _cleanup_exam_audio(sess.exam_state or {})
         await db.commit()
+        _cleanup_exam_audio(abandoned_state)
     return {"ok": True, "status": sess.status}
 
 
 def _maybe_finalize(sess: LanguageExamSession, state: dict, background_tasks: BackgroundTasks) -> bool:
     """If all sections are done, flip to evaluating and schedule the unified grading."""
-    if _current_section(state) is None:
+    evaluation = dict(state.get("evaluation") or {})
+    current_eval_status = str(evaluation.get("evaluation_status") or evaluation.get("status") or "")
+    if sess.status == "in_progress" and _current_section(state) is None and current_eval_status not in {"pending", "running", "completed"}:
+        _ensure_exam_evidence_complete(state)
         sess.status = "evaluating"
+        state["evaluation"] = {
+            **evaluation,
+            "evaluation_status": "pending",
+            "evaluation_started_at": None,
+            "evaluation_lease_expires_at": None,
+            "evaluation_attempt": int(evaluation.get("evaluation_attempt") or 0),
+            "evaluation_owner": None,
+        }
         background_tasks.add_task(_run_evaluation, sess.id)
         return True
     return False
 
 
-async def _read_speaking_audio(file: UploadFile) -> tuple[bytes, str, str]:
-    """Validate one browser/uploaded audio answer and return bytes, MIME and suffix."""
-    mime = (file.content_type or "").split(";")[0].strip().lower()
-    if mime not in ACCEPTED_AUDIO_MIME:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported audio type: {mime or 'unknown'}",
-        )
-    cap = settings_max_bytes()
-    data = await file.read(cap + 1)
-    if len(data) > cap:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Audio file too large")
-    if not data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty audio file")
-    return data, mime, ACCEPTED_AUDIO_MIME[mime]
+async def _read_speaking_audio(file: UploadFile) -> ValidatedAudio:
+    return await validate_placement_audio(file)
 
 
-async def _gpt4o_transcript(data: bytes, suffix: str) -> SpeakingTranscriptionOut:
-    stt = await transcribe_english_audio(data, suffix=suffix)
+async def _verified_server_transcription(audio: ValidatedAudio):
+    """Transcribe on the server and distinguish service failure from unusable speech."""
+    stt = await transcribe_english_audio(
+        audio.data,
+        suffix=audio.suffix,
+        audio_duration_s=audio.duration_seconds,
+    )
     transcript = (stt.text or "").strip()
-    if not transcript:
-        logger.warning("Placement speaking STT returned no text: engine=%s meta=%s", stt.engine, stt.meta)
+    error_code = str((stt.meta or {}).get("error_code") or "")
+    if stt.engine in {"error", "disabled", "none"}:
+        logger.warning(
+            "Placement STT unavailable engine=%s",
+            stt.engine,
+        )
+        client_error = error_code == "invalid_audio"
+        raise HTTPException(
+            status_code=(
+                status.HTTP_422_UNPROCESSABLE_ENTITY
+                if client_error
+                else status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail={
+                "code": error_code or "stt_unavailable",
+                "evidence_status": "retry_required",
+                "message": (
+                    "The recording could not be decoded. Please record it again."
+                    if client_error
+                    else "Speech transcription is temporarily unavailable. Please try again."
+                ),
+            },
+        )
+    rejection_code = str((stt.meta or {}).get("rejection_code") or "")
+    if rejection_code:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="We could not hear a clear answer. Please check your microphone and record again.",
+            detail={
+                "code": rejection_code,
+                "evidence_status": "retry_required",
+                "message": "The recording did not contain enough clear English speech. Please record again.",
+            },
         )
-    return SpeakingTranscriptionOut(
-        transcription=transcript,
-        engine=stt.engine,
-        model=stt.model,
-    )
+    if (
+        not transcript
+        or len(transcript.split()) < 2
+        or stt.low_confidence
+        or (stt.no_speech_prob is not None and stt.no_speech_prob >= 0.55)
+    ):
+        logger.warning(
+            "Placement speech rejected engine=%s low_confidence=%s",
+            stt.engine,
+            stt.low_confidence,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "no_speech",
+                "evidence_status": "retry_required",
+                "message": "We could not hear a clear answer. Please check your microphone and record again.",
+            },
+        )
+    return stt
 
 
-@router.post("/{session_id}/speaking/transcribe", response_model=SpeakingTranscriptionOut)
-async def transcribe_speaking_answer(
+@router.post("/{session_id}/speaking/live-transcription-session", response_model=LiveTranscriptionSessionOut)
+async def create_speaking_live_transcription_session(
     session_id: str,
-    file: UploadFile = File(...),
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Transcribe an answer for preview without advancing or scoring the exam."""
-    sess = await _load_session(db, session_id, student)
-    if sess.status != "in_progress" or _current_section(sess.exam_state or {}) not in SPEAKING_LIKE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a speaking section")
-    data, _mime, suffix = await _read_speaking_audio(file)
-    return await _gpt4o_transcript(data, suffix)
+    """Mint a short-lived OpenAI Realtime ephemeral client secret for Speaking's live transcript
+    preview (MVP, display-only). Scoped to transcription only -- never general model access -- and
+    never the server's own OPENAI_API_KEY, which stays server-side.
+
+    This is purely a UX convenience: the returned client_secret is used by the frontend to render
+    a "Live transcript preview" while recording. It is never sent into grade_speaking, never
+    affects final_level/confidence, and is entirely independent of the official post-submit STT
+    pipeline that remains the sole grading source of truth. Fails safely (available=False) rather
+    than raising whenever the feature is disabled, misconfigured, or the upstream call fails --
+    the Speaking flow must continue exactly as before regardless of this endpoint's outcome.
+    """
+    await _load_session(db, session_id, student)
+    check_or_raise("placement_poll", f"{student.id}:{session_id}")
+    result = await create_live_transcription_session()
+    if result is None:
+        return LiveTranscriptionSessionOut(available=False)
+    return LiveTranscriptionSessionOut(available=True, **result)
 
 
 @router.post("/{session_id}/speaking/turn", response_model=ExamStateOut)
@@ -1173,63 +2699,214 @@ async def speaking_turn(
     session_id: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    duration_seconds: float | None = Form(None),
-    transcription: str | None = Form(None),
+    duration_seconds: float | None = Form(None, ge=0, le=180),
+    request_id: str = Form(..., min_length=8, max_length=100),
+    state_revision: int = Form(..., ge=1),
+    turn_token: str = Form(..., min_length=16, max_length=200),
+    section: str | None = Form(
+        None,
+        description=(
+            "Free section navigation: which speaking-like section (speaking/interview) this turn "
+            "answers. Optional, defaults to the session's current cursor section."
+        ),
+    ),
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Assess one spoken answer from the audio; advances the speaking OR interview section."""
+    """Transcribe once on the server, then merge the result under a short state lock."""
     sess = await _load_session(db, session_id, student)
-    state = sess.exam_state or {}
-    section = _current_section(state)
-    if sess.status != "in_progress" or section not in SPEAKING_LIKE:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in a speaking section")
+    student_id = int(student.id)
+    session_student_id = int(sess.student_id)
+    language_id = int(sess.language_id)
+    initial_status = str(sess.status)
+    snapshot = copy.deepcopy(sess.exam_state or {})
+    # Free section navigation: falls back to the cursor's section exactly like before when omitted.
+    section = section or _current_section(snapshot)
+    spoken_snapshot = snapshot.get(section, {})
+    question = str(spoken_snapshot.get("pending_question") or "")
+    expected_token = str(spoken_snapshot.get("turn_token") or "")
+    turn = int(spoken_snapshot.get("turn") or 1)
+    total = int(
+        spoken_snapshot.get("total_turns")
+        or (INTERVIEW_TURNS if section == "interview" else SPEAKING_TURNS)
+    )
+    scenario = copy.deepcopy(snapshot.get("speaking", {}).get("scenario", {}))
+    guess = await _effective_level(
+        db,
+        student_id=session_student_id,
+        language_id=language_id,
+    )
+    await db.rollback()
 
-    data, _mime, suffix = await _read_speaking_audio(file)
-    transcript = (transcription or "").strip()
-    if not transcript:
-        transcript = (await _gpt4o_transcript(data, suffix)).transcription
-
-    sp = state[section]
-    turn = sp.get("turn", 1)
-    total = sp.get("total_turns", INTERVIEW_TURNS if section == "interview" else SPEAKING_TURNS)
-    question = sp.get("pending_question", "")
-    scenario = state.get("speaking", {}).get("scenario", {})
-    guess = await _effective_level(db, student_id=sess.student_id, language_id=sess.language_id)
-
+    _ = duration_seconds  # Server-decoded duration is authoritative.
+    check_or_raise("placement_audio_turn", f"{student_id}:{session_id}")
+    audio = await _read_speaking_audio(file)
+    payload_hash = canonical_payload_hash(
+        kind="speaking_turn",
+        payload={
+            "session_id": session_id,
+            "state_revision": state_revision,
+            "turn_token": turn_token,
+            "audio_sha256": audio.sha256,
+            "section": section,
+        },
+    )
+    existing_receipt = _request_receipt(
+        snapshot,
+        kind="speaking_turn",
+        request_id=request_id,
+        payload_hash=payload_hash,
+    )
+    if existing_receipt:
+        current = await _load_session(db, session_id, student_id)
+        return await _build_state_out(db, current)
+    _require_state_revision(snapshot, supplied_revision=state_revision)
+    if (
+        initial_status != "in_progress"
+        or section not in SPEAKING_LIKE
+        or section not in snapshot.get("sections", [])
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "stale_exam_state", "current_state_revision": _state_revision(snapshot)},
+        )
+    _require_current_state(
+        snapshot,
+        supplied_revision=state_revision,
+        supplied_token=turn_token,
+        expected_token=expected_token,
+    )
+    if _audio_hash_already_used(snapshot, audio.sha256):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "duplicate_audio_evidence",
+                "message": "Record a new answer for each speaking question.",
+            },
+        )
+    stt = await _verified_server_transcription(audio)
+    transcript = (stt.text or "").strip()
     assessment = await ai_engine.assess_speaking(
         transcript=transcript, scenario=scenario, question=question,
-        turn=turn, total_turns=total, effective_level=guess, priming=sp.get("priming", ""),
-        learner_grade=state.get("learner_grade"),
+        turn=turn, total_turns=total, effective_level=guess, priming=spoken_snapshot.get("priming", ""),
+        learner_grade=snapshot.get("learner_grade"),
     )
+
+    # Re-read and validate after STT/AI. No row lock was held during either external call.
+    sess = await _load_session(db, session_id, student_id, for_update=True)
+    state = copy.deepcopy(sess.exam_state or {})
+    existing_receipt = _request_receipt(
+        state,
+        kind="speaking_turn",
+        request_id=request_id,
+        payload_hash=payload_hash,
+    )
+    if existing_receipt:
+        await db.commit()
+        return await _build_state_out(db, sess)
+    # Re-validate the SAME (possibly non-cursor) section is still answerable in the freshly
+    # reloaded state -- not whether it still equals the cursor's section, since free section
+    # navigation means those can legitimately differ.
+    current_spoken = state.get(section, {})
+    _require_current_state(
+        state,
+        supplied_revision=state_revision,
+        supplied_token=turn_token,
+        expected_token=str(current_spoken.get("turn_token") or ""),
+    )
+    if (
+        sess.status != "in_progress"
+        or section not in SPEAKING_LIKE
+        or section not in state.get("sections", [])
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "stale_exam_state", "current_state_revision": _state_revision(state)},
+        )
+    if _audio_hash_already_used(state, audio.sha256):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "duplicate_audio_evidence", "message": "Record a new answer for each question."},
+        )
+
+    sp = state[section]
+    answered_bank_item_id = sp.get("pending_bank_item_id")
+    answered_bank_item_subskill = sp.get("pending_bank_item_subskill")
     sp.setdefault("results", []).append(
         {
             "question": question,
-            "transcription": assessment.transcription,
+            "transcription": transcript,
             "grammar_vocab_feedback": assessment.grammar_vocab_feedback,
-            "pronunciation_feedback": assessment.pronunciation_feedback,
+            "pronunciation_feedback": "",
+            "pronunciation_status": "unassessed",
             "fluency_note": assessment.fluency_note,
             "estimated_level": assessment.estimated_level.value,
+            "audio_sha256": audio.sha256,
+            "audio_duration_seconds": audio.duration_seconds,
+            "audio_mime_type": audio.mime_type,
+            "stt_engine": stt.engine,
+            "stt_model": stt.model,
+            # Retained so the next turn's bank selection can exclude it via used_item_ids,
+            # mirroring MCQ sections' bank_item_id retention (P1.1) -- scoring never reads this.
+            "bank_item_id": int(answered_bank_item_id) if answered_bank_item_id else None,
+            # Retained so the next turn's selection can prefer an unseen subskill/task_type (soft
+            # diversity preference) -- never read by scoring.
+            "bank_item_subskill": str(answered_bank_item_subskill) if answered_bank_item_subskill else None,
         }
     )
 
     feedback = SpeakingTurnFeedbackOut(
-        transcription=assessment.transcription,
+        transcription=transcript,
         grammar_vocab_feedback=assessment.grammar_vocab_feedback,
-        pronunciation_feedback=assessment.pronunciation_feedback,
+        pronunciation_feedback="Unassessed: no acoustic pronunciation scorer was used.",
         fluency_note=assessment.fluency_note,
     )
 
     if turn >= total:
         sp["done"] = True
         sp["pending_question"] = ""
+        sp["pending_bank_item_id"] = None
+        sp["pending_bank_item_subskill"] = None
+        sp["turn_token"] = ""
+        sp["evidence_status"] = "completed"
     else:
         sp["turn"] = turn + 1
-        sp["pending_question"] = assessment.next_question or "Tell me more about that."
+        # MVP: prefer a curated bank prompt at the live estimated level (a light staircase) over
+        # asking Claude to invent the next question; fall back to the existing AI-generated
+        # question unchanged if the bank has nothing usable left. Interview (legacy, dormant)
+        # keeps its own unmodified behavior -- this only applies to the live "speaking" section.
+        next_bank_item = None
+        if section == "speaking":
+            next_bank_item = await _speaking_bank_prompt(
+                db,
+                language_id=language_id,
+                level_str=assessment.estimated_level.value,
+                used_item_ids=_already_used_speaking_bank_item_ids(state, section),
+                used_subskills=_already_used_speaking_subskills(state, section),
+            )
+        if next_bank_item is not None:
+            sp["pending_question"] = _speaking_bank_question_text(next_bank_item)
+            sp["pending_bank_item_id"] = next_bank_item.get("bank_item_id")
+            sp["pending_bank_item_subskill"] = next_bank_item.get("subskill")
+        else:
+            sp["pending_question"] = assessment.next_question or "Tell me more about that."
+            sp["pending_bank_item_id"] = None
+            sp["pending_bank_item_subskill"] = None
+        sp["turn_token"] = _new_exam_token()
+        sp["evidence_status"] = "missing_student_response"
 
     _advance_if_section_done(state)
-    await _ensure_interview_ready(state)  # prep Phase 2 if we just entered it
     _maybe_finalize(sess, state, background_tasks)
+    result_revision = _bump_state_revision(state)
+    _record_request(
+        state,
+        kind="speaking_turn",
+        request_id=request_id,
+        payload_hash=payload_hash,
+        request_revision=state_revision,
+        token=turn_token,
+        result_reference=f"{section}:{turn}:revision:{result_revision}",
+    )
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     await db.commit()
@@ -1240,44 +2917,281 @@ async def speaking_turn(
 async def answer_mcq(
     session_id: str,
     body: McqAnswerIn,
+    background_tasks: BackgroundTasks,
     student: User = Depends(require_active_language_subscription()),
     db: AsyncSession = Depends(get_db),
 ):
     """Record an MCQ answer and advance to the next item/section."""
-    sess = await _load_session(db, session_id, student)
-    state = sess.exam_state or {}
-    section = _current_section(state)
-    if sess.status != "in_progress" or section not in MCQ_SECTIONS:
+    sess = await _load_session(db, session_id, student, for_update=True)
+    state = copy.deepcopy(sess.exam_state or {})
+    payload_hash = canonical_payload_hash(
+        kind="mcq_answer",
+        payload={
+            "session_id": session_id,
+            "state_revision": body.state_revision,
+            "question_token": body.question_token,
+            "choice_index": body.choice_index,
+            "answer_text": body.answer_text,
+            "choice_indices": body.choice_indices,
+            "answer_texts": body.answer_texts,
+            "section": body.section,
+        },
+    )
+    if _request_receipt(
+        state,
+        kind="mcq_answer",
+        request_id=body.request_id,
+        payload_hash=payload_hash,
+    ):
+        await db.commit()
+        return await _build_state_out(db, sess)
+    _require_state_revision(state, supplied_revision=body.state_revision)
+    # Free section navigation: the student may be answering a section other than the session's
+    # internal progress cursor's section (e.g. jumped here via a tab click). Falls back to the
+    # cursor's section, matching the prior (strictly sequential) behavior exactly when omitted.
+    section = body.section or _current_section(state)
+    if (
+        sess.status != "in_progress"
+        or section not in MCQ_SECTIONS
+        or section not in state.get("sections", [])
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in an MCQ section")
+    check_or_raise("placement_answer", f"{student.id}:{session_id}")
 
     sec = state[section]
     cur = sec.get("current_level")
-    item = sec.get("pool", {}).get(cur)
+    item = _resolve_current_exam_item(sec, cur, dual_slot=(section == "listening"))
     if sec.get("done") or not item:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No item awaiting an answer")
-    if body.choice_index >= len(item.get("options", [])):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="choice_index out of range")
+    _require_current_state(
+        state,
+        supplied_revision=body.state_revision,
+        supplied_token=body.question_token,
+        expected_token=str(item.get("question_token") or ""),
+    )
 
-    correct = body.choice_index == item.get("correct_index")
+    # question_type is resolved from the server-side item only -- never trusted/declared by the
+    # client (McqAnswerIn has no question_type field). A missing/falsy value is an older
+    # in-progress state blob or AI-fallback item predating this field; both were always MCQ.
+    qtype = item.get("question_type") or "mcq"
+    asked_entry: dict = {"level": cur}
+    is_mcq_bundle = qtype == "mcq" and isinstance(item.get("subquestions"), list)
+    is_gap_fill_bundle = qtype == "gap_fill" and isinstance(item.get("blanks"), list)
+
+    if is_mcq_bundle:
+        subquestions = item["subquestions"]
+        if body.choice_indices is None or body.choice_index is not None or body.answer_text is not None or body.answer_texts is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires choice_indices only.",
+            )
+        if len(body.choice_indices) != len(subquestions):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="choice_indices length must match the number of subquestions",
+            )
+        sub_correct: list[bool] = []
+        for idx, (choice, sq) in enumerate(zip(body.choice_indices, subquestions)):
+            options = sq.get("options") or []
+            if choice >= len(options):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"choice_indices[{idx}] out of range",
+                )
+            sub_correct.append(choice == sq.get("correct_index"))
+        correct = _majority_correct(sub_correct)
+        asked_entry["chosen_indices"] = list(body.choice_indices)
+        asked_entry["sub_correct"] = sub_correct
+        asked_entry["question_type"] = "mcq"
+    elif qtype == "mcq":
+        if body.choice_index is None or body.answer_text is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires choice_index only.",
+            )
+        if body.choice_index >= len(item.get("options", [])):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="choice_index out of range"
+            )
+        correct = body.choice_index == item.get("correct_index")
+        # Exact pre-existing shape -- an existing test asserts equality on this dict, so no
+        # question_type key is added here; only gap_fill entries carry the extra evidence fields.
+        asked_entry["chosen_index"] = body.choice_index
+    elif is_gap_fill_bundle:
+        blanks = item["blanks"]
+        if body.answer_texts is None or body.answer_text is not None or body.choice_index is not None or body.choice_indices is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires answer_texts only.",
+            )
+        if len(body.answer_texts) != len(blanks):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="answer_texts length must match the number of blanks",
+            )
+        for idx, blank in enumerate(blanks):
+            malformed_field = gap_fill_content_error(blank)
+            if malformed_field:
+                logger.warning(
+                    "Gap fill bundle blank content invalid session_id=%s bank_item_id=%s level=%s blank=%s field=%s",
+                    session_id, item.get("bank_item_id"), cur, idx, malformed_field,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "code": "content_unavailable",
+                        "message": "This question is temporarily unavailable. Please retry.",
+                    },
+                )
+        for idx, (answer_text, blank) in enumerate(zip(body.answer_texts, blanks)):
+            max_words = blank["max_words"]
+            if len(answer_text.split()) > max_words:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Your answer for blank {idx + 1} must be no more than {max_words} words.",
+                )
+        sub_correct = []
+        normalized_answers = []
+        for answer_text, blank in zip(body.answer_texts, blanks):
+            case_sensitive = bool(blank.get("case_sensitive", False))
+            normalized_answer = normalize_gap_fill_text(answer_text, case_sensitive=case_sensitive)
+            normalized_accepted = {
+                normalize_gap_fill_text(a, case_sensitive=case_sensitive)
+                for a in blank["accepted_answers"]
+            }
+            normalized_answers.append(normalized_answer)
+            sub_correct.append(normalized_answer in normalized_accepted)
+        correct = _majority_correct(sub_correct)
+        asked_entry["answer_texts"] = normalized_answers
+        asked_entry["sub_correct"] = sub_correct
+        asked_entry["question_type"] = "gap_fill"
+    elif qtype == "gap_fill":
+        if body.answer_text is None or body.choice_index is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This question requires answer_text only.",
+            )
+        malformed_field = gap_fill_content_error(item)
+        if malformed_field:
+            logger.warning(
+                "Gap fill item content invalid session_id=%s bank_item_id=%s level=%s field=%s",
+                session_id, item.get("bank_item_id"), cur, malformed_field,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "content_unavailable",
+                    "message": "This question is temporarily unavailable. Please retry.",
+                },
+            )
+        max_words = item["max_words"]
+        if len(body.answer_text.split()) > max_words:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Your answer must be no more than {max_words} words.",
+            )
+        case_sensitive = bool(item.get("case_sensitive", False))
+        normalized_answer = normalize_gap_fill_text(body.answer_text, case_sensitive=case_sensitive)
+        normalized_accepted = {
+            normalize_gap_fill_text(a, case_sensitive=case_sensitive)
+            for a in item["accepted_answers"]
+        }
+        correct = normalized_answer in normalized_accepted
+        asked_entry["chosen_index"] = None
+        asked_entry["question_type"] = "gap_fill"
+        # Never exposed publicly -- sec["asked"] is not part of any public response schema
+        # (confirmed: McqPromptOut/ExamStateOut/MultiSkillReportSchema never read it for
+        # MCQ_SECTIONS; unlike Speaking, there is no listening/reading/grammar_vocab per-turn
+        # public detail).
+        asked_entry["answer_text"] = normalized_answer
+    else:
+        logger.warning(
+            "Unknown question_type rejected session_id=%s bank_item_id=%s level=%s question_type=%s",
+            session_id, item.get("bank_item_id"), cur, qtype,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "content_unavailable",
+                "message": "This question is temporarily unavailable. Please retry.",
+            },
+        )
+
     bank_item_id = item.get("bank_item_id")
     if bank_item_id:
         await record_bank_item_answer(db, item_id=int(bank_item_id), correct=correct)
-    sec.setdefault("asked", []).append({"level": cur, "correct": correct, "chosen_index": body.choice_index})
+    asked_entry["correct"] = correct
+    # Retained so a later _prepare_content run can exclude it via used_item_ids (P1.1) —
+    # scoring/adaptive logic never reads this key.
+    asked_entry["bank_item_id"] = int(bank_item_id) if bank_item_id else None
+    sec.setdefault("asked", []).append(asked_entry)
     asked_levels = {a["level"] for a in sec["asked"]}
 
-    # Adaptive staircase: harder if correct, easier if wrong; stop when converged / out of steps.
-    nxt = adaptive_next_level(
-        current=cur, correct=correct, asked_levels=asked_levels,
-        pool_levels=set(sec.get("pool", {}).keys()),
-        asked_count=len(sec["asked"]), max_steps=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
-    )
-    if nxt is None:
+    if sec.pop("_awaiting_boundary_answer", False):
+        # P1.3: the one allotted boundary-confirmation question has now been answered — the
+        # section always finishes here (regardless of correctness), so it can never ask a second.
         sec["done"] = True
+        sec["evidence_status"] = "completed"
     else:
-        sec["current_level"] = nxt
+        # Adaptive staircase: harder if correct, easier if wrong; stop when converged / out of steps.
+        nxt = adaptive_next_level(
+            current=cur, correct=correct, asked_levels=asked_levels,
+            pool_levels=set(sec.get("pool", {}).keys()),
+            asked_count=len(sec["asked"]), max_steps=sec.get("max_steps", ADAPTIVE_MAX_STEPS),
+        )
+        if nxt is None:
+            continuation = _mcq_continuation_level(
+                pool_levels=set(sec.get("pool", {}).keys()),
+                asked_levels=asked_levels,
+                asked_count=len(sec["asked"]),
+                current=cur,
+            )
+            boundary_item = None
+            if continuation is None and not sec.get("boundary_asked"):
+                boundary = _boundary_situation(sec["asked"])
+                if boundary is not None:
+                    sec["boundary_asked"] = True
+                    low, high = boundary
+                    boundary_item = await _boundary_confirmation_item(
+                        db,
+                        language_id=int(sess.language_id),
+                        skill=section,
+                        low=low,
+                        high=high,
+                        used_item_ids=_already_used_bank_item_ids(state, section),
+                    )
+            if continuation is not None:
+                sec["current_level"] = continuation
+                sec["evidence_status"] = "missing_student_response"
+            elif boundary_item is not None:
+                # P1.3: inject the boundary item under its own reported level so the existing
+                # pool/current_level/asked machinery (and adaptive_result's CEFR parsing) needs no
+                # changes; _awaiting_boundary_answer ensures this section finishes right after.
+                boundary_item["question_token"] = _new_exam_token()
+                level_key = boundary_item.get("level") or cur
+                sec.setdefault("pool", {})[level_key] = boundary_item
+                sec["current_level"] = level_key
+                sec["_awaiting_boundary_answer"] = True
+                sec["evidence_status"] = "missing_student_response"
+            else:
+                sec["done"] = True
+                sec["evidence_status"] = "completed"
+        else:
+            sec["current_level"] = nxt
+            sec["evidence_status"] = "missing_student_response"
 
     _advance_if_section_done(state)
-    await _ensure_interview_ready(state)
+    _maybe_finalize(sess, state, background_tasks)
+    result_revision = _bump_state_revision(state)
+    _record_request(
+        state,
+        kind="mcq_answer",
+        request_id=body.request_id,
+        payload_hash=payload_hash,
+        request_revision=body.state_revision,
+        token=body.question_token,
+        result_reference=f"{section}:{cur}:revision:{result_revision}",
+    )
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     await db.commit()
@@ -1294,23 +3208,119 @@ async def submit_writing(
 ):
     """Record the writing answer and flow into the Phase-2 spoken interview (or finalize)."""
     sess = await _load_session(db, session_id, student)
-    state = sess.exam_state or {}
-    if sess.status != "in_progress" or _current_section(state) != "writing":
+    snapshot = copy.deepcopy(sess.exam_state or {})
+    payload_hash = canonical_payload_hash(
+        kind="writing_answer",
+        payload={
+            "session_id": session_id,
+            "state_revision": body.state_revision,
+            "prompt_token": body.prompt_token,
+            "text_sha256": hashlib.sha256(
+                _normalise_writing_text(body.text).encode("utf-8")
+            ).hexdigest(),
+        },
+    )
+    if _request_receipt(
+        snapshot,
+        kind="writing_answer",
+        request_id=body.request_id,
+        payload_hash=payload_hash,
+    ):
+        return await _build_state_out(db, sess)
+    _require_state_revision(snapshot, supplied_revision=body.state_revision)
+    # Free section navigation: writing is answerable whenever it's a real member of this
+    # session's sections, regardless of the internal progress cursor's position. The explicit
+    # done-check is required here (unlike MCQ sections/speaking, which already fail closed on a
+    # spent question_token/turn_token) since a completed writing prompt_token is never cleared --
+    # without this, a student could jump back and silently overwrite an already-scored response.
+    if (
+        sess.status != "in_progress"
+        or "writing" not in snapshot.get("sections", [])
+        or snapshot.get("writing", {}).get("done")
+    ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in the writing section")
+    _require_current_state(
+        snapshot,
+        supplied_revision=body.state_revision,
+        supplied_token=body.prompt_token,
+        expected_token=str(snapshot.get("writing", {}).get("prompt_token") or ""),
+    )
+    check_or_raise("placement_answer", f"{student.id}:{session_id}")
 
-    min_words = state.get("writing", {}).get("min_words", WRITING_MIN_WORDS)
+    min_words = snapshot.get("writing", {}).get("min_words", WRITING_MIN_WORDS)
     if len(body.text.split()) < min_words:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Your answer must be at least {min_words} words.",
         )
 
+    # Build the interview opening from a prospective snapshot outside any lock/transaction.
+    prospective = copy.deepcopy(snapshot)
+    prospective["writing"]["response"] = body.text
+    prospective["writing"]["done"] = True
+    prospective["writing"]["evidence_status"] = "completed"
+    _advance_if_section_done(prospective)
+    await db.rollback()
+    try:
+        await _ensure_interview_ready(prospective)
+    except Exception as exc:
+        logger.warning(
+            "Placement interview preparation failed session_id=%s error_type=%s",
+            session_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "content_unavailable",
+                "message": "The interview prompt is temporarily unavailable. Please retry.",
+            },
+        ) from None
+
+    # Merge under a fresh short lock and reject any state that moved while AI was running.
+    sess = await _load_session(db, session_id, student, for_update=True)
+    state = copy.deepcopy(sess.exam_state or {})
+    if _request_receipt(
+        state,
+        kind="writing_answer",
+        request_id=body.request_id,
+        payload_hash=payload_hash,
+    ):
+        await db.commit()
+        return await _build_state_out(db, sess)
+    if (
+        sess.status != "in_progress"
+        or "writing" not in state.get("sections", [])
+        or state.get("writing", {}).get("done")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "stale_exam_state", "current_state_revision": _state_revision(state)},
+        )
+    _require_current_state(
+        state,
+        supplied_revision=body.state_revision,
+        supplied_token=body.prompt_token,
+        expected_token=str(state.get("writing", {}).get("prompt_token") or ""),
+    )
     state["writing"]["response"] = body.text
     state["writing"]["done"] = True
+    state["writing"]["evidence_status"] = "completed"
     _advance_if_section_done(state)
-    await _ensure_interview_ready(state)  # build Phase-2 priming + opening question
+    if _current_section(state) == "interview":
+        state["interview"] = copy.deepcopy(prospective["interview"])
 
     finalizing = _maybe_finalize(sess, state, background_tasks)
+    result_revision = _bump_state_revision(state)
+    _record_request(
+        state,
+        kind="writing_answer",
+        request_id=body.request_id,
+        payload_hash=payload_hash,
+        request_revision=body.state_revision,
+        token=body.prompt_token,
+        result_reference=f"writing:revision:{result_revision}",
+    )
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     await db.commit()
@@ -1325,6 +3335,88 @@ async def submit_writing(
     return JSONResponse(status_code=status.HTTP_200_OK, content=(await _build_state_out(db, sess)).model_dump())
 
 
+@router.post(
+    "/{session_id}/evaluation/retry",
+    response_model=ExamProcessingOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_exam_evaluation(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    student: User = Depends(require_active_language_subscription()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retry a failed authoritative evaluation without recollecting or duplicating evidence."""
+    sess = await _load_session(db, session_id, student, for_update=True)
+    check_or_raise("placement_evaluation_request", f"{student.id}:{session_id}")
+    state = copy.deepcopy(sess.exam_state or {})
+    if sess.status == "evaluating":
+        evaluation = dict(state.get("evaluation") or {})
+        evaluation_status = str(
+            evaluation.get("evaluation_status") or evaluation.get("status") or "pending"
+        )
+        # A committed pending lease already represents a queued evaluation.  Treat a concurrent
+        # retry as the same operation instead of bumping the revision and scheduling a duplicate.
+        if evaluation_status == "pending" or (
+            evaluation_status == "running" and not evaluation_lease_expired(state)
+        ):
+            await db.commit()
+            return ExamProcessingOut(
+                session_id=sess.id,
+                message="Placement evaluation is already in progress.",
+            )
+        if evaluation_status != "running":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "evaluation_retry_not_allowed",
+                    "message": "This evaluation cannot be retried from its current state.",
+                },
+            )
+        # The former worker lost its lease. Clear ownership so exactly one new worker can claim it.
+        evaluation.update(
+            {
+                "evaluation_status": "pending",
+                "evaluation_owner": None,
+                "evaluation_lease_expires_at": None,
+                "retry_requested_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        state["evaluation"] = evaluation
+        _bump_state_revision(state)
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+        background_tasks.add_task(_run_evaluation, sess.id)
+        return ExamProcessingOut(
+            session_id=sess.id,
+            message="A stale placement evaluation has been queued again.",
+        )
+    if sess.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "evaluation_retry_not_allowed", "message": "This evaluation cannot be retried."},
+        )
+    _ensure_exam_evidence_complete(state)
+    state["evaluation"] = {
+        **dict(state.get("evaluation") or {}),
+        "evaluation_status": "pending",
+        "evaluation_owner": None,
+        "evaluation_lease_expires_at": None,
+        "retry_requested_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _bump_state_revision(state)
+    sess.exam_state = state
+    flag_modified(sess, "exam_state")
+    sess.status = "evaluating"
+    await db.commit()
+    background_tasks.add_task(_run_evaluation, sess.id)
+    return ExamProcessingOut(
+        session_id=sess.id,
+        message="Placement evaluation has been queued again.",
+    )
+
+
 @router.get("/{session_id}/report", response_model=ExamReportOut)
 async def get_exam_report(
     session_id: str,
@@ -1333,17 +3425,18 @@ async def get_exam_report(
 ):
     """Poll for the final per-skill report (frontend shows a loader until status == completed)."""
     sess = await _load_session(db, session_id, student)
+    check_or_raise("placement_poll", f"{student.id}:{session_id}")
     report = None
     if sess.assessment_report:
         try:
             report = MultiSkillReportSchema.model_validate(sess.assessment_report)
         except Exception:
             report = None
+    evaluation = (sess.exam_state or {}).get("evaluation") or {}
+    error_code = str(evaluation.get("error_code") or "") or None
     return ExamReportOut(
         session_id=sess.id, status=sess.status, is_completed=sess.is_completed,
         report=report, completed_at=sess.completed_at,
+        error_code=error_code,
+        error_message=("Placement evaluation failed. You can retry it." if error_code else None),
     )
-
-
-def settings_max_bytes() -> int:
-    return max(1, get_settings().GENAI_EXAM_MAX_AUDIO_MB) * 1024 * 1024

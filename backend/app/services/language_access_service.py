@@ -87,28 +87,6 @@ async def build_language_access(db: AsyncSession, student_id: int) -> LanguageAc
     next_allowed_retake_date = profile.next_allowed_retake_date if profile else None
 
     levels = LanguageSkillLevelsOut()
-    from app.services.language_progression_service import select_all_skill_levels
-
-    level_map = await select_all_skill_levels(db, student_id=student_id, language_id=language.id)
-    levels.reading = level_map.get("reading")
-    levels.listening = level_map.get("listening")
-    levels.writing = level_map.get("writing")
-    levels.speaking = level_map.get("speaking")
-    focus, strength = primary_focus_and_strength(
-        {
-            "reading": levels.reading,
-            "listening": levels.listening,
-            "writing": levels.writing,
-            "speaking": levels.speaking,
-        }
-    )
-    levels.primary_focus_skill = focus
-    levels.strength_skill = strength
-    if focus:
-        levels.primary_focus_label_ar = SKILL_LABELS_AR.get(focus, focus)
-    if strength:
-        levels.strength_label_ar = SKILL_LABELS_AR.get(strength, strength)
-
     analytics_result = await db.execute(
         select(LanguageAnalytics).where(
             LanguageAnalytics.student_id == student_id,
@@ -116,6 +94,25 @@ async def build_language_access(db: AsyncSession, student_id: int) -> LanguageAc
         )
     )
     analytics = analytics_result.scalar_one_or_none()
+    if analytics:
+        levels.reading = analytics.reading_level.value if analytics.reading_level else None
+        levels.listening = analytics.listening_level.value if analytics.listening_level else None
+        levels.writing = analytics.writing_level.value if analytics.writing_level else None
+        levels.speaking = analytics.speaking_level.value if analytics.speaking_level else None
+        focus, strength = primary_focus_and_strength(
+            {
+                "reading": levels.reading,
+                "listening": levels.listening,
+                "writing": levels.writing,
+                "speaking": levels.speaking,
+            }
+        )
+        levels.primary_focus_skill = focus
+        levels.strength_skill = strength
+        if focus:
+            levels.primary_focus_label_ar = SKILL_LABELS_AR.get(focus, focus)
+        if strength:
+            levels.strength_label_ar = SKILL_LABELS_AR.get(strength, strength)
 
     redirect = None
     placement_recommendation = None

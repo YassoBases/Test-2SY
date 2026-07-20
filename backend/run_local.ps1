@@ -15,8 +15,12 @@ function Get-ProjectPython {
         }
         return (Resolve-Path $pythonRel).Path
     }
+
+    $rootVenvPython = Join-Path $PSScriptRoot "..\eduspark-venv310\Scripts\python.exe"
+    if (Test-Path $rootVenvPython) { return (Resolve-Path $rootVenvPython).Path }
+
     throw @"
-No Python venv found under backend\venv.
+No Python venv found under backend\venv, backend\.venv, or ..\eduspark-venv310.
 Recreate with:
   py -3.12 -m venv C:\Users\$env:USERNAME\venvs\eduspark-backend
   cmd /c mklink /J "$PSScriptRoot\venv" "C:\Users\$env:USERNAME\venvs\eduspark-backend"

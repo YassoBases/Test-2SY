@@ -13,10 +13,6 @@ class LanguageContentItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     language_id: Mapped[int] = mapped_column(ForeignKey("languages.id", ondelete="CASCADE"), index=True)
-    # NULL = shared seed/nightly pool; set for per-student personalized lessons (listening Phase 2).
-    student_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
-    )
     skill: Mapped[LanguageSkill] = mapped_column(
         Enum(LanguageSkill, name="language_skill", create_constraint=False, values_callable=lambda e: [x.value for x in e])
     )

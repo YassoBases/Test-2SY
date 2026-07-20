@@ -233,7 +233,6 @@ async def _promote(db: AsyncSession, *, student_id: int, language_id: int, level
     new_level = level
     cur_rank = CEFR_RANK.get(LanguageLevel(level), 1)
     promoted = cur_rank < 6
-    analytics = None
     if promoted:
         nxt = RANK_CEFR[cur_rank + 1]
         nxt_rank = CEFR_RANK[nxt]
@@ -265,10 +264,4 @@ async def _promote(db: AsyncSession, *, student_id: int, language_id: int, level
                 st.last_level_change_at = now
         new_level = nxt.value
     await db.flush()
-
-    if promoted and analytics is not None:
-        from app.services.language_progression_service import sync_progression_mirror_analytics
-
-        await sync_progression_mirror_analytics(db, analytics, source="promotion_test")
-
     return promoted, new_level

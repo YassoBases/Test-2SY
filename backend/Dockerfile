@@ -16,13 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-ara \
     libgl1 \
     ffmpeg \
-    espeak-ng \
-    libespeak-ng1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-voice.txt requirements-pronunciation.txt ./
-RUN pip install --no-cache-dir -r requirements-voice.txt \
-    && pip install --no-cache-dir -r requirements-pronunciation.txt
+COPY requirements.txt requirements-voice.txt ./
+RUN pip install --no-cache-dir -r requirements-voice.txt
 
 COPY app ./app
 RUN mkdir -p /app/uploads

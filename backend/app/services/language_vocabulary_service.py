@@ -279,15 +279,8 @@ async def save_word(db: AsyncSession, *, student_id: int, word: str) -> dict:
         )
     ).scalar_one_or_none()
     if existing is None:
-        from app.services.language_progression_service import select_skill_level
-
-        level = await select_skill_level(
-            db,
-            student_id=student_id,
-            language_id=language.id,
-            skill=LanguageSkill.reading,
-            default=LanguageLevel.A2,
-        )
+        analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language.id})
+        level = (analytics.reading_level if analytics and analytics.reading_level else LanguageLevel.A2)
         db.add(
             LanguageContentItem(
                 language_id=language.id, skill=None, level=level, content_type=CONTENT_TYPE,

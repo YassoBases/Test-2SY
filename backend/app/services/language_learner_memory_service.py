@@ -24,10 +24,6 @@ from app.models.language.conversation import (
 )
 from app.models.language.learner_model import ComponentMastery, KnowledgeComponent
 from app.models.language.profile import LanguageStudentProfile
-from app.services.language_student_profile_service import (
-    get_language_student_profile,
-    get_or_create_language_student_profile,
-)
 
 MEMORY_KEY = "memory"
 # Free-form lists the learner controls; capped to stay token-efficient in the prompt.
@@ -106,17 +102,25 @@ def build_session_summary(*, turn_count: int, topics: list[str]) -> str:
 async def _get_profile(
     db: AsyncSession, *, student_id: int, language_id: int
 ) -> LanguageStudentProfile | None:
-    return await get_language_student_profile(
-        db, student_id=student_id, language_id=language_id
-    )
+    return (
+        await db.execute(
+            select(LanguageStudentProfile).where(
+                LanguageStudentProfile.student_id == student_id,
+                LanguageStudentProfile.language_id == language_id,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def _get_or_create_profile(
     db: AsyncSession, *, student_id: int, language_id: int
 ) -> LanguageStudentProfile:
-    return await get_or_create_language_student_profile(
-        db, student_id=student_id, language_id=language_id
-    )
+    profile = await _get_profile(db, student_id=student_id, language_id=language_id)
+    if profile is None:
+        profile = LanguageStudentProfile(student_id=student_id, language_id=language_id)
+        db.add(profile)
+        await db.flush()
+    return profile
 
 
 async def get_weaknesses(

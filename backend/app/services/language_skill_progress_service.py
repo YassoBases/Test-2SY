@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.language.content import LanguageContentItem
-from app.models.language.enums import LanguageContentProgressStatus, LanguageLevel, LanguageSkill
+from app.models.language.enums import LanguageContentProgressStatus, LanguageSkill
 from app.models.language.path import LanguagePathItem
 from app.models.language.progress import LanguageListeningProgress, LanguageReadingProgress
 from app.services.language_adaptive_service import record_lesson_result
@@ -23,8 +23,7 @@ from app.services.language_content_service import (
     pass_threshold_for_item,
 )
 from app.services.language_engagement_service import record_activity, upsert_vocabulary_from_lesson
-from app.services.language_learner_events import component_for_question, record_lesson_questions
-from app.services.language_level_utils import CEFR_RANK, RANK_CEFR
+from app.services.language_learner_events import record_lesson_questions
 from app.services.language_placement_scoring_service import normalize_choice_answer, score_mcq
 
 
@@ -135,73 +134,6 @@ def _reading_wpm(body: dict | None, duration_seconds: int | None) -> int | None:
     return wpm if 20 <= wpm <= 1500 else None
 
 
-def _reading_component_breakdown(level, question_results: list[dict]) -> tuple[list[dict], dict]:
-    from app.services.language_reading_service import (
-        READING_COMPONENT_HINTS,
-        READING_COMPONENT_LABELS,
-        _mini_lesson_for_component,
-    )
-
-    level = getattr(level, "value", level) or "A2"
-    by_component: dict[str, dict] = {}
-    for result in question_results:
-        code = component_for_question(LanguageSkill.reading, qtype=result.get("type"), level=level)
-        if not code:
-            continue
-        row = by_component.setdefault(code, {
-            "code": code,
-            "label": READING_COMPONENT_LABELS.get(code, code),
-            "correct": 0,
-            "total": 0,
-            "hint": READING_COMPONENT_HINTS.get(code, ""),
-        })
-        row["total"] += 1
-        if result.get("is_correct"):
-            row["correct"] += 1
-    rows = []
-    for row in by_component.values():
-        total = max(1, int(row["total"]))
-        percent = round(100.0 * int(row["correct"]) / total, 1)
-        rows.append({**row, "score_percent": percent})
-    rows.sort(key=lambda item: (float(item["score_percent"]), -int(item["total"])))
-    weakest = rows[0] if rows else {
-        "code": "reading.scan_detail",
-        "label": "Finding details",
-        "score_percent": 0,
-        "hint": "Underline keywords and find the matching detail in the passage.",
-    }
-    next_focus = {
-        **weakest,
-        "mini_lesson": _mini_lesson_for_component(str(weakest.get("code") or "reading.scan_detail")),
-    }
-    return rows, next_focus
-
-
-async def _reading_promotion_ready(
-    db: AsyncSession,
-    *,
-    student_id: int,
-    language_id: int,
-    level: LanguageLevel,
-) -> bool:
-    rows = (
-        await db.execute(
-            select(LanguageReadingProgress.score_percent)
-            .join(LanguageContentItem, LanguageContentItem.id == LanguageReadingProgress.content_item_id)
-            .where(
-                LanguageReadingProgress.student_id == student_id,
-                LanguageContentItem.language_id == language_id,
-                LanguageContentItem.skill == LanguageSkill.reading,
-                LanguageContentItem.level == level,
-                LanguageReadingProgress.status == LanguageContentProgressStatus.completed,
-                LanguageReadingProgress.score_percent.is_not(None),
-            )
-        )
-    ).scalars().all()
-    scores = [float(score) for score in rows if score is not None]
-    return len(scores) >= 4 and (sum(scores) / len(scores)) >= 80.0
-
-
 async def submit_reading(
     db: AsyncSession,
     *,
@@ -242,21 +174,13 @@ async def submit_reading(
         },
     )
     await refresh_language_analytics(db, student_id=student_id, language_id=language.id)
-    # Adaptive reading: demote on a very weak attempt, but promote only after stable evidence.
+    # Adaptive reading: nudge the reading level by this result so the next passage adapts.
     from app.models.language.analytics import LanguageAnalytics
     from app.services.language_reading_service import nudge_reading_level
 
     analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language.id})
     if analytics is not None:
-        current_level = analytics.reading_level or LanguageLevel.A1
-        new_level = current_level
-        if score_percent < 40:
-            new_level = nudge_reading_level(current_level, score_percent)
-        elif score_percent >= 85 and await _reading_promotion_ready(
-            db, student_id=student_id, language_id=language.id, level=current_level
-        ):
-            rank = min(CEFR_RANK.get(current_level, 1) + 1, 6)
-            new_level = RANK_CEFR[rank]
+        new_level = nudge_reading_level(analytics.reading_level, score_percent)
         if new_level != analytics.reading_level:
             analytics.reading_level = new_level
     await record_lesson_result(
@@ -267,7 +191,6 @@ async def submit_reading(
         score_percent=score_percent, passed=passed,
     )
     question_results = _reading_question_results(item.body_json, answers)
-    component_breakdown, next_focus = _reading_component_breakdown(item.level, question_results)
     await record_lesson_questions(
         db, student_id=student_id, language_id=language.id, skill=LanguageSkill.reading,
         level=item.level, question_results=question_results, source="reading",
@@ -283,11 +206,6 @@ async def submit_reading(
         "total_questions": total,
         "question_results": question_results,
         "reading_wpm": wpm,
-        "next_focus": next_focus,
-        "component_breakdown": component_breakdown,
-        "mini_lesson": next_focus.get("mini_lesson"),
-        "re_read_recommended": score_percent < 70 or any(float(row.get("score_percent") or 0) < 60 for row in component_breakdown),
-        "summary_recommended": True,
     }
 
 

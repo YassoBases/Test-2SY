@@ -7,10 +7,6 @@
     class="speaking-mode-toggle mb-4"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-btn value="journey" size="small">
-      <v-icon start size="18">mdi-map-marker-path</v-icon>
-      Your journey
-    </v-btn>
     <v-btn value="exercises" size="small">
       <v-icon start size="18">mdi-format-list-bulleted</v-icon>
       Speaking exercises
@@ -18,10 +14,6 @@
     <v-btn value="conversation" size="small">
       <v-icon start size="18">mdi-robot-happy-outline</v-icon>
       Smart conversation
-    </v-btn>
-    <v-btn value="live" size="small">
-      <v-icon start size="18">mdi-account-voice</v-icon>
-      {{ t('student.languages.speaking.live.title') }}
     </v-btn>
     <v-btn value="shadowing" size="small">
       <v-icon start size="18">mdi-account-voice</v-icon>
@@ -35,14 +27,10 @@
 </template>
 
 <script setup>
-import { useI18n } from 'vue-i18n'
-
 defineProps({
-  modelValue: { type: String, default: 'journey' },
+  modelValue: { type: String, default: 'exercises' },
 })
 defineEmits(['update:modelValue'])
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

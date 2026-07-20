@@ -30,10 +30,3 @@ def note_failure(*, now: float | None = None) -> None:
 def note_success() -> None:
     """Generation worked — clear any back-off."""
     _state["paused_until"] = 0.0
-
-
-def seconds_until_retry(*, now: float | None = None) -> float:
-    """Seconds until generation gate re-opens (0 if already open)."""
-    now = time.time() if now is None else now
-    remaining = _state["paused_until"] - now
-    return max(0.0, remaining)

@@ -5,10 +5,9 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.language_achievement_service import count_earned_achievements, list_student_achievements
-from app.services.language_adaptive_service import SKILL_LABELS_AR, build_adaptive_state
 from app.services.language_analytics_service import get_streak, refresh_language_analytics
 from app.services.language_daily_plan_service import build_daily_plan
-from app.services.language_level_utils import bottleneck_level
+from app.services.language_level_utils import SKILL_LABELS_AR, bottleneck_level
 from app.services.language_statistics_service import (
     compute_improvement_trend,
     list_scenario_progress,
@@ -49,11 +48,14 @@ def _overall_progress_percent(growth: dict, curriculum_mastery: int) -> int:
     return skill_avg
 
 
-def _strongest_weakest(adaptive: dict) -> tuple[str | None, str | None, str | None, str | None]:
-    strengths = adaptive.get("strengths") or []
-    weaknesses = adaptive.get("weaknesses") or []
-    strongest = strengths[0] if strengths else None
-    weakest = weaknesses[0] if weaknesses else None
+def _strongest_weakest(skill_scores: dict[str, int | None]) -> tuple[str | None, str | None, str | None, str | None]:
+    scored = {
+        skill: score
+        for skill, score in skill_scores.items()
+        if skill != "vocabulary" and score is not None
+    }
+    strongest = max(scored, key=scored.get) if scored else None
+    weakest = min(scored, key=scored.get) if scored else None
     return (
         strongest,
         SKILL_LABELS_AR.get(strongest or "", strongest),
@@ -68,8 +70,8 @@ async def build_language_analytics_dashboard(db: AsyncSession, *, student_id: in
 
     analytics = await refresh_language_analytics(db, student_id=student_id, language_id=lang_id)
     growth = analytics.skill_growth_json or {}
+    skill_scores = _skill_scores(growth)
     stats = await refresh_statistics_on_analytics(db, student_id=student_id, language_id=lang_id)
-    adaptive = await build_adaptive_state(db, student_id=student_id, language_id=lang_id)
     trend = await compute_improvement_trend(db, student_id=student_id, language_id=lang_id)
     achievements = await list_student_achievements(db, student_id=student_id, language_id=lang_id)
     scenarios = await list_scenario_progress(db, student_id=student_id, language_id=lang_id)
@@ -83,10 +85,10 @@ async def build_language_analytics_dashboard(db: AsyncSession, *, student_id: in
         "speaking": analytics.speaking_level.value if analytics.speaking_level else None,
     }
     overall = bottleneck_level(levels)
-    strongest, strongest_ar, weakest, weakest_ar = _strongest_weakest(adaptive)
+    strongest, strongest_ar, weakest, weakest_ar = _strongest_weakest(skill_scores)
 
-    obj_total = int(adaptive.get("objectives_total") or 0)
-    obj_mastered = int(adaptive.get("objectives_mastered") or 0)
+    obj_total = int(daily.get("objectives_total") or 0)
+    obj_mastered = int(daily.get("objectives_mastered") or 0)
     curriculum_mastery = int(round(100 * obj_mastered / obj_total)) if obj_total else 0
 
     daily_items = daily.get("items") or []
@@ -96,11 +98,11 @@ async def build_language_analytics_dashboard(db: AsyncSession, *, student_id: in
     earned_badges = [a for a in achievements["achievements"] if a["earned"]][-6:]
 
     return {
-        "current_cefr_level": overall.value if overall else adaptive.get("current_level"),
-        "adaptive_recommendation": adaptive.get("recommendation"),
+        "current_cefr_level": overall.value if overall else None,
+        "adaptive_recommendation": None,
         "adaptive_recommendation_ar": daily.get("adaptive_detail_ar"),
         "overall_progress_percent": _overall_progress_percent(growth, curriculum_mastery),
-        "skill_scores": _skill_scores(growth),
+        "skill_scores": skill_scores,
         "levels": {**levels, "overall": overall.value if overall else None},
         "strongest_skill": strongest,
         "strongest_skill_ar": strongest_ar,
@@ -112,14 +114,14 @@ async def build_language_analytics_dashboard(db: AsyncSession, *, student_id: in
         "recent_badges": earned_badges,
         "scenario_progress": scenarios,
         "skill_radar": [
-            {"skill": sk, "label_ar": SKILL_LABELS_AR.get(sk, sk), "score": _skill_scores(growth).get(sk) or 0}
+            {"skill": sk, "label_ar": SKILL_LABELS_AR.get(sk, sk), "score": skill_scores.get(sk) or 0}
             for sk in ("reading", "listening", "writing", "speaking", "vocabulary")
         ],
         "daily_mission": {
             "completed": daily_done,
             "total": daily_total,
             "percent": int(round(100 * daily_done / daily_total)) if daily_total else 0,
-            "recommendation": adaptive.get("recommendation"),
+            "recommendation": None,
             "detail_ar": daily.get("adaptive_detail_ar"),
         },
         "streak": {

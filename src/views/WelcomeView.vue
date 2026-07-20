@@ -31,24 +31,9 @@
           compact
           centered
           :selected-role="selectedRole"
+          :navigating="isNavigating"
           @select="onRoleSelect"
         />
-        <div v-if="selectedRole" class="welcome-continue welcome-enter">
-          <v-btn
-            type="button"
-            size="large"
-            rounded="lg"
-            color="secondary"
-            variant="flat"
-            class="welcome-continue__btn btn-glow"
-            :loading="isNavigating"
-            :disabled="isNavigating"
-            :aria-label="t('auth.welcome.continueAria')"
-            @click="proceedToLogin"
-          >
-            {{ t('auth.welcome.continueButton') }}
-          </v-btn>
-        </div>
       </div>
 
       <footer class="welcome-footer welcome-enter welcome-enter--footer">
@@ -84,17 +69,11 @@ const isNavigating = ref(false)
 function onRoleSelect(role) {
   if (isNavigating.value) return
   selectedRole.value = role
-}
-
-async function proceedToLogin() {
-  if (!selectedRole.value || isNavigating.value) return
   isNavigating.value = true
-  saveAuthRole(selectedRole.value)
-  try {
-    await router.push({ path: ROUTES.LOGIN, query: { entry: 'welcome', role: selectedRole.value } })
-  } catch {
-    isNavigating.value = false
-  }
+  saveAuthRole(role)
+  window.setTimeout(() => {
+    router.push({ path: ROUTES.LOGIN, query: { entry: 'welcome', role } })
+  }, 520)
 }
 
 onMounted(() => {
@@ -156,19 +135,6 @@ onUnmounted(() => {
 .welcome-footer {
   width: 100%;
   flex-shrink: 0;
-}
-
-.welcome-continue {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  margin-top: clamp(0.55rem, 1.4vh, 0.75rem);
-}
-
-.welcome-continue__btn {
-  min-width: min(280px, 88vw);
-  font-weight: 800;
-  letter-spacing: 0.01em;
 }
 
 @media (max-height: 720px) {

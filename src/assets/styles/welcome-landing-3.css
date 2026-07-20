@@ -7,7 +7,6 @@
 /* ——— Centered shell ——— */
 .welcome-shell {
   position: relative;
-  z-index: 2;
   width: 100%;
   max-width: min(1140px, 94vw);
   margin-inline: auto;
@@ -104,14 +103,6 @@
   gap: 0.35rem;
   padding: 12px 10px 11px;
   min-height: 128px;
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-  position: relative;
-  z-index: 1;
   border-radius: var(--em-radius-md);
   border: 1px solid var(--em-border-subtle);
   background: rgba(10, 16, 32, 0.42);

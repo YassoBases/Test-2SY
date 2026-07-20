@@ -7,6 +7,7 @@ import copy
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.language.analytics import LanguageAnalytics
 from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageLevel, LanguageSkill
 from app.models.language.progress import LanguageListeningProgress, LanguageReadingProgress
@@ -203,15 +204,17 @@ async def _student_skill_level(
     language_id: int,
     skill: LanguageSkill,
 ) -> LanguageLevel:
-    from app.services.language_progression_service import select_skill_level
-
-    return await select_skill_level(
-        db,
-        student_id=student_id,
-        language_id=language_id,
-        skill=skill,
-        default=LanguageLevel.A1,
-    )
+    analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+    if analytics:
+        lv = {
+            LanguageSkill.reading: analytics.reading_level,
+            LanguageSkill.listening: analytics.listening_level,
+            LanguageSkill.writing: analytics.writing_level,
+            LanguageSkill.speaking: analytics.speaking_level,
+        }.get(skill)
+        if lv:
+            return lv
+    return LanguageLevel.A1
 
 
 async def list_lessons(
@@ -306,8 +309,6 @@ async def get_listening_lesson(
         or item.content_type != "lesson"
         or not item.is_published
     ):
-        return None, None, None, False  # type: ignore[return-value]
-    if item.student_id is not None and item.student_id != student_id:
         return None, None, None, False  # type: ignore[return-value]
     prog = await db.execute(
         select(LanguageListeningProgress).where(

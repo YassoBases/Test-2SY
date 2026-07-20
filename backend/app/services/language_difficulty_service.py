@@ -11,6 +11,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.language.analytics import LanguageAnalytics
 from app.models.language.learner_model import ComponentMastery, KnowledgeComponent
 from app.services.language_cache import TTLCache
 from app.services.language_level_utils import CEFR_RANK, RANK_CEFR
@@ -92,11 +93,10 @@ def recommended_complexity(base_level: str, avg_mod: float) -> str:
 # Data aggregation
 # --------------------------------------------------------------------------------------------------
 async def _base_level(db: AsyncSession, *, student_id: int, language_id: int) -> str:
-    from app.services.language_progression_service import select_overall_level_str
-
-    return await select_overall_level_str(
-        db, student_id=student_id, language_id=language_id, default=LanguageLevel.A1
-    )
+    analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+    if analytics and analytics.overall_level_internal:
+        return analytics.overall_level_internal.value
+    return LanguageLevel.A1.value
 
 
 async def _skill_scores(db: AsyncSession, *, student_id: int, language_id: int) -> dict[str, float]:

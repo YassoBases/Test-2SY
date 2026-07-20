@@ -14,13 +14,22 @@ from app.models.language.engagement import LanguageActivityLog
 from app.models.language.path import LanguageLearningPath, LanguagePathItem
 from app.models.language.profile import LanguageStudentProfile
 from app.services.language_analytics_service import build_skill_growth_snapshot, get_streak, refresh_language_analytics
+from app.services.language_level_utils import bottleneck_level
 from app.services.language_subscription_service import get_default_language
 
 
-async def _levels_dict(db: AsyncSession, *, student_id: int, language_id: int) -> dict[str, str | None]:
-    from app.services.language_progression_service import select_all_skill_levels
-
-    return await select_all_skill_levels(db, student_id=student_id, language_id=language_id)
+def _levels_dict(analytics: LanguageAnalytics | None) -> dict[str, str | None]:
+    if not analytics:
+        return {"reading": None, "listening": None, "writing": None, "speaking": None, "overall": None}
+    levels = {
+        "reading": analytics.reading_level.value if analytics.reading_level else None,
+        "listening": analytics.listening_level.value if analytics.listening_level else None,
+        "writing": analytics.writing_level.value if analytics.writing_level else None,
+        "speaking": analytics.speaking_level.value if analytics.speaking_level else None,
+    }
+    overall = bottleneck_level(levels)
+    levels["overall"] = overall.value if overall else None
+    return levels
 
 
 async def build_language_hub(db: AsyncSession, *, student_id: int) -> dict:
@@ -82,7 +91,7 @@ async def build_language_hub(db: AsyncSession, *, student_id: int) -> dict:
         items_completed = int(row[1] or 0)
 
     return {
-        "levels": await _levels_dict(db, student_id=student_id, language_id=language.id),
+        "levels": _levels_dict(analytics),
         "skill_growth": {
             "reading": growth.get("reading"),
             "listening": growth.get("listening"),
@@ -146,7 +155,7 @@ async def build_language_progress(db: AsyncSession, *, student_id: int) -> dict:
             }
         )
 
-    levels = await _levels_dict(db, student_id=student_id, language_id=language.id)
+    levels = _levels_dict(analytics)
     return {
         "overall_level": levels.get("overall"),
         "reading_level": levels.get("reading"),

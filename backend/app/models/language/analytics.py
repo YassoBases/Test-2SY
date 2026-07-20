@@ -42,7 +42,4 @@ class LanguageAnalytics(Base):
     weekly_minutes_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     skill_growth_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     statistics_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    xp_keys_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    xp_total: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    level_xp: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

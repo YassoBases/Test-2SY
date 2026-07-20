@@ -8,19 +8,19 @@
     @update:model-value="onTab"
   >
     <v-tab value="hub" :to="ROUTES.STUDENT_LANGUAGES">Home</v-tab>
-    <v-tab value="reading" :to="ROUTES.STUDENT_LANGUAGES_READING">📖 Reading</v-tab>
-    <v-tab value="listening" :to="ROUTES.STUDENT_LANGUAGES_LISTENING">🎧 Listen</v-tab>
-    <v-tab value="vocabulary" :to="ROUTES.STUDENT_LANGUAGES_VOCABULARY">📚 Vocabulary</v-tab>
-    <v-tab value="dictionary" :to="ROUTES.STUDENT_LANGUAGES_DICTIONARY">📖 Dictionary</v-tab>
-    <v-tab value="writing" :to="ROUTES.STUDENT_LANGUAGES_WRITING">✍️ Writing</v-tab>
-    <v-tab value="speaking" :to="ROUTES.STUDENT_LANGUAGES_SPEAKING">🎤 Speaking</v-tab>
-    <v-tab value="curriculum" :to="ROUTES.STUDENT_LANGUAGES_CURRICULUM">🗺️ Curriculum</v-tab>
-    <v-tab value="lessons" :to="ROUTES.STUDENT_LANGUAGES_LESSONS">📘 Lessons</v-tab>
-    <v-tab value="progress" :to="ROUTES.STUDENT_LANGUAGES_PROGRESS">📊 Progress</v-tab>
-    <v-tab value="insights" :to="ROUTES.STUDENT_LANGUAGES_INSIGHTS">🧠 AI Insights</v-tab>
-    <v-tab value="history" :to="ROUTES.STUDENT_LANGUAGES_HISTORY">🕓 History</v-tab>
-    <v-tab value="exam" :to="ROUTES.STUDENT_LANGUAGES_EXAM">🎓 AI Exam</v-tab>
-    <v-tab value="certificates" :to="ROUTES.STUDENT_LANGUAGES_CERTIFICATES">🏅 Certificates</v-tab>
+    <v-tab value="reading" :to="ROUTES.STUDENT_LANGUAGES_READING">Reading</v-tab>
+    <v-tab value="listening" :to="ROUTES.STUDENT_LANGUAGES_LISTENING">Listen</v-tab>
+    <v-tab value="vocabulary" :to="ROUTES.STUDENT_LANGUAGES_VOCABULARY">Vocabulary</v-tab>
+    <v-tab value="dictionary" :to="ROUTES.STUDENT_LANGUAGES_DICTIONARY">Dictionary</v-tab>
+    <v-tab value="writing" :to="ROUTES.STUDENT_LANGUAGES_WRITING">Writing</v-tab>
+    <v-tab value="speaking" :to="ROUTES.STUDENT_LANGUAGES_SPEAKING">Speaking</v-tab>
+    <v-tab value="curriculum" :to="ROUTES.STUDENT_LANGUAGES_CURRICULUM">Curriculum</v-tab>
+    <v-tab value="lessons" :to="ROUTES.STUDENT_LANGUAGES_LESSONS">Lessons</v-tab>
+    <v-tab value="progress" :to="ROUTES.STUDENT_LANGUAGES_PROGRESS">Progress</v-tab>
+    <v-tab value="insights" :to="ROUTES.STUDENT_LANGUAGES_INSIGHTS">AI Insights</v-tab>
+    <v-tab value="history" :to="ROUTES.STUDENT_LANGUAGES_HISTORY">History</v-tab>
+    <v-tab value="exam" :to="ROUTES.STUDENT_LANGUAGES_EXAM">AI Exam</v-tab>
+    <v-tab value="certificates" :to="ROUTES.STUDENT_LANGUAGES_CERTIFICATES">Certificates</v-tab>
   </v-tabs>
 </template>
 
@@ -36,7 +36,7 @@ const { access } = useLanguageAccess()
 // Per-feature neon accent (R,G,B). Drives the whole Neon Glass theme.
 const NEON = {
   hub: '34, 211, 238',
-  reading: '34, 211, 238',
+  reading: '96, 165, 250',
   listening: '167, 139, 250',
   vocabulary: '52, 211, 153',
   dictionary: '52, 211, 153',

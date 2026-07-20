@@ -11,10 +11,12 @@
         class="role-path welcome-enter welcome-enter--role"
         :class="{
           'role-path--active': selectedRole === role.key,
+          'role-path--navigating': navigating && selectedRole === role.key,
+          'role-path--dimmed': navigating && selectedRole !== role.key,
           [`role-path--${role.key}`]: true,
         }"
         :style="{ animationDelay: `${1020 + i * 120}ms` }"
-        :aria-pressed="selectedRole === role.key"
+        :disabled="navigating"
         @click="$emit('select', role.key)"
       >
         <span v-if="selectedRole === role.key" class="role-path__check" aria-hidden="true">
@@ -39,6 +41,7 @@ defineProps({
   centered: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
   selectedRole: { type: String, default: null },
+  navigating: { type: Boolean, default: false },
 })
 
 defineEmits(['select'])

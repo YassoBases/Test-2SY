@@ -21,9 +21,11 @@ import time
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.language.analytics import LanguageAnalytics
 from app.models.language.enums import LanguageLevel
 from app.services.ai_service import generate_llm_json
 from app.services.claude_service import is_claude_configured
+from app.services.language_level_utils import bottleneck_level
 from app.services.language_subscription_service import get_default_language
 
 logger = logging.getLogger(__name__)
@@ -756,11 +758,18 @@ async def get_level_lessons(level: str) -> list[dict]:
 
 async def _current_level(db: AsyncSession, *, student_id: int, language_id: int) -> str:
     """Resolve the student's working level — same approach as the curriculum service."""
-    from app.services.language_progression_service import select_overall_level_str
-
-    return await select_overall_level_str(
-        db, student_id=student_id, language_id=language_id, default=LanguageLevel.A1
-    )
+    analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+    level: LanguageLevel | None = None
+    if analytics:
+        level = analytics.overall_level_internal or bottleneck_level(
+            {
+                "reading": analytics.reading_level.value if analytics.reading_level else None,
+                "listening": analytics.listening_level.value if analytics.listening_level else None,
+                "writing": analytics.writing_level.value if analytics.writing_level else None,
+                "speaking": analytics.speaking_level.value if analytics.speaking_level else None,
+            }
+        )
+    return level.value if level else "A1"
 
 
 async def list_lessons(db: AsyncSession, *, student_id: int) -> dict:

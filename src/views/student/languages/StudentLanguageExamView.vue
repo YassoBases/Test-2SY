@@ -4,7 +4,7 @@
       eyebrow="Learn languages"
       eyebrow-icon="mdi-clipboard-text-clock"
       title="AI Placement Exam"
-      subtitle="Speaking, listening, reading, grammar/vocab and writing — then a full level report"
+      subtitle="Speaking, listening, reading and writing — then a full level report"
     />
     <LanguageModuleTabs />
 
@@ -13,9 +13,9 @@
     <!-- INTRO -->
     <v-card v-if="view === 'intro'" class="glass-card pa-6 exam-intro text-center" variant="flat">
       <v-icon size="52" color="secondary" class="mb-2">mdi-medal-outline</v-icon>
-      <h3 class="text-h6 font-weight-bold mb-1">Full level test — skills plus language systems</h3>
+      <h3 class="text-h6 font-weight-bold mb-1">Full level test — every core skill</h3>
       <p class="text-body-2 text-medium-emphasis mb-4">
-        ~10 minutes. You'll speak, listen, read, answer grammar/vocab checks and write. Each skill is graded separately, then
+        ~10 minutes. You'll speak, listen, read and write. Each skill is graded separately, then
         we map you to a CEFR level and unlock your learning path.
       </p>
       <v-row dense class="mb-2 text-start">
@@ -28,10 +28,23 @@
         </v-col>
       </v-row>
       <p class="text-caption text-medium-emphasis mb-0">
-        Ends with a short guided spoken interview that pinpoints your exact level.
+        Includes a short speaking task, then a full CEFR level report.
       </p>
-      <v-btn color="secondary" variant="flat" size="large" :loading="busy" prepend-icon="mdi-play" class="mt-3" @click="start">
+      <v-btn color="secondary" variant="flat" size="large" :loading="busy" :disabled="rateLimitBlocked" prepend-icon="mdi-play" class="mt-3" @click="start">
         Start the exam
+      </v-btn>
+      <v-btn
+        v-if="evaluationFailed && sessionId"
+        color="warning"
+        variant="tonal"
+        size="large"
+        :loading="busy"
+        :disabled="rateLimitBlocked"
+        prepend-icon="mdi-refresh"
+        class="mt-3 ml-2"
+        @click="retryEvaluation"
+      >
+        Retry report evaluation
       </v-btn>
     </v-card>
 
@@ -46,8 +59,11 @@
               :key="sec"
               size="small"
               :color="i === state.section_index ? 'secondary' : undefined"
-              :variant="i < state.section_index ? 'flat' : i === state.section_index ? 'flat' : 'tonal'"
-              :prepend-icon="i < state.section_index ? 'mdi-check' : skillIcon(sec)"
+              :variant="isSectionDone(sec) ? 'flat' : i === state.section_index ? 'flat' : 'tonal'"
+              :prepend-icon="isSectionDone(sec) ? 'mdi-check' : skillIcon(sec)"
+              :disabled="busy"
+              class="section-tab-chip"
+              @click="jumpToSection(sec)"
             >
               {{ skillLabel(sec) }}
             </v-chip>
@@ -58,13 +74,14 @@
             variant="tonal"
             prepend-icon="mdi-restart"
             :loading="busy"
+            :disabled="rateLimitBlocked"
             @click="startFresh"
           >
             Start fresh
           </v-btn>
         </div>
         <v-progress-linear
-          :model-value="(100 * state.section_index) / state.section_total"
+          :model-value="(100 * (state.completed_sections || []).length) / state.section_total"
           color="secondary" height="6" rounded class="mt-2"
         />
       </v-card>
@@ -102,21 +119,21 @@
           </div>
         </div>
 
-        <div class="recorder-box pa-4 text-center">
+        <div class="recorder-box pa-3 text-center">
           <v-btn
             :color="recorder.recording.value ? 'error' : 'secondary'"
             :variant="recorder.recording.value ? 'flat' : 'tonal'"
+            :loading="preparingSpeech"
             size="large" :icon="recorder.recording.value ? 'mdi-stop' : 'mdi-microphone'"
-            :disabled="busy || transcribing" @click="recorder.toggleRecording()"
+            :disabled="busy || preparingSpeech" @click="handleSpeakingRecordToggle"
           />
-          <div class="text-caption text-medium-emphasis mt-2">
-            <span v-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
-            <span v-else-if="transcribing">Turning your speech into text…</span>
-            <span v-else-if="spokenText">Transcript ready ✓ — review it, then submit</span>
-            <span v-else-if="recorder.audioBlob.value">Audio ready — waiting for transcript…</span>
+          <div class="text-caption text-medium-emphasis mt-1">
+            <span v-if="preparingSpeech">Preparing live transcript…</span>
+            <span v-else-if="recorder.recording.value">Recording… {{ recorder.formattedTime.value }} — tap to stop</span>
+            <span v-else-if="recorder.audioBlob.value">Audio ready — submit once for secure transcription</span>
             <span v-else>Tap to record your spoken answer</span>
           </div>
-          <div class="text-caption text-medium-emphasis mt-3">— or —</div>
+          <div class="text-caption text-medium-emphasis mt-2">— or —</div>
           <v-file-input
             v-model="uploadFile"
             accept="audio/*"
@@ -126,29 +143,36 @@
             prepend-icon="mdi-upload"
             label="Upload an audio file"
             class="mt-2 upload-input"
-            :disabled="busy || transcribing || recorder.recording.value"
+            :disabled="busy || preparingSpeech || recorder.recording.value"
             @update:model-value="onUpload"
           />
         </div>
 
-        <v-textarea
-          v-if="recorder.audioBlob.value || transcribing || spokenText"
-          v-model="spokenText"
-          class="mt-3"
-          variant="outlined"
-          rows="3"
-          dir="ltr"
-          label="Your answer (transcribed automatically)"
-          placeholder="Your spoken answer will appear here…"
-          :loading="transcribing"
-          readonly
-          hide-details="auto"
-        />
+        <!-- Transcript preview: display-only, English-hinted, LTR-forced (this exam is
+             English-only even though the app defaults to an Arabic/RTL UI). Always visible in
+             a stable location below the recorder box (never nested inside it, never appearing
+             suddenly) for the current speaking question -- shows a neutral placeholder until
+             real text arrives, then the live transcript as deltas come in. Stays visible after
+             recording stops so the student can review it before Submit; cleared on a fresh/
+             re-recorded take, a new question or successful submit (applyState), or moving on
+             (restart/startFresh/unmount). Styled as a draft-answer card: same rounded/colored
+             family as the submitted-answer chat bubble below, but dashed and muted to read as
+             "not yet submitted" rather than final. -->
+        <div class="live-caption-box mt-3" dir="ltr">
+          <div class="live-caption-label text-caption text-medium-emphasis d-flex align-center mb-1">
+            <v-icon icon="mdi-closed-caption-outline" size="14" class="mr-1" />
+            Transcript preview
+          </div>
+          <div class="live-caption-text">
+            <span v-if="liveCaption.transcript.value">{{ liveCaption.transcript.value }}</span>
+            <span v-else class="live-caption-placeholder text-medium-emphasis">Your spoken answer will appear here while you record.</span>
+          </div>
+        </div>
 
         <div class="d-flex justify-end mt-3">
           <v-btn
             color="secondary" variant="flat" :loading="busy"
-            :disabled="!recorder.audioBlob.value || !spokenText || recorder.recording.value || transcribing"
+            :disabled="busy || preparingSpeech || !recorder.audioBlob.value || recorder.recording.value || rateLimitBlocked"
             prepend-icon="mdi-send" @click="sendSpeaking"
           >
             Submit answer
@@ -178,22 +202,6 @@
               <template v-else>Replays remaining: {{ listensLeft }}</template>
             </div>
           </template>
-          <template v-else-if="canListeningFallback">
-            <v-btn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-play"
-              class="mb-2"
-              :disabled="listenCount >= MAX_LISTENS"
-              @click="playListeningText"
-            >
-              Play clip
-            </v-btn>
-            <div class="text-caption mb-3" :class="listensLeft ? 'text-medium-emphasis' : 'text-warning'">
-              <template v-if="listenCount === 0">Press play to listen (max {{ MAX_LISTENS }} times)</template>
-              <template v-else>Replays remaining: {{ listensLeft }}</template>
-            </div>
-          </template>
           <v-alert v-else type="warning" variant="tonal" density="compact" class="mb-3">
             Audio playback is unavailable for this clip.
           </v-alert>
@@ -203,20 +211,73 @@
         </template>
         <p v-else class="text-body-2 text-medium-emphasis mb-3" dir="ltr">{{ state.mcq.instructions }}</p>
 
-        <!-- Listening questions are hidden only when there is something playable to listen to. -->
+        <!-- Listening questions remain hidden until a real audio playback begins. -->
         <template v-if="showMcqQuestion">
-          <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
-          <v-radio-group v-model="choice" hide-details class="mb-3">
+          <p v-if="state.mcq.question" class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ state.mcq.question }}</p>
+
+          <template v-if="isMcqBundle">
+            <div v-for="(sq, sIdx) in state.mcq.subquestions" :key="sIdx" class="mcq-bundle-block mb-4">
+              <p class="text-body-1 font-weight-medium mb-2" dir="ltr">{{ sIdx + 1 }}. {{ sq.question }}</p>
+              <v-radio-group v-model="bundleChoices[sIdx]" hide-details class="mb-0">
+                <v-radio v-for="(opt, i) in sq.options" :key="i" :value="i" :label="opt" dir="ltr" />
+              </v-radio-group>
+            </div>
+          </template>
+
+          <template v-else-if="isGapFillBundle">
+            <p class="text-caption text-medium-emphasis mb-2">Complete the notes below.</p>
+            <p class="note-completion-box pa-3 mb-3" dir="ltr">
+              <template v-for="(part, pIdx) in noteTemplateParts" :key="pIdx">
+                <span v-if="part.type === 'text'">{{ part.value }}</span>
+                <input
+                  v-else
+                  v-model="bundleAnswers[part.index]"
+                  type="text"
+                  class="note-blank-input"
+                  :aria-label="`Blank ${part.index + 1}`"
+                >
+              </template>
+            </p>
+          </template>
+
+          <template v-else-if="isGapFillQuestion">
+            <div v-if="wordBankOptions.length" class="d-flex flex-wrap gap-2 mb-2">
+              <v-chip v-for="(w, i) in wordBankOptions" :key="i" size="small" variant="tonal" color="secondary">{{ w }}</v-chip>
+            </div>
+            <v-text-field
+              v-model="gapFillAnswer"
+              variant="outlined"
+              dir="ltr"
+              hide-details
+              class="mb-3"
+              placeholder="Type your answer…"
+            />
+          </template>
+          <v-radio-group v-else v-model="choice" hide-details class="mb-3">
             <v-radio v-for="(opt, i) in state.mcq.options" :key="i" :value="i" :label="opt" dir="ltr" />
           </v-radio-group>
 
+          <p v-if="!canSubmitMcq && isMcqBundle" class="text-caption text-warning mb-2">Answer all 3 questions to continue.</p>
+          <p v-else-if="!canSubmitMcq && isGapFillBundle" class="text-caption text-warning mb-2">Fill in all blanks to continue.</p>
+
           <div class="d-flex justify-end">
-            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="choice === null" prepend-icon="mdi-arrow-right" @click="sendMcq">
+            <v-btn color="secondary" variant="flat" :loading="busy" :disabled="!canSubmitMcq || rateLimitBlocked" prepend-icon="mdi-arrow-right" @click="sendMcq">
               Next
             </v-btn>
           </div>
         </template>
         <p v-else-if="listeningRequiresPlayback" class="text-caption text-medium-emphasis mb-0">Listen first — the question appears after you play the clip.</p>
+      </v-card>
+
+      <v-card v-else-if="state.phase === 'content_unavailable'" class="glass-card pa-8 text-center" variant="flat">
+        <v-icon icon="mdi-cloud-alert" color="warning" size="42" class="mb-3" />
+        <h3 class="text-subtitle-1 font-weight-bold mb-1">This section is temporarily unavailable</h3>
+        <p class="text-caption text-medium-emphasis mb-3">
+          This is a technical content problem, not a missing answer. Your completed work is preserved.
+        </p>
+        <v-btn color="warning" variant="tonal" prepend-icon="mdi-refresh" :loading="busy" :disabled="rateLimitBlocked" @click="retryContent">
+          Retry section preparation
+        </v-btn>
       </v-card>
 
       <!-- WRITING -->
@@ -237,7 +298,7 @@
           <span class="text-caption" :class="wordCount >= state.writing.min_words ? 'text-success' : 'text-medium-emphasis'">
             {{ wordCount }} words (min {{ state.writing.min_words }})
           </span>
-          <v-btn color="secondary" variant="flat" :loading="busy" :disabled="wordCount < state.writing.min_words" prepend-icon="mdi-check" @click="sendWriting">
+          <v-btn color="secondary" variant="flat" :loading="busy" :disabled="wordCount < state.writing.min_words || rateLimitBlocked" prepend-icon="mdi-check" @click="sendWriting">
             Finish exam
           </v-btn>
         </div>
@@ -302,11 +363,11 @@
         </v-col>
       </v-row>
 
-      <!-- speaking breakdown (IELTS 4 criteria) -->
+      <!-- speaking breakdown (transcript-assessable criteria) -->
       <section v-if="speakingCriteria.length" class="section-block">
         <div class="section-block__head">
           <h3 class="section-block__title">Speaking breakdown</h3>
-          <p class="section-block__subtitle mb-0">The four IELTS speaking criteria</p>
+          <p class="section-block__subtitle mb-0">Transcript-based criteria; pronunciation is unassessed</p>
         </div>
         <v-card class="glass-card pa-3" variant="flat">
           <div v-for="c in speakingCriteria" :key="c.key" class="mb-2">
@@ -408,20 +469,22 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import LanguageCorrectionList from '../../../components/language/LanguageCorrectionList.vue'
 import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
+import { useLiveTranscriptionPreview } from '../../../composables/useLiveTranscriptionPreview.js'
 import {
   initiateExam,
   fetchExamState,
-  transcribeExamSpeaking,
   submitSpeakingTurn,
+  createSpeakingLiveTranscriptionSession,
   answerExamMcq,
   submitExamWriting,
   fetchExamReport,
+  retryExamEvaluation,
   abandonExam,
 } from '../../../api/language.js'
 import { getErrorMessage } from '../../../api/client.js'
@@ -437,22 +500,27 @@ const SECTION_META = {
   interview: { label: 'Interview', icon: 'mdi-account-voice', hint: 'Guided follow-up' },
 }
 // Core skills shown on the intro screen (the interview is a Phase-2 deep-dive).
-const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'grammar_vocab', 'writing']
+// "grammar_vocab" is dropped from the active exam (product decision) but SECTION_META/isMcqPhase/
+// skillRows below keep it so any already-persisted session or historical report still renders.
+const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'writing']
 const CONSISTENCY_LABEL = {
   consistent: 'Spoken and written performance matched — high-confidence result',
   speaking_stronger: 'You performed noticeably stronger speaking than in writing',
   writing_stronger: 'You performed noticeably stronger in writing than speaking',
-  live_phase_unavailable: 'Based on the written phase only (spoken interview was skipped)',
+  live_phase_unavailable: 'Based on the written phase only',
 }
 
 const view = ref('intro') // intro | exam | evaluating | report | loading
 const loadError = ref('')
 const busy = ref(false)
+const rateLimitBlocked = ref(false)
 
 const sessionId = ref(null)
 const state = ref(null)
 const lastFeedback = ref(null)
 const report = ref(null)
+const evaluationFailed = ref(false)
+const submissionRequestId = ref('')
 
 const examCorrections = computed(() =>
   (report.value?.detected_errors || []).map((e) => ({
@@ -464,26 +532,80 @@ const examCorrections = computed(() =>
 )
 
 const recorder = useVoiceRecorder({ minSeconds: 1 })
+// Speaking's live transcript preview (UX only -- see useLiveTranscriptionPreview.js). Never sent
+// for grading; the official transcript remains whatever the backend returns after Submit.
+const liveCaption = useLiveTranscriptionPreview()
+// True only during the brief window between tapping the mic and the actual recording starting,
+// while we give the live-caption channel a bounded chance to become ready first (see
+// handleSpeakingRecordToggle) -- never blocks the exam past this timeout.
+const preparingSpeech = ref(false)
+const LIVE_CAPTION_READY_TIMEOUT_MS = 3000
 const uploadFile = ref(null)
-const spokenText = ref('')
-const transcribing = ref(false)
-let transcriptionRequest = 0
 const choice = ref(null)
 const writingText = ref('')
+// Gap Fill Listening answer (question_type === 'gap_fill'). Separate from `choice` since the two
+// question types are mutually exclusive per item -- never both populated at once.
+const gapFillAnswer = ref('')
+const isGapFillQuestion = computed(() => (state.value?.mcq?.question_type || 'mcq') === 'gap_fill')
+// Display-only (A1/A2 Gap Fill rows always have one, B1+ optional). Never shown for MCQ.
+const wordBankOptions = computed(() => {
+  const wb = state.value?.mcq?.word_bank
+  return Array.isArray(wb) ? wb : []
+})
+
+// Listening bundles (Phase 6): one audio, several sub-answers submitted together.
+// bundleChoices[i]/bundleAnswers[i] holds the answer for subquestion/blank i -- resized in
+// applyState() whenever a new item loads. Legacy (non-bundle) items never populate these.
+const bundleChoices = ref([])
+const bundleAnswers = ref([])
+const isMcqBundle = computed(() => Array.isArray(state.value?.mcq?.subquestions) && state.value.mcq.subquestions.length > 0)
+const isGapFillBundle = computed(() => (
+  !!state.value?.mcq?.note_template && Number.isInteger(state.value?.mcq?.blank_count) && state.value.mcq.blank_count > 0
+))
+// Splits note_template on {{1}}/{{2}}/{{3}} into an ordered list of text/blank segments so the
+// template can render inline inputs interleaved with the surrounding note text.
+const noteTemplateParts = computed(() => {
+  const tpl = state.value?.mcq?.note_template || ''
+  const parts = []
+  let lastIndex = 0
+  const re = /\{\{(\d+)\}\}/g
+  let match
+  while ((match = re.exec(tpl))) {
+    if (match.index > lastIndex) parts.push({ type: 'text', value: tpl.slice(lastIndex, match.index) })
+    parts.push({ type: 'blank', index: Number(match[1]) - 1 })
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < tpl.length) parts.push({ type: 'text', value: tpl.slice(lastIndex) })
+  return parts
+})
+
+const canSubmitMcq = computed(() => {
+  if (isMcqBundle.value) {
+    return bundleChoices.value.length === state.value.mcq.subquestions.length
+      && bundleChoices.value.every((c) => c !== null && c !== undefined)
+  }
+  if (isGapFillBundle.value) {
+    return bundleAnswers.value.length === state.value.mcq.blank_count
+      && bundleAnswers.value.every((a) => (a || '').trim().length > 0)
+  }
+  return isGapFillQuestion.value ? gapFillAnswer.value.trim().length > 0 : choice.value !== null
+})
+
+function ensureSubmissionRequestId() {
+  if (!submissionRequestId.value) {
+    submissionRequestId.value = globalThis.crypto?.randomUUID?.()
+      || `placement-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
+  return submissionRequestId.value
+}
 
 // Listening integrity: questions hidden until first listen; max 2 replays.
 const MAX_LISTENS = 2
 const listenCount = ref(0)
 const audioFailed = ref(false)
-const canUseSpeech = computed(() =>
-  typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
-)
-const hasListeningAudio = computed(() => Boolean(state.value?.mcq?.audio_url) && !audioFailed.value)
-const canListeningFallback = computed(() => Boolean(state.value?.mcq?.audio_text) && canUseSpeech.value)
 const listeningRequiresPlayback = computed(() =>
   state.value?.phase === 'listening'
   && listenCount.value === 0
-  && (hasListeningAudio.value || canListeningFallback.value),
 )
 const showMcqQuestion = computed(() => state.value?.phase !== 'listening' || !listeningRequiresPlayback.value)
 let prepAttempts = 0
@@ -503,6 +625,11 @@ const loaderMsg = ref(LOADER_MESSAGES[0])
 let loaderTimer = null
 let pollTimer = null
 let prepTimer = null
+let pollRunId = 0
+let rateLimitTimer = null
+// Bumped by every fresh-session action (start/startFresh/restart) so an in-flight speaking
+// submission from a now-abandoned session can recognize itself as obsolete when it settles.
+let examGeneration = 0
 
 const isSpeakingPhase = computed(() => state.value?.phase === 'speaking' || state.value?.phase === 'interview')
 const isMcqPhase = computed(() => ['listening', 'reading', 'grammar_vocab'].includes(state.value?.phase))
@@ -527,6 +654,12 @@ function skillLabel(k) {
 }
 function skillIcon(k) {
   return SECTION_META[k]?.icon || 'mdi-circle-small'
+}
+// Free section navigation: a section's own completion no longer implies every earlier tab is
+// also done, so each tab's checkmark reads its own status from the backend instead of assuming
+// "index < current index" (state.completed_sections) rather than the tab's index.
+function isSectionDone(sec) {
+  return (state.value?.completed_sections || []).includes(sec)
 }
 function audioSrc(url) {
   return mediaUrl(url)
@@ -576,12 +709,15 @@ const writingCriteria = computed(() => {
 const speakingCriteria = computed(() => {
   const b = report.value?.speaking_breakdown
   if (!b || !Object.keys(b).length) return []
-  return [
+  const criteria = [
     { key: 'fluency', label: 'Fluency & coherence', value: b.fluency || 0 },
     { key: 'lexical', label: 'Lexical resource', value: b.lexical || 0 },
     { key: 'grammar', label: 'Grammar', value: b.grammar || 0 },
-    { key: 'pronunciation', label: 'Pronunciation', value: b.pronunciation || 0 },
   ]
+  if (Object.prototype.hasOwnProperty.call(b, 'pronunciation')) {
+    criteria.push({ key: 'pronunciation', label: 'Pronunciation', value: b.pronunciation || 0 })
+  }
+  return criteria
 })
 
 function barColor(pct) {
@@ -600,27 +736,6 @@ function onListenPlay() {
   listenCount.value += 1
 }
 
-watch(recorder.audioBlob, async (blob) => {
-  const requestId = ++transcriptionRequest
-  spokenText.value = ''
-  if (!blob || !sessionId.value || !isSpeakingPhase.value) {
-    transcribing.value = false
-    return
-  }
-
-  transcribing.value = true
-  loadError.value = ''
-  try {
-    const result = await transcribeExamSpeaking(sessionId.value, blob)
-    if (requestId === transcriptionRequest) spokenText.value = (result.transcription || '').trim()
-  } catch (e) {
-    if (requestId === transcriptionRequest) {
-      loadError.value = getErrorMessage(e, 'Could not understand the audio. Please record again.')
-    }
-  } finally {
-    if (requestId === transcriptionRequest) transcribing.value = false
-  }
-})
 const listensLeft = computed(() => Math.max(0, MAX_LISTENS - listenCount.value))
 
 function onAudioUnavailable() {
@@ -634,29 +749,24 @@ function onAudioMetadata(event) {
   }
 }
 
-function stopListeningText() {
-  if (canUseSpeech.value) window.speechSynthesis.cancel()
-}
-
-function playListeningText() {
-  const text = (state.value?.mcq?.audio_text || '').trim()
-  if (!text || !canUseSpeech.value || listenCount.value >= MAX_LISTENS) return
-  stopListeningText()
-  const utterance = new window.SpeechSynthesisUtterance(text)
-  utterance.lang = 'en-US'
-  utterance.rate = 0.92
-  window.speechSynthesis.speak(utterance)
-  onListenPlay()
-}
-
 function applyState(data) {
   if (prepTimer) { clearTimeout(prepTimer); prepTimer = null }
-  stopListeningText()
   state.value = data
+  submissionRequestId.value = ''
+  // A freshly-applied, current state supersedes any earlier error (e.g. a stale-answer recovery
+  // or a prior failed attempt) -- never leave an old banner showing next to a now-current question.
+  loadError.value = ''
   if (data.last_feedback) lastFeedback.value = data.last_feedback
   // reset per-section inputs
   choice.value = null
+  gapFillAnswer.value = ''
+  bundleChoices.value = Array.isArray(data?.mcq?.subquestions) ? new Array(data.mcq.subquestions.length).fill(null) : []
+  bundleAnswers.value = Number.isInteger(data?.mcq?.blank_count) ? new Array(data.mcq.blank_count).fill('') : []
   recorder.reset()
+  // Every freshly-applied state is a new question/section (or a recovery back to the current
+  // one) -- any live caption connection/text from before must not carry over.
+  liveCaption.stop()
+  liveCaption.reset()
   uploadFile.value = null
   listenCount.value = 0
   audioFailed.value = false
@@ -669,29 +779,84 @@ function applyState(data) {
     view.value = 'exam'
     if (data.phase === 'preparing') schedulePrepPoll()
     // Append the examiner's current question to the spoken chat log.
-    if (isSpeakingPhase.value) pushExaminer(data.speaking?.examiner_message)
+    if (isSpeakingPhase.value) {
+      pushExaminer(data.speaking?.examiner_message)
+      // Prewarm live captions as soon as this question renders, rather than waiting for the
+      // student to tap the mic -- the WebRTC/Realtime handshake takes noticeably longer than
+      // starting the actual recording, so giving it a head start while the student is still
+      // reading the question is what makes the first spoken words land in the preview reliably.
+      // Cheap/idempotent if a prior attempt for this question is already active or unavailable.
+      liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value))
+    }
   }
 }
 
-function schedulePrepPoll() {
+function retryAfterMs(error, fallbackMs) {
+  const headers = error?.response?.headers
+  const raw = headers?.['retry-after'] ?? headers?.get?.('retry-after')
+  if (raw == null || raw === '') return fallbackMs
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(5 * 60 * 1000, Math.max(1000, Math.ceil(seconds * 1000)))
+  }
+  const retryAt = Date.parse(raw)
+  if (Number.isFinite(retryAt)) {
+    return Math.min(5 * 60 * 1000, Math.max(1000, retryAt - Date.now()))
+  }
+  return fallbackMs
+}
+
+function handleRequestError(error, fallbackMessage) {
+  if (error?.response?.status !== 429) {
+    loadError.value = getErrorMessage(error, fallbackMessage)
+    return
+  }
+  const delayMs = retryAfterMs(error, 30_000)
+  const seconds = Math.max(1, Math.ceil(delayMs / 1000))
+  rateLimitBlocked.value = true
+  if (rateLimitTimer) clearTimeout(rateLimitTimer)
+  rateLimitTimer = setTimeout(() => {
+    rateLimitTimer = null
+    rateLimitBlocked.value = false
+  }, delayMs)
+  loadError.value = `Too many requests. Please retry in ${seconds} seconds.`
+}
+
+async function recoverStaleState(error) {
+  const detail = error?.response?.data?.detail
+  if (detail?.code !== 'stale_exam_state' || !sessionId.value) return false
+  try {
+    // Silent recovery: the UI now shows the true current question, so no scary banner is shown
+    // for a stale answer once we've successfully resynced -- applyState() clears any leftover
+    // loadError from the request that just got rejected. Only a genuine recovery failure (below)
+    // or a non-stale error (handled by the caller) should ever surface a visible message.
+    applyState(await fetchExamState(sessionId.value))
+  } catch (refreshError) {
+    handleRequestError(refreshError, 'The exam state changed and could not be refreshed')
+  }
+  return true
+}
+
+function schedulePrepPoll(delayMs = 2500) {
   prepAttempts += 1
   if (prepAttempts > 30) {
-    // ~75s with no content -> background generation likely failed; let the student start over.
-    loadError.value = 'Preparing your exam is taking too long. Please start over.'
-    view.value = 'intro'
+    loadError.value = 'Required exam content is temporarily unavailable. Your answers were preserved.'
+    state.value = { ...state.value, phase: 'content_unavailable', evidence_status: 'content_unavailable' }
     return
   }
   prepTimer = setTimeout(async () => {
+    prepTimer = null
     try {
       applyState(await fetchExamState(sessionId.value))
-    } catch {
-      schedulePrepPoll()
+    } catch (e) {
+      schedulePrepPoll(retryAfterMs(e, 2500))
     }
-  }, 2500)
+  }, delayMs)
 }
 
 async function start() {
-  if (busy.value) return
+  if (busy.value || rateLimitBlocked.value) return
+  examGeneration += 1
   busy.value = true
   loadError.value = ''
   try {
@@ -701,14 +866,51 @@ async function start() {
     speakingChat.value = []
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not start the exam')
+    handleRequestError(e, 'Could not start the exam')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function retryContent() {
+  if (!sessionId.value || busy.value || rateLimitBlocked.value) return
+  busy.value = true
+  loadError.value = ''
+  // An explicit retry always gets a fresh auto-poll budget. Without this, once prepAttempts had
+  // already passed 30 from an earlier wait, applyState's "phase === 'preparing' -> schedulePrepPoll()"
+  // path would immediately re-exceed the cap on the very next tick and show "temporarily
+  // unavailable" again even though the server had genuinely just started a new attempt.
+  prepAttempts = 0
+  try {
+    applyState(await fetchExamState(sessionId.value))
+  } catch (e) {
+    handleRequestError(e, 'Could not retry section preparation')
+  } finally {
+    busy.value = false
+  }
+}
+
+// Free section navigation: clicking any section tab jumps straight there, without requiring
+// earlier sections to be completed first. Purely a read (GET .../state?section=X) -- never
+// resets the exam, never touches any section's saved answers/progress; applyState() below just
+// swaps which section's already-existing content is being displayed.
+async function jumpToSection(sectionName) {
+  if (!sectionName || busy.value || rateLimitBlocked.value) return
+  if (sectionName === state.value?.phase) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    applyState(await fetchExamState(sessionId.value, sectionName))
+  } catch (e) {
+    handleRequestError(e, 'Could not switch to that section')
   } finally {
     busy.value = false
   }
 }
 
 async function startFresh() {
-  if (busy.value) return
+  if (busy.value || rateLimitBlocked.value) return
+  examGeneration += 1
   busy.value = true
   loadError.value = ''
   try {
@@ -727,67 +929,209 @@ async function startFresh() {
     audioFailed.value = false
     uploadFile.value = null
     recorder.reset()
+    liveCaption.stop()
+    liveCaption.reset()
     prepAttempts = 0
     busy.value = false
   }
   await start()
 }
 
+async function handleSpeakingRecordToggle() {
+  if (recorder.recording.value) {
+    // Stop the live connection, but deliberately keep the accumulated transcript visible so
+    // the student can still review it before deciding to Submit. It's cleared by a re-recorded
+    // take (see below), a successful submit (applyState), or moving on
+    // (restart/startFresh/unmount).
+    recorder.toggleRecording()
+    liveCaption.stop()
+    return
+  }
+  if (liveCaption.unavailable.value) {
+    // Prewarming this question (see applyState) already determined captions aren't available --
+    // retrying now would very likely fail the same way, so skip straight to recording with no
+    // added wait rather than making the student wait for a retry that probably won't help.
+    recorder.toggleRecording()
+    return
+  }
+  if (recorder.audioBlob.value) {
+    // Re-recording (a previous take of this same question exists): clear that take's transcript
+    // before starting fresh. On the VERY FIRST recording attempt for a question, deliberately do
+    // NOT reset here -- applyState() already gave the preview a clean slate when the question
+    // rendered, and prewarming may have been capturing (and correctly transcribing) speech since
+    // then; resetting on every tap was wiping that already-accumulated text the instant the mic
+    // was pressed, which is what made the first spoken words disappear from the preview.
+    liveCaption.reset()
+  }
+  if (!liveCaption.active.value) {
+    // Not ready yet -- either the prewarm attempt from when this question rendered is still in
+    // flight, or this is a fresh/re-recorded take that needs its own connection. Give it a
+    // bounded chance before showing "Recording…": starting that cue first, before captions can
+    // actually begin, is what caused the first spoken words to be missed. If prewarm already
+    // succeeded this resolves instantly with no "preparing" flash at all; liveCaption.start()
+    // returns the SAME in-flight attempt if one is already running, so this waits on the real
+    // thing rather than racing a redundant second attempt.
+    preparingSpeech.value = true
+    try {
+      await Promise.race([
+        liveCaption.start(() => createSpeakingLiveTranscriptionSession(sessionId.value)),
+        new Promise((resolve) => setTimeout(resolve, LIVE_CAPTION_READY_TIMEOUT_MS)),
+      ])
+    } finally {
+      preparingSpeech.value = false
+    }
+  }
+  recorder.toggleRecording()
+}
+
 async function sendSpeaking() {
-  if (!recorder.audioBlob.value || !spokenText.value || busy.value || transcribing.value) return
+  if (!recorder.audioBlob.value || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
+  // Identity of the question this submission answers. If a restart/fresh-start happens (a new
+  // generation) or the exam otherwise already moved past this turn before the response arrives,
+  // this attempt's outcome is obsolete and must be silently ignored -- never applied, never
+  // shown as a stale-answer banner, since the UI (or a newer attempt) has already moved on.
+  const myGeneration = examGeneration
+  const submittedTurnToken = state.value?.turn_token || state.value?.speaking?.turn_token || ''
+  // Free section navigation: which speaking-like section (speaking/interview) is actually being
+  // viewed, since it may differ from the session's internal progress cursor.
+  const submittedSection = state.value?.phase
+  const isObsolete = () =>
+    myGeneration !== examGeneration
+    || submittedTurnToken !== (state.value?.turn_token || state.value?.speaking?.turn_token || '')
   try {
-    const submittedTranscript = spokenText.value.trim()
     const data = await submitSpeakingTurn(
       sessionId.value,
       recorder.audioBlob.value,
       recorder.elapsed.value,
-      submittedTranscript,
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      submittedTurnToken,
+      submittedSection,
     )
+    if (isObsolete()) return
     // Show what the student said as a chat bubble (no scoring shown until the final report).
-    pushStudent(data.last_feedback?.transcription || submittedTranscript)
+    pushStudent(data.last_feedback?.transcription)
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not submit your answer')
+    if (isObsolete()) return
+    if (e?.response?.data?.detail?.code === 'stale_exam_state') {
+      // Background content preparation merges into the exam state moments after the exam starts
+      // (all section content is cache-backed now, so the merge lands while the student is still
+      // recording their first answer) and bumps state_revision -- making the revision this
+      // submission carries stale even though the question itself never changed. The turn token
+      // only rotates when a turn is actually answered, so if the fresh state still shows the
+      // SAME token, this is that harmless background bump: retry once with the fresh revision
+      // instead of silently discarding the student's recording.
+      try {
+        const fresh = await fetchExamState(sessionId.value, submittedSection)
+        if (isObsolete()) return
+        const freshToken = fresh?.turn_token || fresh?.speaking?.turn_token || ''
+        if (freshToken && freshToken === submittedTurnToken && fresh?.state_revision) {
+          const retry = await submitSpeakingTurn(
+            sessionId.value,
+            recorder.audioBlob.value,
+            recorder.elapsed.value,
+            ensureSubmissionRequestId(),
+            fresh.state_revision,
+            submittedTurnToken,
+            submittedSection,
+          )
+          if (isObsolete()) return
+          pushStudent(retry.last_feedback?.transcription)
+          applyState(retry)
+          return
+        }
+        // The question genuinely moved on -- same silent resync recoverStaleState performs.
+        applyState(fresh)
+        return
+      } catch (retryError) {
+        if (isObsolete()) return
+        if (!(await recoverStaleState(retryError))) handleRequestError(retryError, 'Could not submit your answer')
+        return
+      }
+    }
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your answer')
   } finally {
-    busy.value = false
+    // Only release busy for the generation that set it -- a stale attempt from an abandoned
+    // session must not clear the busy flag a newer start/restart is currently using.
+    if (myGeneration === examGeneration) busy.value = false
   }
 }
 
 async function sendMcq() {
-  if (choice.value === null || busy.value) return
+  if (!canSubmitMcq.value || busy.value || rateLimitBlocked.value) return
+  const mcqBundle = isMcqBundle.value
+  const gapFillBundle = isGapFillBundle.value
+  const gapFill = isGapFillQuestion.value
   busy.value = true
   loadError.value = ''
   try {
-    const data = await answerExamMcq(sessionId.value, choice.value)
+    const data = await answerExamMcq(
+      sessionId.value,
+      (mcqBundle || gapFillBundle || gapFill) ? null : choice.value,
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      state.value.question_token || state.value.mcq?.question_token,
+      (!mcqBundle && !gapFillBundle && gapFill) ? gapFillAnswer.value.trim() : undefined,
+      mcqBundle ? bundleChoices.value : undefined,
+      gapFillBundle ? bundleAnswers.value.map((a) => a.trim()) : undefined,
+      // Free section navigation: which section (listening/reading/grammar_vocab) is being viewed,
+      // since it may differ from the session's internal progress cursor.
+      state.value.phase,
+    )
     applyState(data)
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not save your answer')
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not save your answer')
   } finally {
     busy.value = false
   }
 }
 
 async function sendWriting() {
-  if (wordCount.value < (state.value?.writing?.min_words || 0) || busy.value) return
+  if (wordCount.value < (state.value?.writing?.min_words || 0) || busy.value || rateLimitBlocked.value) return
   busy.value = true
   loadError.value = ''
   try {
-    const data = await submitExamWriting(sessionId.value, writingText.value.trim())
+    const data = await submitExamWriting(
+      sessionId.value,
+      writingText.value.trim(),
+      ensureSubmissionRequestId(),
+      state.value.state_revision,
+      state.value.prompt_token || state.value.writing?.prompt_token,
+    )
     if (data.status === 'processing') {
       startEvaluating()
     } else {
       applyState(data)
     }
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not submit your writing')
+    if (!(await recoverStaleState(e))) handleRequestError(e, 'Could not submit your writing')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function retryEvaluation() {
+  if (!sessionId.value || busy.value || rateLimitBlocked.value) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    await retryExamEvaluation(sessionId.value)
+    evaluationFailed.value = false
+    startEvaluating()
+  } catch (e) {
+    handleRequestError(e, 'Could not retry the placement evaluation')
   } finally {
     busy.value = false
   }
 }
 
 function startEvaluating() {
+  finishLoading()
+  const runId = pollRunId
+  evaluationFailed.value = false
   view.value = 'evaluating'
   let i = 0
   loaderMsg.value = LOADER_MESSAGES[0]
@@ -797,29 +1141,39 @@ function startEvaluating() {
   }, 1500)
   const startedAt = Date.now()
   let attempts = 0
-  pollTimer = setInterval(async () => {
+  const pollReport = async () => {
+    pollTimer = null
     attempts += 1
+    let nextDelay = 2000
     try {
       const r = await fetchExamReport(sessionId.value)
+      if (runId !== pollRunId) return
       const elapsed = Date.now() - startedAt
       if (r.status === 'completed' && r.report && elapsed >= 4000) {
         report.value = r.report
         finishLoading()
         view.value = 'report'
+        return
       } else if (r.status === 'failed') {
         finishLoading()
-        loadError.value = 'The report could not be generated. Please try again.'
+        evaluationFailed.value = true
+        loadError.value = r.error_message || 'The report could not be generated. Please retry the evaluation.'
         view.value = 'intro'
+        return
       }
-    } catch {
-      /* keep polling */
+    } catch (e) {
+      if (runId !== pollRunId) return
+      nextDelay = retryAfterMs(e, 2000)
     }
     if (attempts > 45) {
       finishLoading()
       loadError.value = 'Report is taking too long. Please try again later.'
       view.value = 'intro'
+      return
     }
-  }, 2000)
+    if (runId === pollRunId) pollTimer = setTimeout(pollReport, nextDelay)
+  }
+  pollTimer = setTimeout(pollReport, 0)
 }
 
 async function loadReport() {
@@ -830,14 +1184,18 @@ async function loadReport() {
       view.value = 'report'
     }
   } catch (e) {
-    loadError.value = getErrorMessage(e, 'Could not load your report')
+    if (e?.response?.status === 429) {
+      pollTimer = setTimeout(loadReport, retryAfterMs(e, 30_000))
+    } else {
+      loadError.value = getErrorMessage(e, 'Could not load your report')
+    }
   }
 }
 
 function finishLoading() {
-  stopListeningText()
+  pollRunId += 1
   if (loaderTimer) clearInterval(loaderTimer)
-  if (pollTimer) clearInterval(pollTimer)
+  if (pollTimer) clearTimeout(pollTimer)
   if (prepTimer) clearTimeout(prepTimer)
   loaderTimer = null
   pollTimer = null
@@ -845,7 +1203,15 @@ function finishLoading() {
 }
 
 async function restart() {
-  // Best-effort: drop any unfinished attempt so the next start is guaranteed fresh.
+  // Best-effort: drop any unfinished attempt so the next start is guaranteed fresh. Bumping the
+  // generation marks any still-in-flight speaking submission from this abandoned session as
+  // obsolete (see sendSpeaking); resetting busy here (rather than leaving it for that stale
+  // attempt's own finally, which now intentionally no-ops across generations) ensures the intro
+  // screen's Start button isn't left disabled by a request that no longer owns it.
+  examGeneration += 1
+  busy.value = false
+  liveCaption.stop()
+  liveCaption.reset()
   if (sessionId.value) {
     try { await abandonExam(sessionId.value) } catch { /* ignore */ }
   }
@@ -861,13 +1227,19 @@ async function restart() {
   view.value = 'intro'
 }
 
-onUnmounted(finishLoading)
+onUnmounted(() => {
+  finishLoading()
+  if (rateLimitTimer) clearTimeout(rateLimitTimer)
+  liveCaption.stop()
+  liveCaption.reset()
+})
 </script>
 
 <style scoped>
 .page-container { max-width: 820px; margin: 0 auto; }
 .exam-intro { border: 1px solid rgba(var(--v-theme-secondary), 0.25); }
 .skill-pill { border: 1px solid rgba(255, 255, 255, 0.08); }
+.section-tab-chip:not(.v-chip--disabled) { cursor: pointer; }
 .examiner-q { line-height: 1.5; }
 .exam-chat { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .exam-msg-row { display: flex; }
@@ -877,11 +1249,41 @@ onUnmounted(finishLoading)
 .exam-msg--user { background: rgba(var(--v-theme-secondary), 0.16); border: 1px solid rgba(var(--v-theme-secondary), 0.3); }
 .exam-msg--ai { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
 .recorder-box { border: 1px dashed rgba(var(--v-theme-secondary), 0.4); border-radius: 14px; }
+.live-caption-box {
+  /* Same rounded/colored family as .exam-msg (the submitted-answer bubble below), but dashed
+     and more muted -- reads as "draft, not yet submitted" rather than a final answer. */
+  background: rgba(var(--v-theme-secondary), 0.07); border: 1px dashed rgba(var(--v-theme-secondary), 0.35);
+  border-radius: 14px; padding: 10px 14px; text-align: left;
+}
+.live-caption-label { letter-spacing: 0.02em; }
+.live-caption-text {
+  /* No text-size utility class on purpose -- inherits the same base size as .exam-msg so it
+     reads as real answer text, not tiny helper copy. min-height reserves the placeholder's own
+     line so the box doesn't visually jump when the first real delta replaces it. */
+  line-height: 1.5; min-height: 1.5em; max-height: 4.5em; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-word; text-align: left;
+}
+.live-caption-placeholder {
+  /* Deliberately smaller/lighter than real transcript text (which inherits the larger, unstyled
+     base size above) so the placeholder reads as helper copy, not as if it were an answer. */
+  font-size: 0.875rem; font-style: italic;
+}
 .upload-input { max-width: 360px; margin-inline: auto; }
 .passage-box {
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px; line-height: 1.6; max-height: 320px; overflow-y: auto;
 }
+.note-completion-box {
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px; line-height: 2.1; white-space: pre-line;
+}
+.note-blank-input {
+  display: inline-block; width: 8em; margin: 0 4px; padding: 1px 4px;
+  border: none; border-bottom: 2px solid rgba(var(--v-theme-secondary), 0.6);
+  background: transparent; font: inherit; color: inherit; text-align: center;
+}
+.note-blank-input:focus { outline: none; border-bottom-color: rgb(var(--v-theme-secondary)); }
+.mcq-bundle-block:not(:last-child) { border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; }
 .feedback-card { border: 1px solid rgba(var(--v-theme-secondary), 0.3); }
 
 .exam-loader { border: 1px solid rgba(var(--v-theme-secondary), 0.25); }

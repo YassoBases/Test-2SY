@@ -249,7 +249,7 @@ function navigateToFeature(feature, focus) {
   } else if (feature === 'writing') {
     router.push({ path: ROUTES.STUDENT_LANGUAGES_WRITING, query: q })
   } else if (feature === 'reading') {
-    router.push({ path: ROUTES.STUDENT_LANGUAGES_READING })
+    router.push({ path: ROUTES.STUDENT_LANGUAGES })
   } else if (feature === 'listening') {
     router.push({ path: ROUTES.STUDENT_LANGUAGES_LISTENING })
   } else if (feature === 'vocabulary') {
