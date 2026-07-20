@@ -1034,10 +1034,14 @@ def _mock_extension_sentence(cefr: str, index: int) -> str:
     outcome = outcomes[(index // 7) % len(outcomes)]
     if cefr in {"A1", "A2"}:
         options = [
-            "The next part is easy to follow.",
-            "The text gives one clear detail.",
-            "The reader can find the answer in the story.",
-            "The ending helps the reader remember the main idea.",
+            f"The {label} sign shows a simple bus time.",
+            f"Ben checks the {label} note before they walk to the stop.",
+            f"His aunt puts the {label} gift beside the bread.",
+            f"The {label} list helps them remember the next shop.",
+            f"A small {label} map shows the road home.",
+            f"Ben tells his cousin one {label} detail from the trip.",
+            f"The family talks about the {label} market after lunch.",
+            f"He keeps the {label} paper in his bag for next time.",
         ]
     elif cefr == "B1":
         options = [
@@ -1093,6 +1097,78 @@ def _mock_activity_title(cefr: str, stage: str) -> str:
         "C2": "C2 City Archive Exhibition Review",
     }
     return f"{titles.get(cefr, 'Reading Practice')} - {stage}"
+
+
+def _mock_extra_question_spec(question_type: str, occurrence: int) -> tuple[str, dict[str, Any], list[dict[str, str]]]:
+    variants = {
+        "mcq": [
+            (
+                "Why is the market trip useful for Ben?",
+                {"correct_choice_id": "a"},
+                [
+                    {"id": "a", "text": "He practices reading real information."},
+                    {"id": "b", "text": "He learns to cook dinner alone."},
+                    {"id": "c", "text": "He buys a new bicycle."},
+                ],
+            ),
+            (
+                "What is the best title for the passage?",
+                {"correct_choice_id": "a"},
+                [
+                    {"id": "a", "text": "Ben Reads Signs at the Market"},
+                    {"id": "b", "text": "A Rainy Day at the Beach"},
+                    {"id": "c", "text": "The Library Closes Early"},
+                ],
+            ),
+            (
+                "What does the passage mostly describe?",
+                {"correct_choice_id": "a"},
+                [
+                    {"id": "a", "text": "A simple trip with useful reading tasks."},
+                    {"id": "b", "text": "A long holiday in another country."},
+                    {"id": "c", "text": "A difficult science lesson."},
+                ],
+            ),
+        ],
+        "gap_fill": [
+            ("One sign says the apples are cheaper before ____.", {"accepted_answers": ["lunch"]}, []),
+            ("Ben writes the cheaper price on a paper ____.", {"accepted_answers": ["list"]}, []),
+            ("Later, they miss the first bus ____.", {"accepted_answers": ["home"]}, []),
+        ],
+        "true_false": [
+            ("Ben goes to the market with his aunt.", {"correct": True}, []),
+            ("Ben compares two prices for his aunt.", {"correct": True}, []),
+            ("Ben throws away the paper list at the end.", {"correct": False}, []),
+        ],
+        "short_answer": [
+            (
+                "What does Ben compare for his aunt?",
+                {"accepted_answers": ["two prices", "prices"], "required_key_terms": ["price"]},
+                [],
+            ),
+            (
+                "Where do Ben and his aunt wait after they miss the bus?",
+                {"accepted_answers": ["at the stop", "the bus stop", "stop"], "required_key_terms": ["stop"]},
+                [],
+            ),
+            (
+                "What does the family do after Ben tells his cousin about the gift?",
+                {
+                    "accepted_answers": ["eat a snack and rest", "they eat a snack and rest", "eat a snack"],
+                    "required_key_terms": ["eat snack", "rest"],
+                },
+                [],
+            ),
+        ],
+    }
+    options = variants.get(question_type) or []
+    if not options:
+        return (
+            f"Answer this {question_type.replace('_', ' ')} question about the passage.",
+            _fallback_answer_key(question_type),
+            _fallback_choices(question_type),
+        )
+    return options[(occurrence - 1) % len(options)]
 
 
 def _build_mock_passage(blueprint: GenerationBlueprint) -> str:
@@ -1174,15 +1250,16 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
     ]
     answer_specs_by_type = {spec[0]: spec for spec in answer_specs}
     prioritized_subskills = _prioritized_subskills_for_questions(blueprint)
+    question_type_occurrences: dict[str, int] = defaultdict(int)
     for i, question_type in enumerate(blueprint.question_types, start=1):
+        occurrence = question_type_occurrences[question_type]
+        question_type_occurrences[question_type] += 1
         spec = answer_specs_by_type.get(question_type)
-        if spec:
+        if spec and occurrence == 0:
             q_type, subskill, stem, answer_key, choices = spec
         else:
             q_type = question_type
-            stem = f"Answer this {question_type.replace('_', ' ')} question about Mira's reading routine."
-            answer_key = _fallback_answer_key(question_type)
-            choices = _fallback_choices(question_type)
+            stem, answer_key, choices = _mock_extra_question_spec(question_type, occurrence)
         sentence_with_blank = _fallback_gap_fill_sentence() if q_type == "gap_fill" and not _has_exactly_one_blank(stem) else None
         if q_type == "gap_fill" and _has_exactly_one_blank(stem):
             sentence_with_blank = stem

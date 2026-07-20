@@ -396,6 +396,28 @@ def test_local_mock_high_level_passages_follow_difficulty_policy(cefr, stage):
     assert reading_service._paragraph_count(activity.passage) >= blueprint.passage_difficulty_policy["paragraph_count_min"]
 
 
+def test_a2_advanced_readiness_local_mock_passes_difficulty_validation():
+    question_count = reading_service.get_readiness_question_count("B1")
+    blueprint = _blueprint(
+        cefr_level="A2",
+        internal_stage="Advanced",
+        mode="readiness",
+        reading_subskills=reading_service._SUBSKILLS_BY_STAGE["Advanced"],
+        question_count=question_count,
+        number_of_questions=question_count,
+        question_types=reading_service.question_types_for_count(question_count, mode="readiness"),
+    )
+
+    activity = generate_reading_activity_from_blueprint(blueprint)
+    result = validate_generated_activity(activity, blueprint)
+    question_stems = [question.stem for question in activity.questions]
+
+    assert result.valid is True
+    assert len(activity.questions) == 12
+    assert len(set(question_stems)) > 8
+    assert reading_service._repeated_sentence_ratio(reading_service._sentence_texts(activity.passage)) == 0.0
+
+
 @pytest.mark.parametrize(
     ("cefr", "stage", "expected_count"),
     [
