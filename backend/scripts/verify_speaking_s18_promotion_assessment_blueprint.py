@@ -383,13 +383,13 @@ def test_bounded_retention() -> None:
 
     bucket = assessments_bucket_from_payload(payload)
     check("47. after 8 cycles still <= 2 blueprints", count_persisted_blueprints(bucket) <= 2)
-    check("48. active present", isinstance(bucket.get("active_blueprint"), dict))
+    check("48. active present", isinstance(bucket.get("active_assessment"), dict))
     # Distinct ids recycled retention — archive never grows with all 8
     stored_ids = set()
-    if isinstance(bucket.get("active_blueprint"), dict):
-        stored_ids.add(bucket["active_blueprint"].get("blueprint_id"))
-    if isinstance(bucket.get("most_recent_terminal_blueprint"), dict):
-        stored_ids.add(bucket["most_recent_terminal_blueprint"].get("blueprint_id"))
+    if isinstance(bucket.get("active_assessment"), dict):
+        stored_ids.add(bucket["active_assessment"].get("blueprint_id"))
+    if isinstance(bucket.get("most_recent_terminal_assessment"), dict):
+        stored_ids.add(bucket["most_recent_terminal_assessment"].get("blueprint_id"))
     check("49. stored ids subset of created; not full history", len(stored_ids) <= 2 and stored_ids.issubset(set(ids)))
     check("50. MAX_PERSISTED_BLUEPRINTS == 2", MAX_PERSISTED_BLUEPRINTS == 2)
 
@@ -403,12 +403,12 @@ def test_bounded_retention() -> None:
         rejected = True
     check("51. blueprints_by_id archive rejected", rejected)
 
-    # merge strips extras
+    # merge strips extras (S19: assessment keys; legacy blueprint keys lifted on read)
     merged = merge_assessments_into_payload({}, dirty)
     check(
         "52. merge only keeps bounded keys",
         set(merged["speaking_promotion_assessments"].keys())
-        == {"active_blueprint", "most_recent_terminal_blueprint"},
+        == {"active_assessment", "most_recent_terminal_assessment"},
     )
 
 

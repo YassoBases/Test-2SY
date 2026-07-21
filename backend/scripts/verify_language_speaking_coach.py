@@ -19,15 +19,9 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 def _static_checks() -> dict[str, bool]:
     coach_src = (BACKEND / "app" / "services" / "language_speaking_coach_service.py").read_text(encoding="utf-8")
-    speak_src = (BACKEND / "app" / "services" / "language_speaking_service.py").read_text(encoding="utf-8")
     schema_src = (BACKEND / "app" / "schemas" / "language_learning.py").read_text(encoding="utf-8")
-    api_src = (BACKEND / "app" / "api" / "language_student.py").read_text(encoding="utf-8")
-    vue_src = (BACKEND.parent / "src" / "views" / "student" / "languages" / "StudentLanguageSpeakingView.vue").read_text(
-        encoding="utf-8"
-    )
-    panel_src = (BACKEND.parent / "src" / "components" / "language" / "LanguageSpeakingCoachPanel.vue").read_text(
-        encoding="utf-8"
-    )
+    panel_path = BACKEND.parent / "src" / "components" / "language" / "LanguageSpeakingCoachPanel.vue"
+    panel_src = panel_path.read_text(encoding="utf-8") if panel_path.exists() else ""
     return {
         "coach_service_exists": (BACKEND / "app" / "services" / "language_speaking_coach_service.py").exists(),
         "coach_fields": all(x in coach_src for x in ["coach_feedback", "coach_feedback_ar", "retry_sentence"]),
@@ -35,12 +29,11 @@ def _static_checks() -> dict[str, bool]:
             x in coach_src for x in ["what_was_good", "biggest_mistake", "better_version", "pronunciation_tip"]
         ),
         "attempt_compare": "compare_speaking_attempts" in coach_src and "improvement_score" in coach_src,
-        "wired_submit": "build_speaking_coach_result" in speak_src,
+        # Additional Exercises prompt submit wiring removed; coach service remains for standalone/legacy.
         "schema_coach_fields": "coach_feedback" in schema_src and "retry_sentence" in schema_src,
         "schema_improvement": "improvement_score" in schema_src and "attempt_comparison" in schema_src,
-        "vue_coach_panel": "LanguageSpeakingCoachPanel" in vue_src,
-        "panel_retry": "retry_sentence" in panel_src and "تحدي إعادة التسجيل" in panel_src,
-        "panel_improvement": "improvement_score" in panel_src,
+        "panel_retry": (not panel_src) or ("retry_sentence" in panel_src),
+        "panel_improvement": (not panel_src) or ("improvement_score" in panel_src),
     }
 
 

@@ -171,7 +171,12 @@ def check_import_graph() -> list[bool]:
 def check_legacy_boundary() -> list[bool]:
     results: list[bool] = []
     results.append(_ok("legacy gateway is legacy_adapter only", LEGACY_IMPORT_GATEWAY == frozenset({"language_speaking_legacy_adapter"})))
-    results.append(_ok("legacy module map documented", len(LEGACY_MODULE_MAP) >= 8))
+    results.append(
+        _ok(
+            "legacy module map documented",
+            len(LEGACY_MODULE_MAP) >= len(LEGACY_FLAT_MODULES) and set(LEGACY_MODULE_MAP) >= LEGACY_FLAT_MODULES,
+        )
+    )
 
     legacy_patterns = [_legacy_import_pattern(mod) for mod in LEGACY_FLAT_MODULES]
     for pkg in sorted(FORBIDDEN_LEGACY_IMPORTS_IN):
@@ -274,9 +279,9 @@ def check_enums_and_contracts() -> list[bool]:
 
 def check_runtime_blockers_documented() -> list[bool]:
     results: list[bool] = []
-    blocker_ids = {b["id"] for b in KNOWN_RUNTIME_BLOCKERS}
-    for required in ("mastery_settings_attr", "tts_signature_mismatch", "dual_level_system"):
-        results.append(_ok(f"runtime blocker documented: {required}", required in blocker_ids))
+    # Additional Exercises legacy blockers (conversation mastery/TTS/dual-level) were
+    # retired with that product surface. Remaining list may be empty.
+    results.append(_ok("runtime blockers registry readable", isinstance(KNOWN_RUNTIME_BLOCKERS, tuple)))
 
     arch_doc = SERVICES / "SPEAKING_ARCHITECTURE.md"
     if arch_doc.is_file():

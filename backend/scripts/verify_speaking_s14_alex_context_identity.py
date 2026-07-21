@@ -252,7 +252,17 @@ def test_task_prompt_and_grounding() -> None:
     live_js = (Path(BACKEND).parent / "src/api/speakingLive.js").read_text(encoding="utf-8")
     check("17. frontend cannot override task prompt", "task_prompt" not in live_js and "authz.task_prompt" in api_src and "task_prompt: str = Form" not in api_src)
 
-    check("18. session-start grounding is deterministic", "build_alex_context_for_student" in api_src and "alex_context=alex_ctx.to_tutor_dict()" in api_src)
+    # Canonical grounding may be called directly or via the M10 wrapper
+    # build_alex_tutor_dict_for_student (which itself must use the canonical
+    # builder + to_tutor_dict before the LiveConversationContext overlay).
+    journey_api_src = (BACKEND / "app/services/language_speaking_journey/api_service.py").read_text(encoding="utf-8")
+    direct_grounding = "build_alex_context_for_student" in api_src and "alex_context=alex_ctx.to_tutor_dict()" in api_src
+    wrapped_grounding = (
+        "build_alex_tutor_dict_for_student" in api_src
+        and "build_alex_speaking_educational_context" in journey_api_src
+        and "ctx.to_tutor_dict()" in journey_api_src
+    )
+    check("18. session-start grounding is deterministic", direct_grounding or wrapped_grounding)
     check("19. session cannot start educational Alex without context", "SpeakingLiveExecutionError" in api_src and "end_live_session" in api_src and "raise HTTPException" in api_src)
     comp = (Path(BACKEND).parent / "src/composables/useLiveConversation.js").read_text(encoding="utf-8")
     check("20. optional tool-call is not the sole initial grounding mechanism", "session_settings" in comp and "_buildTutorContextText" in comp)
@@ -293,7 +303,8 @@ def test_fingerprint() -> None:
     # Staleness after progression: fingerprint tracks the advanced cursor.
     live_runtime = (BACKEND / "app/services/language_speaking_evaluation_runtime/live_runtime.py").read_text(encoding="utf-8")
     api_src = (BACKEND / "app/api/language_speaking_live.py").read_text(encoding="utf-8")
-    check("24. stale context is invalidated after relevant progression", c3.context_fingerprint != c1.context_fingerprint and "invalidate_live_context" in live_runtime and "build_alex_context_for_student" in api_src)
+    rebuilds_on_start = "build_alex_context_for_student" in api_src or "build_alex_tutor_dict_for_student" in api_src
+    check("24. stale context is invalidated after relevant progression", c3.context_fingerprint != c1.context_fingerprint and "invalidate_live_context" in live_runtime and rebuilds_on_start)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +314,11 @@ def test_fingerprint() -> None:
 
 def test_tool_refresh() -> None:
     api_src = (BACKEND / "app/api/language_speaking_live.py").read_text(encoding="utf-8")
-    tool_uses_builder = "get_student_speaking_context" in api_src and "build_alex_context_for_student" in api_src
+    uses_canonical = (
+        "build_alex_context_for_student" in api_src
+        or "build_alex_tutor_dict_for_student" in api_src
+    )
+    tool_uses_builder = "get_student_speaking_context" in api_src and uses_canonical
     no_generic = "dispatch_evi_tool" not in api_src
     check("25. get_student_speaking_context reuses canonical builder", tool_uses_builder and no_generic)
 

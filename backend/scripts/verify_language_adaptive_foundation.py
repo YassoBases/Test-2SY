@@ -23,9 +23,7 @@ def _static_checks() -> dict[str, bool]:
     cs_src = (BACKEND / "app" / "services" / "language_curriculum_service.py").read_text(encoding="utf-8")
     reading_src = (BACKEND / "app" / "services" / "language_skill_progress_service.py").read_text(encoding="utf-8")
     writing_src = (BACKEND / "app" / "services" / "language_writing_service.py").read_text(encoding="utf-8")
-    speaking_src = (BACKEND / "app" / "services" / "language_speaking_service.py").read_text(encoding="utf-8")
     vocab_src = (BACKEND / "app" / "services" / "language_vocabulary_service.py").read_text(encoding="utf-8")
-    conv_src = (BACKEND / "app" / "services" / "language_conversation_service.py").read_text(encoding="utf-8")
     mig42 = (BACKEND / "alembic" / "versions" / "0042_adaptive_difficulty.py").read_text(encoding="utf-8")
     mig43 = (BACKEND / "alembic" / "versions" / "0043_add_recent_scores_json.py").read_text(encoding="utf-8")
 
@@ -49,10 +47,9 @@ def _static_checks() -> dict[str, bool]:
         "wired_reading": "record_lesson_result" in reading_src and "LanguageSkill.reading" in reading_src,
         "wired_listening": "record_lesson_result" in reading_src and "LanguageSkill.listening" in reading_src,
         "wired_writing": "record_lesson_result" in writing_src,
-        "wired_speaking": "record_lesson_result" in speaking_src,
+        # Additional Exercises speaking/conversation adaptive wiring removed with that surface.
         "credit_feature_objectives": "async def credit_feature_objectives" in cs_src,
         "credit_vocabulary": 'feature="vocabulary"' in vocab_src,
-        "credit_conversation": 'feature="conversation"' in conv_src,
         "model_exported": "LanguageSkillLevelState" in (
             BACKEND / "app" / "models" / "language" / "__init__.py"
         ).read_text(encoding="utf-8"),

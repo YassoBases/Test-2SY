@@ -31,14 +31,22 @@ from app.services.language_speaking_knowledge_model.types import (
 from app.services.language_speaking_lesson_planner.decision_rules import decide_session_outcome
 from app.services.language_speaking_lesson_planner.planner import assemble_speaking_lesson_blueprint
 from app.services.language_speaking_lesson_planner.session_runtime import (
+    advance_session_activity,
     create_learning_session,
     evaluate_session_boundary,
     record_session_turn,
+    session_activities_exhausted,
 )
-from app.services.language_speaking_lesson_planner.types import SpeakingLearningSession, SpeakingSessionMode
+from app.services.language_speaking_lesson_planner.types import (
+    SpeakingLearningSession,
+    SpeakingSessionMode,
+    SpeakingSessionPhase,
+)
+from app.services.language_speaking_journey.builder import build_speaking_journey_bundle
 
 PASS = 0
 FAIL = 0
+BACKEND = Path(__file__).resolve().parents[1]
 
 
 def check(label: str, cond: bool) -> None:
@@ -225,6 +233,73 @@ def test_ownership_dag() -> None:
     check("O journey deps include planner", "language_speaking_lesson_planner" in ALLOWED_PACKAGE_DEPENDENCIES["language_speaking_journey"])
 
 
+def test_p_final_activity_auto_finalize_lifecycle() -> None:
+    """Regression: finish every activity → finalize owner → not active → Start Session eligible."""
+    rec = select_speaking_target(empty_knowledge_model(student_id=91, language_id=1), official_cefr="A2")
+    bp = assemble_speaking_lesson_blueprint(rec)
+    session = create_learning_session(bp)
+    check("P blueprint has activities", len(bp.activities) >= 2)
+
+    for act in bp.activities[:-1]:
+        session = advance_session_activity(session, bp, completed_activity_id=act.activity_id)
+        check(
+            f"P mid activity {act.kind.value} not exhausted",
+            not session_activities_exhausted(session, bp),
+        )
+        check(
+            f"P mid activity {act.kind.value} not completed phase",
+            session.phase != SpeakingSessionPhase.completed,
+        )
+
+    last = bp.activities[-1]
+    session = advance_session_activity(session, bp, completed_activity_id=last.activity_id)
+    check("P final activity is reflection", last.kind.value == "reflection")
+    check("P after final advance phase is evaluated", session.phase == SpeakingSessionPhase.evaluated)
+    check("P activities exhausted after final advance", session_activities_exhausted(session, bp))
+
+    # Existing finalize owner behavior (complete_speaking_activity delegates here).
+    evaluate_session_boundary(session, bp)
+    session.phase = SpeakingSessionPhase.completed
+    session.current_activity_id = ""
+
+    bundle = build_speaking_journey_bundle(
+        official_level="A2",
+        plan=None,
+        blueprint=bp,
+        session=session,
+    )
+    check("P has_active_session false after finalize", not bundle.has_active_session)
+    check("P today_session_phase completed", bundle.today_session_phase == "completed")
+    check("P current activity cursor cleared", bundle.current_activity_id == "")
+
+    api_src = (BACKEND / "app/services/language_speaking_journey/api_service.py").read_text(encoding="utf-8")
+    complete_fn = api_src[
+        api_src.find("async def complete_speaking_activity") : api_src.find(
+            "async def record_speaking_session_turn"
+        )
+    ]
+    finalize_fn = api_src[
+        api_src.find("async def finalize_speaking_session") : api_src.find(
+            "async def build_alex_context_for_student"
+        )
+    ]
+    check(
+        "P complete_speaking_activity delegates to finalize_speaking_session",
+        "finalize_speaking_session" in complete_fn and "session_activities_exhausted" in complete_fn,
+    )
+    check(
+        "P finalize clears current_activity_id",
+        'session.current_activity_id = ""' in finalize_fn,
+    )
+
+    fe = (BACKEND.parent / "src/composables/useSpeakingJourney.js").read_text(encoding="utf-8")
+    cont_start = fe.find("function isFinalizeOutcome")
+    cont_end = fe.find("async function prepareForLiveAlex")
+    cont = fe[cont_start:cont_end] if cont_start >= 0 else ""
+    check("P continueActivity assigns sessionOutcome from finalize payload", "sessionOutcome.value = raw" in cont)
+    check("P FE gate uses outcome_kind", "outcome_kind" in cont)
+
+
 def run_frozen_regressions() -> None:
     if os.environ.get("SPEAKING_VERIFY_SKIP_NESTED_REGRESSIONS") == "1":
         print("  (flat mode: skip nested regressions)", flush=True)
@@ -257,6 +332,7 @@ def main() -> int:
     test_j_evi_session_context()
     test_k_l_m_n_student_safe()
     test_ownership_dag()
+    test_p_final_activity_auto_finalize_lifecycle()
     run_frozen_regressions()
     print(f"\nResult: {PASS} passed, {FAIL} failed")
     return 0 if FAIL == 0 else 1

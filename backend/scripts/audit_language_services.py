@@ -16,7 +16,6 @@ from app.models.language.enums import LanguageSkill, LanguageVocabularyStatus
 from app.models.language.progress import LanguageVocabularyProgress
 from app.services.language_content_service import list_lessons
 from app.services.language_hub_service import build_language_progress
-from app.services.language_speaking_service import list_speaking
 from app.services.language_vocabulary_service import list_vocabulary
 from app.services.language_writing_service import list_writing
 from app.services.parent_monitoring_service import _build_language_placement_summary
@@ -30,7 +29,6 @@ async def run(student_id: int) -> None:
         _, ll2, listening, _ = await list_lessons(db, student_id=student_id, skill=LanguageSkill.listening)
         vocab = await list_vocabulary(db, student_id=student_id)
         writing = await list_writing(db, student_id=student_id)
-        speaking = await list_speaking(db, student_id=student_id)
 
     engine = create_engine(get_settings().DATABASE_URL_SYNC)
     with engine.connect() as conn:
@@ -58,7 +56,7 @@ async def run(student_id: int) -> None:
 
     print(f"student_id={student_id}")
     print(f"reading_lessons={len(reading)} (level {ll}) listening={len(listening)}")
-    print(f"vocab_cards={len(vocab.get('cards', []))} writing={len(writing.get('prompts', []))} speaking={len(speaking.get('prompts', []))}")
+    print(f"vocab_cards={len(vocab.get('cards', []))} writing={len(writing.get('prompts', []))}")
     print(f"progress: streak={progress.get('current_streak')}/{progress.get('longest_streak')} vocab_learned={progress.get('vocabulary_learned')}")
     print(f"DB streak={streak.current_streak if streak else 0} known_vocab={known} analytics.vocabulary_count={analytics.vocabulary_count if analytics else 0}")
     print(f"progress match streak: {progress.get('current_streak') == (streak.current_streak if streak else 0)}")
