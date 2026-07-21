@@ -13,7 +13,7 @@ class LanguageContentItem(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     language_id: Mapped[int] = mapped_column(ForeignKey("languages.id", ondelete="CASCADE"), index=True)
-    # NULL = shared seed/nightly pool; set for per-student personalized lessons (listening Phase 2).
+    # NULL = shared seed/nightly pool; set for per-student personalized lessons.
     student_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )

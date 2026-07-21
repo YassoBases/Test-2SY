@@ -15,9 +15,21 @@ from app.api import (
     language_lessons,
     language_official_promotion,
     language_promotion_test,
+    language_adaptive_student,
+    language_ai_teacher,
+    language_ai_tutor,
+    language_ai_tutor_coaching,
+    language_grammar_student,
+    language_learning_journey,
     language_student,
+    language_speaking_educational_package,
+    language_speaking_discussion,
     language_speaking_journey,
+    language_speaking_lesson_runtime,
+    language_speaking_live_bridge,
+    language_speaking_runtime_integration,
     language_speaking_live,
+    language_speaking_official_promotion,
     language_speaking_promotion_test,
     language_writing_official_promotion,
     language_writing_promotion_test,
@@ -70,6 +82,18 @@ api_router.include_router(language_writing_official_promotion.router)
 api_router.include_router(language_speaking_journey.router)
 api_router.include_router(language_speaking_live.router)
 api_router.include_router(language_speaking_promotion_test.router)
+api_router.include_router(language_speaking_official_promotion.router)
+api_router.include_router(language_speaking_educational_package.router)
+api_router.include_router(language_speaking_lesson_runtime.router)
+api_router.include_router(language_speaking_discussion.router)
+api_router.include_router(language_speaking_live_bridge.router)
+api_router.include_router(language_speaking_runtime_integration.router)
+api_router.include_router(language_grammar_student.router)
+api_router.include_router(language_adaptive_student.router)
+api_router.include_router(language_ai_tutor.router)
+api_router.include_router(language_ai_tutor_coaching.router)
+api_router.include_router(language_ai_teacher.router)
+api_router.include_router(language_learning_journey.router)
 api_router.include_router(language_student.router)
 api_router.include_router(language_exam.router)
 api_router.include_router(language_lessons.router)

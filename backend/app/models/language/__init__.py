@@ -32,6 +32,12 @@ from app.models.language.profile import LanguageStudentProfile
 from app.models.language.question_bank import LanguagePlacementQuestionBankItem
 from app.models.language.reservation import LanguageListeningReservation
 from app.models.language.speaking_live_budget import SpeakingLiveDailyUsage, SpeakingLiveLease
+from app.models.language.grammar_canonical_lesson import (
+    GrammarCanonicalLesson,
+    GrammarCanonicalLessonRevision,
+    GrammarCanonicalLessonRevisionUnitAttempt,
+)
+from app.models.language.grammar_integrity import GrammarActivitySession, GrammarEvidenceLedger
 from app.models.language.progression import LanguageProgression, LanguageProgressionEvent
 from app.models.language.progress import (
     LanguageCurriculumProgress,
@@ -69,6 +75,11 @@ __all__ = [
     "LanguageListeningReservation",
     "SpeakingLiveDailyUsage",
     "SpeakingLiveLease",
+    "GrammarCanonicalLesson",
+    "GrammarCanonicalLessonRevision",
+    "GrammarCanonicalLessonRevisionUnitAttempt",
+    "GrammarActivitySession",
+    "GrammarEvidenceLedger",
     "LanguageSpeakingConversationSession",
     "LanguageSpeakingConversationTurn",
     "LanguageConversationScenario",

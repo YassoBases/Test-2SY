@@ -87,16 +87,16 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     OLLAMA_MODEL: str = "gemma3"
 
-    # Claude LLM (primary provider for all text/JSON generation)
-    ANTHROPIC_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-5"
-
     # Writing generation runtime (W6)
     WRITING_MODEL_PROVIDER: str = "claude"  # claude | mock
     WRITING_GENERATION_TEMPERATURE: float = 0.3
     WRITING_GENERATION_MAX_TOKENS: int = 4096
     WRITING_GENERATION_TIMEOUT_SECONDS: float = 120.0
     WRITING_EDUCATIONAL_ANALYZER: str = "claude"  # claude | mock | off
+
+    # Claude LLM (primary provider for all text/JSON generation)
+    ANTHROPIC_API_KEY: str = ""
+    CLAUDE_MODEL: str = "claude-sonnet-5"
 
     # Gemini — retained only for STT fallbacks (student chat, teacher/lesson audio/video)
     GEMINI_API_KEY: str = ""
@@ -142,8 +142,6 @@ class Settings(BaseSettings):
     LANGUAGE_CONVERSATION_HISTORY_TURNS: int = 12
     LANGUAGE_TTS_PROVIDER: str = "supertonic"
     LANGUAGE_SUPERTONIC_VOICE: str = "M1"
-    LANGUAGE_SUPERTONIC_VOICE_FEMALE: str = "F1"
-    LANGUAGE_SUPERTONIC_VOICE_MALE: str = "M1"
     LANGUAGE_SUPERTONIC_AUTO_DOWNLOAD: bool = True
     LANGUAGE_CONVERSATION_LEVEL_WINDOW: int = 30
     LANGUAGE_CONVERSATION_WHISPER_MODEL: str = "small.en"
@@ -152,57 +150,122 @@ class Settings(BaseSettings):
     LANGUAGE_CONVERSATION_WHISPER_VAD: bool = False
     LANGUAGE_CONVERSATION_WHISPER_INITIAL_PROMPT: str = ""
     LANGUAGE_CONVERSATION_ASYNC_TTS: bool = True
-    # Speaking S4 — audio ingestion / transcription runtime (openai | faster_whisper | mock)
-    # Production/default = OpenAI GPT-4o transcription. faster_whisper is optional
-    # offline; mock is QA-only. Fallback never occurs without explicit config.
-    SPEAKING_TRANSCRIPTION_PROVIDER: str = "openai"
-    SPEAKING_TRANSCRIPTION_TIMEOUT_SECONDS: int = 120
-    # Optional override for the Speaking OpenAI STT model; empty => reuse LANGUAGE_STT_MODEL.
-    SPEAKING_OPENAI_STT_MODEL: str = ""
     OPENAI_API_KEY: str = ""
+    # M12 — Scene Practice voice (OpenAI TTS only; Claude owns all reasoning)
+    # E3 Guided Discussion uses Claude (CLAUDE_MODEL / ANTHROPIC_API_KEY); no GPT chat tutor.
+    SPEAKING_TTS_MODEL: str = "gpt-4o-mini-tts"
+    SPEAKING_TTS_VOICE: str = "verse"
+    SPEAKING_TTS_TIMEOUT_SECONDS: int = 30
     LANGUAGE_STT_PROVIDER: str = "openai"  # openai | whisper
     LANGUAGE_STT_MODEL: str = "gpt-4o-transcribe"
     LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: bool = True
+    LANGUAGE_FFMPEG_TIMEOUT_SECONDS: int = 20
+    LANGUAGE_AUDIO_DECODE_MAX_SECONDS: int = 181
     GENAI_EXAM_MAX_AUDIO_MB: int = 10
-    # Speaking S5 — pronunciation evidence (wav2vec2 | mock)
+    # Optional comma-separated overrides, e.g. "placement_start=5/60,placement_poll=60/60".
+    # The limiter remains intentionally process-local and is safe only for the current single-worker topology.
+    LANGUAGE_PLACEMENT_RATE_LIMITS: str = ""
+    LANGUAGE_RATE_LIMIT_CLEANUP_SECONDS: int = 60
+    LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
+    LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
+    LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0
+    LANG_PROGRESSION_ENABLED: bool = False
+    LANG_PROGRESSION_DUAL_READ: bool = False
+    LANG_PROGRESSION_OFFICIAL_SELECT: bool = False
+    READING_V2_GENERATION_PROVIDER: str = "local_mock"  # local_mock | ai
+    READING_V2_AI_MODEL: str = ""
+    READING_V2_AI_MAX_RETRIES: int = 2
+    READING_V2_AI_MAX_OUTPUT_TOKENS: int = 8192
+
+    # Speaking assessment evidence pipeline — config only, no runtime wired yet (see
+    # backend/.env.example for placeholder values; real secrets belong only in an ignored local
+    # .env or a deployment secret manager, never here and never committed).
+    SPEAKING_TRANSCRIPTION_PROVIDER: str = "openai"  # openai | whisper
+    SPEAKING_TRANSCRIPTION_TIMEOUT_SECONDS: int = 120
+    # Pronunciation evidence (wav2vec2 | mock)
     SPEAKING_PRONUNCIATION_PROVIDER: str = "wav2vec2"
     SPEAKING_PRONUNCIATION_MODEL: str = "facebook/wav2vec2-lv-60-espeak-cv-ft"
     SPEAKING_PRONUNCIATION_TIMEOUT_SECONDS: int = 120
     SPEAKING_PRONUNCIATION_MIN_CONFIDENCE: float = 0.15
-    # Speaking S6 — prosody/delivery evidence (acoustic | hume | mock)
-    # Production default = numpy-derived acoustic. Hume Expression Measurement
-    # was discontinued by the vendor (2026-06-14) and now raises a structured
-    # discontinued error; it is retained only for boundary correctness.
+    # Prosody/delivery evidence (acoustic | hume | mock) — MVP must stay "acoustic" (local,
+    # numpy-derived; no external API). Hume Expression Measurement is not used for MVP scoring.
     SPEAKING_PROSODY_PROVIDER: str = "acoustic"
     HUME_API_KEY: str = ""
     SPEAKING_PROSODY_TIMEOUT_SECONDS: int = 120
-    SPEAKING_PROSODY_POLL_INTERVAL_SECONDS: float = 2.0
-    SPEAKING_PROSODY_SILENCE_RMS: float = 0.015
-    SPEAKING_PROSODY_LONG_PAUSE_SEC: float = 0.6
-    SPEAKING_PROSODY_LOW_PITCH_STD_HZ: float = 15.0
-    SPEAKING_PROSODY_LOW_ENERGY_STD: float = 0.02
-    SPEAKING_PROSODY_HIGH_PAUSE_DENSITY: float = 0.35
-    SPEAKING_PROSODY_UNSTABLE_RATE_CV: float = 0.45
-    SPEAKING_PROSODY_LOW_RHYTHM_REGULARITY: float = 0.35
-    # Speaking S7 — hybrid educational analyzer (claude | mock | off)
-    SPEAKING_EDUCATIONAL_ANALYZER: str = "claude"
-    # Speaking S7.5 — Hume EVI live conversation (hume_evi | mock)
+    SPEAKING_PROSODY_POLL_INTERVAL_SECONDS: int = 2
+    # Hume EVI live-conversation runtime — for a FUTURE live-conversation feature, not the
+    # current 3-turn placement flow. HUME_SECRET_KEY is server-side only (mints short-lived
+    # browser access tokens) and must never be exposed to the frontend.
     SPEAKING_LIVE_CONVERSATION_PROVIDER: str = "hume_evi"
     HUME_SECRET_KEY: str = ""
     HUME_EVI_CONFIG_ID: str = ""
     SPEAKING_EVI_TIMEOUT_SECONDS: int = 60
-    SPEAKING_EVI_RECONNECT_ENABLED: bool = False
-    SPEAKING_EVI_MAX_TURN_SECONDS: int = 120
-    SPEAKING_EVI_MAX_TURN_BYTES: int = 25_000_000
     SPEAKING_EVI_TOKEN_TTL_SECONDS: int = 1500
-    LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
-    LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
-    LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0
 
-    # Official progression system (Phase 4.2+) — storage only until 4.2.2 readers.
-    LANG_PROGRESSION_ENABLED: bool = False
-    LANG_PROGRESSION_DUAL_READ: bool = False
-    LANG_PROGRESSION_OFFICIAL_SELECT: bool = False
+    # Speaking live transcript preview (MVP, display-only) — mints short-lived OpenAI Realtime
+    # ephemeral client secrets so the browser can show partial captions while the student is
+    # still recording. Never the grading source of truth: the official transcript remains
+    # SPEAKING_TRANSCRIPTION_PROVIDER's own post-submit pipeline. Disabled by default; the real
+    # OPENAI_API_KEY (above) is used only server-side to mint each ephemeral secret and never
+    # reaches the frontend.
+    SPEAKING_LIVE_TRANSCRIPTION_ENABLED: bool = False
+    SPEAKING_LIVE_TRANSCRIPTION_PROVIDER: str = "openai_realtime"
+    SPEAKING_LIVE_TRANSCRIPTION_MODEL: str = "gpt-realtime-whisper"
+    SPEAKING_LIVE_TRANSCRIPTION_TOKEN_TTL_SECONDS: int = 60
+
+    # Grammar spine (G0+) — shared language engine, not a fifth Official CEFR skill.
+    # ENABLED gates core Grammar packages; SELECT gates skill Integration resolve_targets.
+    LANG_GRAMMAR_ENGINE_ENABLED: bool = False
+    LANG_GRAMMAR_ENGINE_SELECT: bool = False
+    # Wave D — HMAC secret for server-issued grammar stamps (falls back to JWT_SECRET).
+    LANG_GRAMMAR_STAMP_SECRET: str = ""
+    LANG_GRAMMAR_STAMP_TTL_SECONDS: int = 86400
+    # Activity provider selection (G3.3): template | cached | claude | future_llm
+    # Deterministic; Claude/FutureLLM providers are stubs until real authoring lands.
+    LANG_GRAMMAR_ACTIVITY_PROVIDER: str = "template"
+    # Activity Specification Framework (G3.35) — strict schema validation before accept.
+    LANG_GRAMMAR_ACTIVITY_SPEC_STRICT: bool = True
+    # Skill Execution Framework (G3.4) — execute ActivitySpecification via Registry plugins.
+    LANG_GRAMMAR_SKILL_EXECUTOR_ENABLED: bool = False
+    LANG_GRAMMAR_SKILL_EXECUTOR_STRICT: bool = True
+    # Skill Execution Engine (V1.5) — session/lifecycle/evidence; interaction only.
+    LANG_GRAMMAR_SKILL_EXECUTION_ENGINE_ENABLED: bool = True
+    # Speaking Domain Framework (V1.2A) — models/lifecycle only; no LLM/audio.
+    LANG_GRAMMAR_SPEAKING_DOMAIN_ENABLED: bool = True
+    # Activity Authoring Framework (V1.3) — Grammar Targets → ActivitySpecification.
+    LANG_GRAMMAR_ACTIVITY_AUTHORING_ENABLED: bool = True
+    LANG_GRAMMAR_ACTIVITY_AUTHORING_STRICT: bool = True
+    # LLM Activity Authoring Provider (V1.4) — Claude/Gemini/GPT/Local content author only.
+    LANG_GRAMMAR_LLM_AUTHORING_ENABLED: bool = False
+    LANG_GRAMMAR_LLM_AUTHORING_PROVIDER: str = "claude"  # claude | gemini | gpt | local
+    LANG_GRAMMAR_LLM_AUTHORING_FALLBACK: bool = True
+    LANG_GRAMMAR_LLM_AUTHORING_MAX_RETRIES: int = 3
+    LANG_GRAMMAR_LLM_AUTHORING_TIMEOUT_SECONDS: float = 60.0
+    # Grammar-Constrained Evaluation (V1.8) — targets/patterns only; no mastery writes.
+    LANG_GRAMMAR_EVALUATION_ENABLED: bool = True
+    LANG_GRAMMAR_EVALUATION_STRICT: bool = True
+    # Grammar Learning Pipeline (Integration Phase 1) — orchestration only.
+    LANG_GRAMMAR_PIPELINE_ENABLED: bool = False
+    LANG_GRAMMAR_PIPELINE_STRICT: bool = True
+    # Student Grammar Module (Product Milestone A) — dashboard + generate-only lessons.
+    LANG_GRAMMAR_MODULE_ENABLED: bool = False
+    # Local/dev review of unpublished canonical Grammar revisions; never enable with DEBUG=false.
+    LANG_GRAMMAR_CANONICAL_PREVIEW_ENABLED: bool = False
+    # Adaptive Learning Intelligence (Phase 2) — HOW to teach; never WHAT (curriculum).
+    LANG_ADAPTIVE_INTELLIGENCE_ENABLED: bool = False
+    # Persist derived learning profile under adaptive_intelligence JSONB namespace only.
+    LANG_ADAPTIVE_PROFILE_PERSIST: bool = True
+    # AI Tutor Foundation (Wave E1) — communicate existing intelligence; never educational writes.
+    LANG_AI_TUTOR_ENABLED: bool = False
+    LANG_AI_TUTOR_MEMORY_PERSIST: bool = True
+    LANG_AI_TUTOR_LLM_ENABLED: bool = True
+    # Conversational Coaching (Wave E2) — Socratic/hints on top of locked AI Tutor Foundation.
+    LANG_AI_TUTOR_COACHING_ENABLED: bool = False
+    LANG_AI_TUTOR_COACHING_PERSIST: bool = True
+    LANG_AI_TUTOR_COACHING_LLM_ENABLED: bool = True
+    # Autonomous AI Teacher (Phase F) — session orchestration above locked layers.
+    LANG_AI_TEACHER_ENABLED: bool = False
+    LANG_AI_TEACHER_PERSIST: bool = True
 
     # Student lesson voice chat STT (Deepgram Nova — not used by Language module)
     DEEPGRAM_API_KEY: str = ""
@@ -275,6 +338,13 @@ class Settings(BaseSettings):
         if language_stt_provider not in {"openai", "whisper"}:
             language_stt_provider = "openai"
         self.LANGUAGE_STT_PROVIDER = language_stt_provider
+
+        reading_v2_provider = (self.READING_V2_GENERATION_PROVIDER or "local_mock").strip().lower()
+        if reading_v2_provider not in {"local_mock", "ai"}:
+            reading_v2_provider = "local_mock"
+        self.READING_V2_GENERATION_PROVIDER = reading_v2_provider
+        self.READING_V2_AI_MAX_RETRIES = max(0, min(int(self.READING_V2_AI_MAX_RETRIES or 0), 5))
+        self.READING_V2_AI_MAX_OUTPUT_TOKENS = max(1024, int(self.READING_V2_AI_MAX_OUTPUT_TOKENS or 8192))
 
         in_docker = os.getenv("DOCKER_COMPOSE", "").lower() in ("1", "true", "yes")
         host = (self.POSTGRES_HOST or "localhost").strip()

@@ -120,6 +120,11 @@ from app.models.language import (
     LanguageSkill,
     SpeakingLiveDailyUsage,
     SpeakingLiveLease,
+    GrammarCanonicalLesson,
+    GrammarCanonicalLessonRevision,
+    GrammarCanonicalLessonRevisionUnitAttempt,
+    GrammarActivitySession,
+    GrammarEvidenceLedger,
 )
 
 __all__ = [
@@ -247,6 +252,11 @@ __all__ = [
     "PaymentItemProductType",
     "SpeakingLiveDailyUsage",
     "SpeakingLiveLease",
+    "GrammarCanonicalLesson",
+    "GrammarCanonicalLessonRevision",
+    "GrammarCanonicalLessonRevisionUnitAttempt",
+    "GrammarActivitySession",
+    "GrammarEvidenceLedger",
     "StudentRoutineProfile",
     "RoutineSlot",
     "ActivityType",
