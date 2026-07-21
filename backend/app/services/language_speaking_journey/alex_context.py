@@ -42,7 +42,7 @@ from app.services.language_speaking_lesson_planner.mission_task_resolver import 
 from app.services.language_speaking_lesson_planner.storage import SpeakingStoredJourneyState
 from app.services.language_speaking_lesson_planner.types import SpeakingLessonBlueprint
 
-ALEX_EDUCATIONAL_CONTEXT_VERSION = "14.0.0"
+ALEX_EDUCATIONAL_CONTEXT_VERSION = "14.1.0"
 
 # ---------------------------------------------------------------------------
 # PART 4 — deterministic general tutor behavior contract
@@ -51,6 +51,8 @@ ALEX_EDUCATIONAL_CONTEXT_VERSION = "14.0.0"
 TUTOR_BEHAVIOR_CONTRACT: tuple[str, ...] = (
     "You are Alex, a warm and encouraging English speaking tutor — not a generic chatbot.",
     "Follow the current educational mission and keep the conversation on the current learning objective.",
+    "Continue the SAME Educational Case: same people, same place, same conflict, same timeline.",
+    "Never invent a new story world, location, or unrelated cast of characters.",
     "Teach when the mission requires teaching; give a concise explanation before expecting performance.",
     "Model a short natural example when support is available and it helps the student.",
     "Ask one clear speaking prompt at a time, then let the student speak without interrupting.",
@@ -167,6 +169,16 @@ class AlexSpeakingEducationalContext:
     tutor_behavior_contract: tuple[str, ...] = TUTOR_BEHAVIOR_CONTRACT
     mission_behavior: tuple[str, ...] = ()
     has_current_task: bool = False
+    # Same Educational Case continuity (projected from planner alex_context)
+    case_title: str = ""
+    case_setting: str = ""
+    case_characters: tuple[str, ...] = ()
+    case_conflict: str = ""
+    case_continuation_hook: str = ""
+    case_category: str = ""
+    case_archetype: str = ""
+    case_stakeholders: tuple[str, ...] = ()
+    case_decision_point: str = ""
 
     def to_tutor_dict(self) -> dict[str, object]:
         """Serialize for delivery to Alex (EVI). Guaranteed free of ids/mastery/secrets."""
@@ -193,6 +205,15 @@ class AlexSpeakingEducationalContext:
             "tutor_behavior_contract": list(self.tutor_behavior_contract),
             "mission_behavior": list(self.mission_behavior),
             "has_current_task": self.has_current_task,
+            "case_title": self.case_title,
+            "case_setting": self.case_setting,
+            "case_characters": list(self.case_characters),
+            "case_conflict": self.case_conflict,
+            "case_continuation_hook": self.case_continuation_hook,
+            "case_category": self.case_category,
+            "case_archetype": self.case_archetype,
+            "case_stakeholders": list(self.case_stakeholders),
+            "case_decision_point": self.case_decision_point,
         }
 
     to_dict = to_tutor_dict
@@ -249,6 +270,20 @@ def build_alex_speaking_educational_context(
     if not task_instruction and task_section.available:
         task_instruction = task_section.instruction
 
+    alex = blueprint.alex_context
+    case_title = alex.case_title
+    case_setting = alex.case_setting
+    case_characters = alex.case_characters
+    case_conflict = alex.case_conflict
+    case_hook = alex.case_continuation_hook or alex.communicative_scenario
+    case_category = alex.case_category
+    case_archetype = alex.case_archetype
+    case_stakeholders = alex.case_stakeholders
+    case_decision_point = alex.case_decision_point
+    if case_hook and (not task_instruction or task_instruction == alex.communicative_scenario):
+        # Prefer typed continuation hook when present
+        task_instruction = case_hook or task_instruction
+
     mission_section = read_model.current_mission
     support_available = tuple(item.label for item in read_model.support if item.available)
     weak = tuple(card.label for card in read_model.weak_skills)
@@ -262,6 +297,13 @@ def build_alex_speaking_educational_context(
         execution_mode = task_section.execution_mode
 
     task_context = task_section.context_descriptor if task_section.available else ""
+    if case_setting and case_characters:
+        task_context = (
+            f"{case_title or 'Educational Case'} · {case_category or case_setting} · "
+            f"{', '.join(case_characters)}"
+            + (f" · {case_conflict}" if case_conflict else "")
+            + (f" · decision: {case_decision_point}" if case_decision_point else "")
+        ).strip(" ·")
 
     # Fingerprint: authoritative educational identity only (excludes copy/behavior text
     # so wording tweaks don't churn freshness, and excludes any timestamp).
@@ -282,6 +324,12 @@ def build_alex_speaking_educational_context(
         "weak": list(weak),
         "retention": list(retention),
         "transfer": list(transfer),
+        "case_setting": case_setting,
+        "case_characters": list(case_characters),
+        "case_conflict": case_conflict,
+        "case_category": case_category,
+        "case_archetype": case_archetype,
+        "case_decision_point": case_decision_point,
     }
     fingerprint = _fingerprint(fingerprint_payload)
 
@@ -308,4 +356,13 @@ def build_alex_speaking_educational_context(
         tutor_behavior_contract=TUTOR_BEHAVIOR_CONTRACT,
         mission_behavior=mission_behavior_for_kind(mission_kind) if has_current_task else (),
         has_current_task=has_current_task,
+        case_title=case_title,
+        case_setting=case_setting,
+        case_characters=case_characters,
+        case_conflict=case_conflict,
+        case_continuation_hook=case_hook,
+        case_category=case_category,
+        case_archetype=case_archetype,
+        case_stakeholders=case_stakeholders,
+        case_decision_point=case_decision_point,
     )

@@ -56,6 +56,17 @@ def create_learning_session(
     )
 
 
+def session_activities_exhausted(
+    session: SpeakingLearningSession,
+    blueprint: SpeakingLessonBlueprint,
+) -> bool:
+    """True when every blueprint activity id is in the session completion set."""
+    if not blueprint.activities:
+        return False
+    done = set(session.completed_activity_ids)
+    return all(a.activity_id in done for a in blueprint.activities)
+
+
 def advance_session_activity(
     session: SpeakingLearningSession,
     blueprint: SpeakingLessonBlueprint,

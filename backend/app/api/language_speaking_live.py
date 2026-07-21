@@ -27,7 +27,7 @@ from app.services.language_speaking_evaluator.input_types import (
     SpeakingOfficialCefrContext,
     SpeakingTaskContext,
 )
-from app.services.language_speaking_journey.api_service import build_alex_context_for_student
+from app.services.language_speaking_journey.api_service import build_alex_tutor_dict_for_student
 from app.services.language_speaking_journey.errors import (
     SpeakingContextUnavailableError,
     SpeakingLiveExecutionError,
@@ -248,7 +248,9 @@ async def speaking_live_token(
 
     live_session_id = derive_live_session_id(auth.lease_id)
     try:
-        alex_ctx = await build_alex_context_for_student(db, student_id=student.id, language_id=1)
+        alex_ctx, alex_tutor = await build_alex_tutor_dict_for_student(
+            db, student_id=student.id, language_id=1
+        )
     except SpeakingLiveExecutionError as exc:
         # Release the lease so a missing lesson can't zombie-block the daily budget.
         try:
@@ -286,7 +288,7 @@ async def speaking_live_token(
         live_session_id=live_session_id,
         context_version=alex_ctx.context_version,
         context_fingerprint=alex_ctx.context_fingerprint,
-        alex_context=alex_ctx.to_tutor_dict(),
+        alex_context=alex_tutor,
     )
 
 
@@ -369,7 +371,9 @@ async def speaking_live_tool(
             detail={"message": "This tool is not available.", "code": "unknown_tool"},
         )
     try:
-        alex_ctx = await build_alex_context_for_student(db, student_id=student.id, language_id=1)
+        _alex_ctx, alex_tutor = await build_alex_tutor_dict_for_student(
+            db, student_id=student.id, language_id=1
+        )
     except SpeakingLiveExecutionError as exc:
         await db.commit()
         raise HTTPException(
@@ -383,7 +387,7 @@ async def speaking_live_tool(
     await db.commit()
     return SpeakingLiveToolOut(
         tool_call_id=body.tool_call_id.strip(),
-        content=json.dumps(alex_ctx.to_tutor_dict(), ensure_ascii=False, separators=(",", ":")),
+        content=json.dumps(alex_tutor, ensure_ascii=False, separators=(",", ":")),
         tool_name=tool_name,
     )
 

@@ -13,8 +13,8 @@ S4_LEGACY_RUNTIME_MAP: dict[str, str] = {
     "language_media_service.upload_student_speaking": (
         "MediaObject + local disk -> artifact_from_media_object -> SpeakingAudioArtifact"
     ),
-    "language_speaking_feedback_service._read_media_bytes": (
-        "Legacy read path — S4 uses media_adapter.read_media_bytes with structured AudioNotFoundError"
+    "media_adapter.read_media_bytes": (
+        "Canonical S4 media read path (replaces retired Additional Exercises feedback read helper)"
     ),
     "MediaObject.storage_key": "SpeakingAudioArtifact.storage_reference (relative path under UPLOAD_DIR)",
     "MediaObject.public_url": "SpeakingAudioArtifact.storage_reference (URL form)",

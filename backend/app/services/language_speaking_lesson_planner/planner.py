@@ -15,6 +15,17 @@ from app.services.language_speaking.enums import (
 )
 from app.services.language_speaking_curriculum.skill_catalog import SPEAKING_SKILL_GRAPH
 from app.services.language_speaking_curriculum.types import SpeakingSkillGraph
+from app.services.language_speaking_curriculum_engine.case_taxonomy import (
+    select_educational_case_seed,
+)
+from app.services.language_speaking_curriculum_engine.educational_world import (
+    build_educational_world,
+    educational_mission_title,
+)
+from app.services.language_speaking_curriculum_engine.story_complexity import (
+    build_stakeholder_hints,
+    story_complexity_policy_for_cefr,
+)
 from app.services.language_speaking_diagnostic.types import DiagnosticRecommendation, TargetSelectionReason
 from app.services.language_speaking_lesson_planner.blueprint_hash import compute_blueprint_hash
 from app.services.language_speaking_lesson_planner.identity import make_task_id
@@ -198,11 +209,12 @@ def build_educational_missions(
         teaching_blocks: tuple[SpeakingTeachingBlock, ...] = ()
         tasks: tuple[SpeakingExecutableTask, ...] = ()
         retry_policy = SpeakingMissionOutcome.proceed
-        title = kind.value.replace("_", " ").title()
+        title = educational_mission_title(kind.value, label)
         instructions = ""
 
         if kind is SpeakingMissionKind.teaching:
-            title, instructions = f"Learn: {label}", f"Learn how {label} works before you speak."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Learn how {label} works before you speak."
             objectives = (_objective(target, label, SpeakingEvidenceIntent.none, prereqs),)
             teaching_blocks = (
                 _teaching_block(blueprint_id, SpeakingTeachingBlockKind.explanation, target, label,
@@ -211,7 +223,8 @@ def build_educational_missions(
                                 f"Listen to a short model that uses {label}."),
             )
         elif kind is SpeakingMissionKind.noticing:
-            title, instructions = f"Notice: {label}", f"Spot where {label} appears and why it matters."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Spot where {label} appears and why it matters."
             teaching_blocks = (
                 _teaching_block(blueprint_id, SpeakingTeachingBlockKind.noticing_cue, target, label,
                                 f"Notice the moment where {label} changes the meaning."),
@@ -219,7 +232,8 @@ def build_educational_missions(
                                 f"Compare a weaker answer with one that uses {label}."),
             )
         elif kind is SpeakingMissionKind.guided_practice:
-            title, instructions = "Guided practice", f"Practise {label} with short sentence frames."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Practise {label} with short sentence frames."
             objectives = (_objective(target, label, SpeakingEvidenceIntent.formative, prereqs),)
             teaching_blocks = (
                 _teaching_block(blueprint_id, SpeakingTeachingBlockKind.scaffold, target, label,
@@ -230,24 +244,28 @@ def build_educational_missions(
             tasks = (_task(kind, order, f"Answer using {label} with the sentence frame."),)
             retry_policy = SpeakingMissionOutcome.retry_same_task
         elif kind is SpeakingMissionKind.speak:
-            title, instructions = "Speak with Alex", f"Have a natural conversation with Alex and use {label}."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Practise using {label} in today's lesson story."
             objectives = (_objective(target, label, SpeakingEvidenceIntent.summative, prereqs),)
             tasks = (_task(kind, order, f"Speak naturally and use {label} in your answers."),)
             retry_policy = SpeakingMissionOutcome.retry_with_scaffold
         elif kind is SpeakingMissionKind.feedback:
-            title, instructions = "Feedback", "Review one clear, actionable point from your speaking turn."
+            title = educational_mission_title(kind.value, label)
+            instructions = "Review one clear, actionable point from your speaking turn."
             teaching_blocks = (
                 _teaching_block(blueprint_id, SpeakingTeachingBlockKind.misconception_correction, target, label,
                                 f"A common slip: giving an opinion without using {label}. Add it next time."),
             )
         elif kind is SpeakingMissionKind.transfer:
-            title, instructions = "Transfer", f"Use {label} on a new topic to show it transfers."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Use {label} on a new topic to show it transfers."
             objectives = (_objective(target, label, SpeakingEvidenceIntent.transfer, prereqs),)
             tasks = (_task(kind, order, f"Use {label} to discuss a different, unfamiliar topic.",
                            context_descriptor="changed_topic_context"),)
             retry_policy = SpeakingMissionOutcome.retry_same_task
         elif kind is SpeakingMissionKind.retention_review:
-            title, instructions = "Review later", f"Come back later to keep {label} strong."
+            title = educational_mission_title(kind.value, label)
+            instructions = f"Come back later to keep {label} strong."
             tasks = (_task(kind, order, f"Quick review: use {label} once more.",
                            context_descriptor="spaced_review"),)
 
@@ -279,17 +297,53 @@ def _mode_for_reason(reason: TargetSelectionReason) -> SpeakingSessionMode:
     return SpeakingSessionMode.standard
 
 
-def _alex_context(node_label: str, reason: TargetSelectionReason, goal: str) -> AlexTutoringContext:
-    scenario = " everyday conversation about your week"
+def _alex_context(
+    node_label: str,
+    reason: TargetSelectionReason,
+    goal: str,
+    *,
+    skill_ids: list[str] | None = None,
+    official_cefr: str = "A2",
+) -> AlexTutoringContext:
+    """Live continuation context only — does not own curriculum titles."""
+    skills = list(skill_ids or [])
+    world = build_educational_world(
+        skill_ids=skills,
+        skill_label=node_label,
+    )
+    scenario = world["alex_continuation_scenario"] or world["story_world"]
     if reason == TargetSelectionReason.pronunciation_weakness:
-        scenario = f"a short dialogue where you naturally use words with {node_label}"
+        scenario = (
+            f"{scenario} Gently elicit clear production related to {node_label}."
+        )
     elif reason == TargetSelectionReason.task_weakness:
-        scenario = "a guided role-play where you answer clearly and stay on topic"
+        scenario = f"{scenario} Keep answers on topic and clear."
     elif reason == TargetSelectionReason.delivery_weakness:
-        scenario = "a calm back-and-forth where you speak in full, steady phrases"
+        scenario = f"{scenario} Encourage full, steady phrases."
+
+    case_seed = select_educational_case_seed(
+        cefr=official_cefr,
+        skill_ids=skills,
+        learning_focus=node_label,
+        scenario_type=str(world.get("scenario_type") or ""),
+    )
+    complexity = story_complexity_policy_for_cefr(
+        official_cefr,
+        skill_ids=skills,
+        learning_focus=node_label,
+        scenario_type=str(world.get("scenario_type") or ""),
+    )
+    characters = [str(c) for c in (world.get("character_hints") or [])]
+    stakeholders = build_stakeholder_hints(characters, complexity)
+    c0 = characters[0] if characters else "the learner"
+    decision_point = (
+        f"{c0} faces a {complexity.decision_complexity.replace('_', ' ')} "
+        f"in this {case_seed['case_category'].replace('_', ' ')} case."
+    )
+    continuation = str(world.get("alex_continuation_scenario") or scenario)
 
     return AlexTutoringContext(
-        session_goal=f"Practice {node_label} in natural conversation",
+        session_goal=f"Continue today's Educational Case using {node_label}",
         target_skill_label=node_label,
         communicative_scenario=scenario.strip(),
         encourage_behaviors=(
@@ -307,7 +361,51 @@ def _alex_context(node_label: str, reason: TargetSelectionReason, goal: str) -> 
             "Do not assign CEFR level or mastery",
             "Do not declare promotion or stage changes",
             "Avoid drill-sergeant correction — save evaluation for the platform pipeline",
+            "Continue the SAME Educational Case — same people, place, conflict, timeline",
+            "Never invent a new location, cast of characters, or unrelated situation",
+            f"Stay inside case_category={case_seed['case_category']}",
         ),
+        case_title=str(world.get("story_title_hint") or ""),
+        case_setting=str(world.get("scenario_type") or ""),
+        case_characters=tuple(characters),
+        case_conflict=str(world.get("conflict_seed") or ""),
+        case_continuation_hook=continuation,
+        case_category=str(case_seed["case_category"]),
+        case_archetype=str(case_seed["case_archetype"]),
+        case_stakeholders=tuple(stakeholders),
+        case_decision_point=decision_point,
+    )
+
+
+def continue_alex_from_story_spine(
+    alex: AlexTutoringContext,
+    *,
+    title: str = "",
+    setting: str = "",
+    characters: list[str] | tuple[str, ...] | None = None,
+    conflict: str = "",
+    continuation_hook: str = "",
+    case_category: str = "",
+    case_archetype: str = "",
+    stakeholders: list[str] | tuple[str, ...] | None = None,
+    decision_point: str = "",
+) -> AlexTutoringContext:
+    """Bind Alex to the authored Educational Case (same world; never invent a new one)."""
+    chars = tuple(str(c) for c in (characters or ()) if str(c).strip())
+    stakes = tuple(str(s) for s in (stakeholders or ()) if str(s).strip())
+    hook = (continuation_hook or alex.case_continuation_hook or "").strip()
+    return dataclasses.replace(
+        alex,
+        case_title=(title or alex.case_title).strip(),
+        case_setting=(setting or alex.case_setting).strip(),
+        case_characters=chars or alex.case_characters,
+        case_conflict=(conflict or alex.case_conflict).strip(),
+        case_continuation_hook=hook,
+        case_category=(case_category or alex.case_category).strip(),
+        case_archetype=(case_archetype or alex.case_archetype).strip(),
+        case_stakeholders=stakes or alex.case_stakeholders,
+        case_decision_point=(decision_point or alex.case_decision_point).strip(),
+        communicative_scenario=hook or alex.communicative_scenario,
     )
 
 
@@ -359,8 +457,8 @@ def assemble_speaking_lesson_blueprint(
         SpeakingSessionActivity(
             activity_id=_activity_id(SpeakingSessionActivityKind.communicative_task, target),
             kind=SpeakingSessionActivityKind.communicative_task,
-            title="Speak with Alex",
-            learner_instructions="Have a natural conversation with Alex using today's focus.",
+            title=label,
+            learner_instructions=f"Use {label} in a natural conversation for this lesson story.",
             target_skill_ids=(target,),
             completion_criteria=("At least one live turn evaluated", "Minimum communicative exchanges"),
             optional_render_hints=("live_evi",),
@@ -402,7 +500,13 @@ def assemble_speaking_lesson_blueprint(
         official_cefr_hint=recommendation.official_cefr_hint,
         speaking_goal=recommendation.speaking_goal,
         activities=activities,
-        alex_context=_alex_context(label, reason, recommendation.speaking_goal),
+        alex_context=_alex_context(
+            label,
+            reason,
+            recommendation.speaking_goal,
+            skill_ids=list(recommendation.target_skill_ids or ()) + [target],
+            official_cefr=recommendation.official_cefr_hint or "A2",
+        ),
         completion_evidence_requirements=("communicative_turn_evaluated", "session_boundary_decision"),
         remediation_strategy="Short scenario retry on same target with clearer task framing",
         retry_strategy="Focused retry on same target with adjusted activity/scenario",

@@ -1,14 +1,23 @@
-"""Speaking SPA blueprint / session contracts (S18).
+"""Speaking SPA blueprint contracts (S18) + status enums shared with S19.
 
 S18 owns specification, constrained wording freeze, and bounded persistence.
 Does NOT score SPA, write official_speaking_cefr, or apply S8 mastery.
+
+Identity (S19 revision): blueprint_id identifies the frozen definition only.
+assessment_id and attempt_id live on SpeakingPromotionAssessment / attempts
+(see execution_types.py) — never collapse assessment_id == blueprint_id.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.services.language_speaking_promotion_test.execution_types import (
+        SpeakingPromotionAssessment,
+    )
 
 from app.services.language_speaking_promotion_test.policy import (
     EVIDENCE_SOURCE_PROMOTION_ASSESSMENT,
@@ -318,9 +327,6 @@ class SpeakingPromotionAssessmentBlueprint:
     status: SpaBlueprintStatus
     created_at: str
     evidence_source: str = EVIDENCE_SOURCE_PROMOTION_ASSESSMENT
-    # Session identity stubs for S19 — not executed in S18.
-    assessment_id: str = ""
-    attempt_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -340,13 +346,10 @@ class SpeakingPromotionAssessmentBlueprint:
             "status": self.status.value,
             "created_at": self.created_at,
             "evidence_source": self.evidence_source,
-            "assessment_id": self.assessment_id or self.blueprint_id,
-            "attempt_id": self.attempt_id,
         }
 
     def to_student_safe_dict(self, *, include_tasks: bool = True) -> dict[str, Any]:
         out: dict[str, Any] = {
-            "assessment_id": self.assessment_id or self.blueprint_id,
             "blueprint_id": self.blueprint_id,
             "status": self.status.value,
             "source_cefr": self.source_cefr,
@@ -394,8 +397,6 @@ class SpeakingPromotionAssessmentBlueprint:
             status=SpaBlueprintStatus(str(raw.get("status") or SpaBlueprintStatus.not_started.value)),
             created_at=str(raw.get("created_at", "")),
             evidence_source=str(raw.get("evidence_source") or EVIDENCE_SOURCE_PROMOTION_ASSESSMENT),
-            assessment_id=str(raw.get("assessment_id") or raw.get("blueprint_id") or ""),
-            attempt_id=(str(raw["attempt_id"]) if raw.get("attempt_id") else None),
         )
 
 
@@ -418,6 +419,8 @@ class SpaUnlockAuthority:
 class SpaCreateResult:
     ok: bool
     blueprint: SpeakingPromotionAssessmentBlueprint | None = None
+    # S19: distinct assessment envelope (assessment_id ≠ blueprint_id).
+    assessment: SpeakingPromotionAssessment | None = None
     failure_code: SpaCreateFailureCode | None = None
     student_safe_message: str = ""
     coverage_gaps: tuple[SpaAssessmentCoverageGap, ...] = ()

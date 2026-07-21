@@ -64,6 +64,4 @@ def build_spa_blueprint(
         frozen=True,
         status=SpaBlueprintStatus.not_started,
         created_at=ts,
-        assessment_id=bid,
-        attempt_id=None,
     )

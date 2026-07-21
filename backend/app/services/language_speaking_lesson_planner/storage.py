@@ -161,6 +161,15 @@ def blueprint_from_dict(raw: dict[str, Any] | None) -> SpeakingLessonBlueprint |
         elicit_behaviors=tuple(str(x) for x in (alex_raw.get("elicit_behaviors") or [])),
         retry_focus=str(alex_raw.get("retry_focus", "")),
         conversation_constraints=tuple(str(x) for x in (alex_raw.get("conversation_constraints") or [])),
+        case_title=str(alex_raw.get("case_title", "")),
+        case_setting=str(alex_raw.get("case_setting", "")),
+        case_characters=tuple(str(x) for x in (alex_raw.get("case_characters") or [])),
+        case_conflict=str(alex_raw.get("case_conflict", "")),
+        case_continuation_hook=str(alex_raw.get("case_continuation_hook", "")),
+        case_category=str(alex_raw.get("case_category", "")),
+        case_archetype=str(alex_raw.get("case_archetype", "")),
+        case_stakeholders=tuple(str(x) for x in (alex_raw.get("case_stakeholders") or [])),
+        case_decision_point=str(alex_raw.get("case_decision_point", "")),
     )
     return SpeakingLessonBlueprint(
         blueprint_id=str(raw["blueprint_id"]),

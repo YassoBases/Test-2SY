@@ -14,10 +14,17 @@ PACKAGE_OWNERSHIP: dict[str, str] = {
     "language_speaking_prosody": "Pitch, stress, rhythm, intonation facts (language learning only)",
     "language_speaking_live_conversation": "Provider-neutral live conversation contracts, turn/session/event facts, turn audio accumulator",
     "language_speaking_curriculum": "Skill dependency graph catalog and node metadata (S1+)",
+    "language_speaking_curriculum_engine": "Curriculum Engine V2 — enrich PackageConstraints (vocab/objectives/CEFR density) before Claude",
+    "language_speaking_case_personalization": "Personalization Engine — adapt Educational Case experience (world/characters/interests/memory) without changing curriculum",
     "language_speaking_knowledge_model": "Per-skill mastery, confidence, evidence, retention risk",
     "language_speaking_diagnostic": "Next-skill selection from graph + mastery gaps",
     "language_speaking_lesson_planner": "SpeakingLessonBlueprint — deterministic targets (no LLM)",
     "language_speaking_generation": "Lesson/conversation content generation pipeline",
+    "language_speaking_educational_package": "E1 Learning Package authoring/persistence (Claude transforms constraints only)",
+    "language_speaking_lesson_runtime": "E2 student play of frozen Learning Packages (cursor/memory only)",
+    "language_speaking_discussion": "E3 Live Voice Discussion — Claude tutor + STT/TTS helpers (Supertonic TTS preferred, Whisper STT fallback); no Scene Practice; no evaluation authorship",
+    "language_speaking_discussion_eval": "E4 discussion→S7 evaluation adapter (map/forward only; no local scoring)",
+    "language_speaking_live_bridge": "M10 Live Speaking Bridge — SpeakingScenario + GPT voice rehearsal → LiveConversationContext for Hume EVI (same Educational Case; no curriculum authorship)",
     "language_speaking_interruption": "Interrupt/wait/micro-drill policy engine",
     "language_speaking_coach": "Canonical educational priority + render-only coach guidance",
     "language_speaking_evaluation_runtime": "Turn pipeline orchestration (evaluator + coach + S7→S2 knowledge bridge + persistence)",
@@ -30,7 +37,7 @@ PACKAGE_OWNERSHIP: dict[str, str] = {
     "language_speaking_transition_gate": "Stage transition gate (pronunciation, fluency, task, stability, etc.)",
     "language_speaking_promotion_readiness": "Promotion readiness scoring (never promotes CEFR)",
     "language_speaking_promotion_stability": "Rolling readiness history / stability",
-    "language_speaking_promotion_test": "SPA task bundles and sessions",
+    "language_speaking_promotion_test": "SPA blueprints, assessment execution, and pass gates",
     "language_speaking_official_promotion": "Official speaking CEFR promotion (sole writer of official_speaking_cefr)",
     "language_speaking_legacy_adapter": "Freeze-wrap legacy flat services → canonical types (only legacy import path)",
 }
@@ -47,22 +54,14 @@ SHARED_INFRASTRUCTURE: frozenset[str] = frozenset(
     }
 )
 
-# Packages that may import legacy flat modules (language_conversation_service, etc.).
+# Packages that may import remaining legacy flat modules (transcription/pronunciation/TTS/coach).
 LEGACY_IMPORT_GATEWAY: frozenset[str] = frozenset({"language_speaking_legacy_adapter"})
 
 # Legacy flat modules — frozen; no new features. S0 documents boundary only.
 LEGACY_FLAT_MODULES: frozenset[str] = frozenset(
     {
-        "language_speaking_service",
-        "language_speaking_feedback_service",
+        # Additional Exercises surface removed; remaining flats are shared/coach legacy.
         "language_speaking_coach_service",
-        "language_speaking_evolution_service",
-        "language_conversation_service",
-        "language_conversation_ai_service",
-        "language_conversation_correction",
-        "language_conversation_scenario_service",
-        "language_conversation_tts_task",
-        "language_shadowing_service",
         "language_pronunciation_service",
         "language_transcription_service",
         "language_reply_tts_service",
@@ -105,14 +104,54 @@ ALLOWED_PACKAGE_DEPENDENCIES: dict[str, frozenset[str]] = {
         }
     ),
     "language_speaking_curriculum": frozenset(),
+    "language_speaking_curriculum_engine": frozenset({"language_speaking_curriculum"}),
+    "language_speaking_case_personalization": frozenset({"language_speaking_knowledge_model"}),
     "language_speaking_knowledge_model": frozenset({"language_speaking_curriculum"}),
     "language_speaking_diagnostic": frozenset(
         {"language_speaking_curriculum", "language_speaking_knowledge_model"}
     ),
     "language_speaking_lesson_planner": frozenset(
-        {"language_speaking_curriculum", "language_speaking_diagnostic", "language_speaking_knowledge_model"}
+        {
+            "language_speaking_curriculum",
+            "language_speaking_curriculum_engine",
+            "language_speaking_diagnostic",
+            "language_speaking_knowledge_model",
+        }
     ),
     "language_speaking_generation": frozenset({"language_speaking_lesson_planner"}),
+    "language_speaking_educational_package": frozenset(
+        {
+            "language_speaking_curriculum_engine",
+            "language_speaking_case_personalization",
+        }
+    ),
+    "language_speaking_lesson_runtime": frozenset({"language_speaking_educational_package"}),
+    "language_speaking_discussion": frozenset(
+        {
+            "language_speaking_educational_package",
+            "language_speaking_lesson_runtime",
+            # Live Voice Discussion reuses shared STT/TTS helpers (no Scene Practice).
+            "language_speaking_audio_frontend",
+        }
+    ),
+    "language_speaking_discussion_eval": frozenset(
+        {
+            "language_speaking_discussion",
+            "language_speaking_evaluator",
+            "language_speaking_evaluation_runtime",
+            "language_speaking_knowledge_model",
+        }
+    ),
+    "language_speaking_live_bridge": frozenset(
+        {
+            "language_speaking_educational_package",
+            "language_speaking_lesson_runtime",
+            "language_speaking_discussion",
+            "language_speaking_knowledge_model",
+            # M12.3 — Scene Practice voice turn consumes STT (normalize + transcribe)
+            "language_speaking_audio_frontend",
+        }
+    ),
     "language_speaking_interruption": frozenset({"language_speaking_evaluator", "language_speaking_lesson_planner"}),
     "language_speaking_coach": frozenset(
         {
@@ -159,6 +198,7 @@ ALLOWED_PACKAGE_DEPENDENCIES: dict[str, frozenset[str]] = {
             "language_speaking_diagnostic",
             "language_speaking_knowledge_model",
             "language_speaking_live_budget",
+            "language_speaking_live_bridge",
         }
     ),
     "language_speaking_progression": frozenset(
@@ -240,10 +280,17 @@ PACKAGE_LAYER: dict[str, str] = {
     "language_speaking_live_conversation": "analysis",
     "language_speaking_evaluator": "evaluation",
     "language_speaking_curriculum": "curriculum",
+    "language_speaking_curriculum_engine": "curriculum",
+    "language_speaking_case_personalization": "generation",
     "language_speaking_knowledge_model": "curriculum",
     "language_speaking_diagnostic": "curriculum",
     "language_speaking_lesson_planner": "planning",
     "language_speaking_generation": "generation",
+    "language_speaking_educational_package": "generation",
+    "language_speaking_lesson_runtime": "experience",
+    "language_speaking_discussion": "experience",
+    "language_speaking_discussion_eval": "experience",
+    "language_speaking_live_bridge": "experience",
     "language_speaking_interruption": "policy",
     "language_speaking_coach": "pedagogy",
     "language_speaking_explainability": "facts",

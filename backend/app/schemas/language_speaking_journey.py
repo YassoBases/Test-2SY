@@ -175,7 +175,8 @@ class SpeakingSessionActivityOut(BaseModel):
 
 
 class SpeakingAlexContextOut(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Ignore tutor-dict extras (S14 / M10 overlays) while exposing case continuity.
+    model_config = ConfigDict(extra="ignore")
 
     session_goal: str = ""
     target_skill_label: str = ""
@@ -184,6 +185,17 @@ class SpeakingAlexContextOut(BaseModel):
     elicit_behaviors: list[str] = Field(default_factory=list)
     retry_focus: str = ""
     conversation_constraints: list[str] = Field(default_factory=list)
+    case_title: str = ""
+    case_setting: str = ""
+    case_characters: list[str] = Field(default_factory=list)
+    case_conflict: str = ""
+    case_continuation_hook: str = ""
+    case_category: str = ""
+    case_archetype: str = ""
+    case_stakeholders: list[str] = Field(default_factory=list)
+    case_decision_point: str = ""
+    live_conversation_opening: str = ""
+    live_bridge_ready: bool = False
 
 
 class SpeakingSessionStartOut(BaseModel):
@@ -197,6 +209,7 @@ class SpeakingSessionStartOut(BaseModel):
     alex_context: SpeakingAlexContextOut | None = None
     target_skill_ids: list[str] = Field(default_factory=list)
     task_prompt: str = ""
+    live_conversation_context: dict | None = None
 
 
 class SpeakingSessionStartIn(BaseModel):

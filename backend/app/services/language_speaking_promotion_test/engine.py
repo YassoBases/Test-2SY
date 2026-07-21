@@ -12,6 +12,9 @@ from app.services.language_speaking_generation.promotion_assessment import (
     SpeakingPromotionTaskGenerationRequest,
     generate_spa_task_wording,
 )
+from app.services.language_speaking_promotion_test.assessment import (
+    build_speaking_promotion_assessment,
+)
 from app.services.language_speaking_promotion_test.builder import build_spa_blueprint
 from app.services.language_speaking_promotion_test.policy import (
     EVIDENCE_SOURCE_PROMOTION_ASSESSMENT,
@@ -234,9 +237,11 @@ def create_speaking_promotion_assessment(
             last_issues = tuple((i.code, i.message) for i in bp_val.issues)
             continue
 
+        assessment = build_speaking_promotion_assessment(blueprint)
         return SpaCreateResult(
             ok=True,
             blueprint=blueprint,
+            assessment=assessment,
             coverage_gaps=specification.coverage_gaps,
         )
 

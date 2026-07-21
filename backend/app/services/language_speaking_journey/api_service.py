@@ -39,6 +39,7 @@ from app.services.language_speaking_lesson_planner.session_runtime import (
     create_learning_session,
     evaluate_session_boundary,
     record_session_turn,
+    session_activities_exhausted,
     student_safe_activity,
 )
 from app.services.language_speaking_lesson_planner.storage import (
@@ -212,22 +213,38 @@ def _session_start_payload(
     session,
     resolution,
     attempt_summary: dict[str, object] | None = None,
+    progression_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from app.services.language_speaking_live_bridge.engine import apply_live_bridge_to_alex_payload
+    from app.services.language_speaking_live_bridge.storage import live_bridge_from_payload
+
     activity = student_safe_activity(blueprint, session.current_activity_id)
+    alex = apply_live_bridge_to_alex_payload(
+        progression_payload, blueprint.alex_context.to_dict()
+    )
+    bridge = live_bridge_from_payload(progression_payload)
+    task_prompt = (
+        (bridge.live_context.opening_line if bridge.live_context else "")
+        or alex.get("communicative_scenario")
+        or blueprint.alex_context.communicative_scenario
+    )
     return {
         "session_id": session.session_id,
         "live_session_id": session.live_session_id,
         "blueprint_id": blueprint.blueprint_id,
         "phase": session.phase.value,
         "current_activity": activity,
-        "alex_context": blueprint.alex_context.to_dict(),
+        "alex_context": alex,
         "target_skill_ids": list(blueprint.target_skill_ids),
-        "task_prompt": blueprint.alex_context.communicative_scenario,
+        "task_prompt": task_prompt,
         "task_resolution": resolution.to_dict(),
         "attempt": attempt_summary or {},
         "live_execution_ready": (
             resolution.is_task
             and resolution.execution_mode == SpeakingExecutionMode.live_evi_conversation.value
+        ),
+        "live_conversation_context": (
+            bridge.live_context.to_dict() if bridge.live_context else None
         ),
     }
 
@@ -284,6 +301,7 @@ async def prepare_speaking_session_for_live(
                     "mission_id": attempt.mission_id,
                     "is_retry": attempt.is_retry,
                 },
+                progression_payload=payload,
             )
 
         activity_id = session.current_activity_id
@@ -344,6 +362,8 @@ async def complete_speaking_activity(
     blueprint, session, lineage = state.blueprint, state.session, state.attempt_lineage
     if blueprint is None or session is None:
         raise ValueError("no_active_session")
+    if session.phase == SpeakingSessionPhase.completed:
+        raise ValueError("session_already_completed")
     session = advance_session_activity(session, blueprint, completed_activity_id=activity_id)
 
     # When advancing onto a new executable task, start its attempt lineage (D).
@@ -372,6 +392,13 @@ async def complete_speaking_activity(
     payload = merge_speaking_bucket_into_payload(payload, bucket)
     row.promotion_readiness_json = payload
     flag_modified(row, "promotion_readiness_json")
+
+    # Final blueprint activity → existing finalize owner (no parallel terminal path).
+    if session_activities_exhausted(session, blueprint):
+        return await finalize_speaking_session(
+            db, student_id=student_id, language_id=language_id
+        )
+
     return {
         "session_id": session.session_id,
         "phase": session.phase.value,
@@ -462,8 +489,12 @@ async def finalize_speaking_session(
     plan, blueprint, session, lineage = state.plan, state.blueprint, state.session, state.attempt_lineage
     if blueprint is None or session is None:
         raise ValueError("no_active_session")
+    if session.phase == SpeakingSessionPhase.completed:
+        raise ValueError("session_already_completed")
     decision = evaluate_session_boundary(session, blueprint)
     session.phase = SpeakingSessionPhase.completed
+    # Cursor must not remain on the final reflection activity after finalize.
+    session.current_activity_id = ""
 
     lineage = _ensure_lineage(lineage, session.session_id)
     mission_outcome = mission_flow_from_session_outcome(decision.outcome_kind)
@@ -485,6 +516,37 @@ async def finalize_speaking_session(
         learning_stage_speaking=getattr(row, "learning_stage_speaking", None),
         promotion_readiness=_student_promotion_projection(row),
     )
+    # Wave D: attested completion via server activity session when present.
+    grammar_id = None
+    try:
+        from app.services.language_grammar_integrity import (
+            AttestedCompletionRequest,
+            complete_attested_activity,
+        )
+
+        activity_session_id = str(payload.get("activity_session_id") or "")
+        if not activity_session_id and isinstance(bucket, dict):
+            elp = dict(bucket.get("educational_learning_package") or {})
+            activity_session_id = str(elp.get("activity_session_id") or "")
+        if activity_session_id:
+            score = 85.0 if str(decision.outcome_kind.value) in {
+                "pass",
+                "strong_pass",
+                "success",
+                "completed",
+            } else 55.0
+            completion = await complete_attested_activity(
+                db,
+                AttestedCompletionRequest(
+                    student_id=student_id,
+                    language_id=language_id,
+                    activity_session_id=activity_session_id,
+                    server_score=score,
+                ),
+            )
+            grammar_id = completion.grammar_id
+    except Exception:  # noqa: BLE001 — never block speaking finalize on grammar bridge
+        grammar_id = None
     return {
         "session_id": session.session_id,
         "outcome_kind": decision.outcome_kind.value,
@@ -492,6 +554,7 @@ async def finalize_speaking_session(
         "student_summary": decision.student_summary,
         "retry_same_target": decision.retry_same_target,
         "journey": journey.to_student_dict(),
+        "grammar_id": grammar_id,
     }
 
 
@@ -520,14 +583,46 @@ async def build_alex_context_for_student(
     )
 
 
+async def build_alex_tutor_dict_for_student(
+    db: AsyncSession,
+    *,
+    student_id: int,
+    language_id: int = 1,
+) -> tuple[AlexSpeakingEducationalContext, dict[str, object]]:
+    """S14 tutor dict plus M10 LiveConversationContext overlay when present.
+
+    Hume EVI receives the merged dict so Alex continues the Educational Case
+    (never a fresh greeting). Evaluation still sees one continuous attempt.
+    """
+    from app.services.language_speaking_live_bridge.engine import apply_live_bridge_to_alex_payload
+
+    row = await _load_row(db, student_id=student_id, language_id=language_id)
+    payload = dict(row.promotion_readiness_json or {})
+    bucket = speaking_bucket_from_payload(payload)
+    state = load_s9_state(bucket)
+    knowledge_model = knowledge_model_from_speaking_bucket(
+        bucket, student_id=student_id, language_id=language_id
+    )
+    ctx = build_alex_speaking_educational_context(
+        official_cefr=_official_cefr(row),
+        state=state,
+        knowledge_model=knowledge_model,
+    )
+    tutor = apply_live_bridge_to_alex_payload(payload, ctx.to_tutor_dict())
+    return ctx, tutor
+
+
 async def get_session_evi_context(
     db: AsyncSession,
     *,
     student_id: int,
     language_id: int = 1,
 ) -> dict[str, object] | None:
+    from app.services.language_speaking_live_bridge.engine import apply_live_bridge_to_alex_payload
+
     row = await _load_row(db, student_id=student_id, language_id=language_id)
-    bucket = speaking_bucket_from_payload(dict(row.promotion_readiness_json or {}))
+    payload = dict(row.promotion_readiness_json or {})
+    bucket = speaking_bucket_from_payload(payload)
     state = load_s9_state(bucket)
     blueprint, session = state.blueprint, state.session
     if blueprint is None:
@@ -536,4 +631,4 @@ async def get_session_evi_context(
     ctx["session_id"] = session.session_id if session else ""
     ctx["live_session_id"] = session.live_session_id if session else ""
     ctx["phase"] = session.phase.value if session else ""
-    return ctx
+    return apply_live_bridge_to_alex_payload(payload, ctx)

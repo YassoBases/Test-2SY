@@ -111,6 +111,7 @@ async def speaking_session_start(
     await db.commit()
     act_raw = raw.get("current_activity") or {}
     alex_raw = raw.get("alex_context") or {}
+    live_ctx = raw.get("live_conversation_context")
     return SpeakingSessionStartOut(
         session_id=str(raw.get("session_id", "")),
         live_session_id=str(raw.get("live_session_id", "")),
@@ -120,6 +121,7 @@ async def speaking_session_start(
         alex_context=SpeakingAlexContextOut.model_validate(alex_raw) if alex_raw else None,
         target_skill_ids=[str(x) for x in (raw.get("target_skill_ids") or [])],
         task_prompt=str(raw.get("task_prompt", "")),
+        live_conversation_context=live_ctx if isinstance(live_ctx, dict) else None,
     )
 
 
@@ -136,6 +138,11 @@ async def speaking_activity_complete(
             language_id=1,
             activity_id=body.activity_id,
         )
+        # Auto-finalize on last activity uses the same finalize owner + S16 gate as /finalize.
+        if isinstance(raw, dict) and raw.get("outcome_kind") is not None:
+            await run_speaking_progression_engines(db, student_id=student.id, language_id=1)
+            refreshed = await get_speaking_journey(db, student_id=student.id, language_id=1)
+            raw["journey"] = refreshed.to_student_dict()
     except ValueError as exc:
         raise HTTPException(status_code=404, detail={"message": str(exc), "code": "activity_complete_failed"}) from exc
     await db.commit()
@@ -165,6 +172,7 @@ async def speaking_session_prepare_live(
     await db.commit()
     act_raw = raw.get("current_activity") or {}
     alex_raw = raw.get("alex_context") or {}
+    live_ctx = raw.get("live_conversation_context")
     return SpeakingSessionStartOut(
         session_id=str(raw.get("session_id", "")),
         live_session_id=str(raw.get("live_session_id", "")),
@@ -174,6 +182,7 @@ async def speaking_session_prepare_live(
         alex_context=SpeakingAlexContextOut.model_validate(alex_raw) if alex_raw else None,
         target_skill_ids=[str(x) for x in (raw.get("target_skill_ids") or [])],
         task_prompt=str(raw.get("task_prompt", "")),
+        live_conversation_context=live_ctx if isinstance(live_ctx, dict) else None,
     )
 
 

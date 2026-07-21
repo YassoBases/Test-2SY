@@ -38,12 +38,12 @@ Educational analyzer and coach add facts and copy only — they never decide pro
 | Evaluation | `language_speaking_evaluator` |
 | Curriculum | `language_speaking_curriculum`, `_knowledge_model`, `_diagnostic` |
 | Planning | `language_speaking_lesson_planner` |
-| Generation | `language_speaking_generation` |
+| Generation | `language_speaking_generation`, `language_speaking_educational_package` (E1 Learning Package) |
 | Policy | `language_speaking_interruption` |
 | Pedagogy | `language_speaking_coach` |
 | Facts | `language_speaking_explainability` |
 | Runtime | `language_speaking_evaluation_runtime` |
-| Experience | `language_speaking_lesson_experience` |
+| Experience | `language_speaking_lesson_experience`, `language_speaking_lesson_runtime` (E2), `language_speaking_discussion` (E3), `language_speaking_discussion_eval` (E4 discussion→S7 adapter), `language_speaking_live_bridge` (M10 prep→GPT rehearsal→EVI context) |
 | Journey | `language_speaking_journey` |
 | Progression | `language_speaking_progression`, `_learning_stage`, `_transition_gate`, `_promotion_*`, `_official_promotion` |
 | Legacy | `language_speaking_legacy_adapter` |
@@ -61,7 +61,7 @@ Full ownership registry: `language_speaking/ownership.py`.
 3. **Progression engines** consume `SpeakingEvaluationEngineResult` only; never raw audio or provider SDKs.
 4. **Coach** consumes evaluation + diagnostic priority; never selects the first STT/grammar error.
 5. **Official CEFR** (`official_speaking_cefr`) is writable only by `language_speaking_official_promotion` at runtime (+ initial placement bulk write in `language_progression_service`).
-6. **Legacy adapter** is the only package that may import flat legacy modules (`language_conversation_service`, etc.).
+6. **Legacy adapter** is the only package that may import remaining flat legacy modules (transcription, pronunciation, reply TTS, coach).
 7. **Frontend** is render-only — no readiness formulas, stage math, or pronunciation thresholds.
 8. **ElevenLabs is excluded** from Speaking speech output; Supertonic is the target provider.
 
@@ -104,33 +104,25 @@ Flat legacy modules under `app/services/` are **frozen** — no new features, no
 |---------------|------------------------|
 | `language_transcription_service` | `SpeechTranscriptionProvider` |
 | `language_pronunciation_service` | Pronunciation analysis engine |
-| `language_conversation_service` | `language_speaking_evaluation_runtime` |
-| `language_conversation_ai_service` | `SpeakingEducationalAnalyzerProvider` |
-| `language_speaking_feedback_service` | Evaluation runtime (prompt path) |
-| `language_speaking_service` | Lesson experience |
-| `language_speaking_evolution_service` | Progression (migrate off `analytics.speaking_level`) |
 | `language_speaking_coach_service` | Coach (**unwired** — replace with `language_speaking_coach`) |
-| `language_shadowing_service` | Lesson experience (shadowing) |
-| `language_conversation_scenario_service` | Lesson experience (scenarios) |
 | `language_reply_tts_service` | `SpeakingSpeechOutputProvider` |
 | `speaking_coach_service` | Standalone `/speaking/coach` API (separate from main flow) |
 
-S0 adapter may be a no-op passthrough. S7+ routes turns through canonical evaluation while legacy HTTP routes remain stable.
+**Removed (Additional Exercises cleanup):** `language_conversation_service`, `language_conversation_ai_service`, `language_conversation_correction`, `language_conversation_scenario_service`, `language_conversation_tts_task`, `language_shadowing_service`, `language_speaking_service`, `language_speaking_feedback_service`, `language_speaking_evolution_service`.
+
+S0 adapter may be a no-op passthrough. Journey runtime uses canonical evaluation paths (discussion / scene practice / Alex / promotion).
 
 ---
 
-## Runtime blockers (hotfix track — not fixed in S0)
+## Runtime blockers
 
-These are verified production risks. Fix in a small hotfix PR before or alongside S1; do not implement in S0.
+Additional Exercises conversation blockers (`mastery_settings_attr`, `tts_signature_mismatch`, `dual_level_system`) were **retired with that surface**.
 
 | ID | Location | Issue | Impact |
 |----|----------|-------|--------|
-| `mastery_settings_attr` | `language_speaking_evolution_service.py:148` | Reads `LANGUAGE_MASTERY_WINDOW` but config defines `LANGUAGE_MASTERY_WINDOW_SIZE` | Conversation level update may raise `AttributeError` every turn |
-| `tts_signature_mismatch` | `language_conversation_service.py:325` | Calls `synthesize_english_reply(segments=, voice=)` but wrapper accepts `text=` only | Sync reply TTS may fail with `TypeError` |
-| `dual_level_system` | `language_speaking_evolution_service` | Writes `analytics.speaking_level`; `official_speaking_cefr` unused by speaking runtime | Inconsistent CEFR across modules until S15–S18 |
 | `dead_coach_module` | `language_speaking_coach_service.py` | Rich coach logic never called from main submit flow | Confusion for implementers; wasted prior work |
 
-Also tracked in `language_speaking_legacy_adapter.adapter.KNOWN_RUNTIME_BLOCKERS`.
+Also tracked in `language_speaking_legacy_adapter.adapter.KNOWN_RUNTIME_BLOCKERS` (may be empty after AE removal).
 
 ---
 
@@ -143,3 +135,107 @@ Also tracked in `language_speaking_legacy_adapter.adapter.KNOWN_RUNTIME_BLOCKERS
 **S1 readiness:** Do not start S1 until S0 verification passes, legacy boundary is frozen, and hotfix blockers are fixed or explicitly shimmed.
 
 See the S0 audit plan for the full S0–S21 roadmap.
+
+---
+
+## M0.5 — Educational Case Philosophy (Speaking V3)
+
+**Locked before M1.** This section defines the educational philosophy of Speaking.
+It changes the educational artifact, not the E1→E4 / Curriculum / Evaluation architecture.
+
+### Core principle
+
+Speaking lessons are **not** dialogue-first and **not** story-for-entertainment.
+Speaking lessons are **Educational Cases**.
+
+The student learns language by understanding, analyzing, discussing, and finally
+**living one realistic situation**. Every lesson should feel like
+“I experienced one real situation,” not “I memorized English.”
+
+### Educational Case
+
+Claude does **not** generate random stories. Claude generates **one Educational Case**
+that is realistic and discussion-ready (family conflict, job interview, travel emergency,
+ethical dilemma, workplace disagreement, immigration, medical visit, etc.).
+
+Forbidden: fantasy, fiction-for-entertainment, dialogue scripts as the lesson center.
+
+### Curriculum ownership (unchanged)
+
+The **Curriculum Engine** remains educational owner: CEFR, grammar IDs, vocabulary,
+objectives, communication objective, difficulty, and length policy.
+Claude never chooses educational content — only authors one case that satisfies
+frozen constraints.
+
+### Case structure (authored artifact)
+
+Case title, context, setting, characters + backgrounds, problem, conflict, timeline,
+important events, decision point, consequences, open ending, discussion hooks,
+continuation hooks. Vocabulary appears naturally (multi-recycle, no dumping).
+Grammar is demonstrated in the case, never lectured inside the prose; Teaching explains
+what the student already experienced.
+
+### Discussion / Reflection / Alex
+
+- Discussion starts from the case (understanding → reasoning → decision → opinion →
+  experience → transfer), not vocabulary quizzes.
+- Reflection covers language, communication, decisions, feelings, alternatives, real life.
+- **Alex continues the same Educational Case** (same people, place, conflict, timeline) —
+  never invents a new world.
+
+### Implementation constraint
+
+E1–E4, Curriculum Engine, Lesson Runtime, Discussion Runtime, Evaluation, Knowledge,
+and Promotion remain reusable. Migration moves Dialogue-first → Educational Case-first
+only. Phases: **M1** story default + prompts → **M2** StorySpine → **M3** Alex
+same-world → **M4** themes/length policy → **M5** cleanup → **M6–M9** complexity /
+personalization / progression → **M10** live speaking bridge.
+
+---
+
+## M10 — Live Speaking Bridge
+
+Students must never enter live conversation without Educational Case context.
+
+```
+Educational Case → Reading → Teaching → Guided Discussion (GPT)
+  → Speaking Preparation (SpeakingScenario)
+  → Voice Rehearsal (GPT-4o Voice — NOT Hume)
+  → Live Conversation (Hume EVI + LiveConversationContext)
+  → Evaluation (one continuous attempt)
+```
+
+Ownership (`language_speaking_live_bridge`):
+
+- Builds `SpeakingScenario` from frozen package `story_spine` (same characters/conflict/decision).
+- GPT rehearses as case roles (coach only — no grading).
+- Exit produces `LiveConversationContext` for Alex (opening beat continues the case).
+- Never invents curriculum, CEFR, or a new story world.
+
+Does **not** redesign E1–E4, Curriculum Engine, Educational Package authorship, or Discussion Runtime.
+
+---
+
+## M11 (retired) → M12 — Claude Scene Director + GPT TTS/STT
+
+M11 GPT Realtime / WebRTC Scene Practice was **retired in M12.5**. Scene Practice now uses:
+
+```
+Claude Discussion
+  → SpeakingScenario / Mission Brief (M10)
+  → Scene Practice (Claude Scene Director owns every turn)
+  → Student audio → STT (GPT) → Claude → persist → TTS (GPT) → audio
+  → LiveConversationContext (server-owned transcript)
+  → Alex Hume EVI continues same case
+  → Evaluation (unchanged)
+```
+
+Claude owns dialogue, corrections, scene beats. GPT-4o is **only** STT + TTS.
+
+API (same `/live-bridge` prefix):
+
+- `POST /rehearsal/respond` — voice turn (STT → Claude → persist → TTS)
+- `POST /rehearsal/turn` — typed accessibility fallback (same Claude director)
+- Removed: `/rehearsal/realtime-session`, `/rehearsal/sync`
+
+Verifiers: `verify_speaking_m12_*.py`; `verify_speaking_m11_realtime_scene_practice.py` is now an anti-regression that proves Realtime is gone.

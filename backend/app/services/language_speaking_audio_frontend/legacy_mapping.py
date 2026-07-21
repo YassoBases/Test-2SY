@@ -3,7 +3,9 @@
 Documents how frozen legacy speaking/audio paths map into the new S3 contracts.
 No legacy code is modified — this is the adapter boundary specification only.
 
-Legacy modules remain running behind ``language_speaking_legacy_adapter``.
+Remaining shared legacy modules (STT / pronunciation / reply TTS) stay behind
+``language_speaking_legacy_adapter``. Additional Exercises conversation/prompt
+modules were removed from the product surface.
 """
 
 from __future__ import annotations
@@ -24,13 +26,8 @@ LEGACY_AUDIO_CONTRACT_MAP: dict[str, str] = {
     "voice_service.transcribe_audio": "SpeechTranscriptionProvider (lesson video path)",
     # Pronunciation / phoneme (legacy Claude+STT, not canonical yet)
     "language_pronunciation_service.assess_pronunciation": "PhonemeAlignmentEvidence + ProsodyFeatureEvidence (S4+ mapping)",
-    # Conversation turn orchestration
-    "language_conversation_service.process_conversation_turn": "SpeakingAudioEvidenceBundle → evaluation_runtime (S7+)",
-    "language_speaking_feedback_service.analyze_speaking_recording": "SpeakingAudioEvidenceBundle → evaluation_runtime (S7+)",
-    # Session lifecycle (legacy DB tables)
-    "LanguageSpeakingConversationSession": "SpeakingAudioSessionRecord (session_id, student_id, lifecycle)",
-    "LanguageSpeakingConversationTurn.user_media_object_id": "SpeakingAudioArtifact.audio_id linkage",
-    "LanguageSpeakingProgress.media_object_id": "SpeakingAudioArtifact.audio_id linkage",
+    # Journey / evaluation runtime (canonical)
+    "language_speaking_evaluation_runtime": "SpeakingAudioEvidenceBundle → evaluation_runtime",
     # TTS (output path — not audio frontend input, documented for completeness)
     "language_reply_tts_service.synthesize_english_reply": "SpeakingSpeechOutputProvider (Supertonic legacy wrapper)",
     "language_supertonic_service.synthesize_language_speech": "SpeakingSpeechOutputProvider (Supertonic impl)",
