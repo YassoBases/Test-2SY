@@ -285,9 +285,42 @@ export function useLiveConversation() {
     if (!ctx || typeof ctx !== 'object') return ''
     const lines = []
     lines.push('You are Alex, an English speaking tutor for this student.')
+    lines.push('Continue the SAME Educational Case — never start a fresh generic chat.')
     if (ctx.official_cefr) lines.push(`Student official CEFR: ${ctx.official_cefr}.`)
     if (ctx.focus_title) lines.push(`Current learning focus: ${ctx.focus_title}.`)
     if (ctx.focus_reason) lines.push(ctx.focus_reason)
+    if (ctx.case_title || ctx.case_setting || ctx.case_characters?.length) {
+      lines.push(
+        `Educational Case: ${ctx.case_title || 'today\'s case'}` +
+          (ctx.case_setting ? ` · Setting: ${ctx.case_setting}` : '') +
+          (Array.isArray(ctx.case_characters) && ctx.case_characters.length
+            ? ` · Characters: ${ctx.case_characters.join(', ')}`
+            : '') +
+          (ctx.case_category ? ` · Category: ${ctx.case_category}` : '') +
+          '.',
+      )
+    }
+    if (ctx.case_conflict) lines.push(`Conflict / stakes: ${ctx.case_conflict}.`)
+    if (ctx.case_decision_point) lines.push(`Decision point: ${ctx.case_decision_point}.`)
+    if (ctx.case_continuation_hook) {
+      lines.push(`Continuation in this world: ${ctx.case_continuation_hook}.`)
+    }
+    if (ctx.live_conversation_opening) {
+      lines.push(`Open with this beat (not a hello): ${ctx.live_conversation_opening}`)
+    }
+    const live = ctx.live_conversation_context
+    if (live && typeof live === 'object') {
+      if (live.vocabulary_focus?.length) {
+        lines.push(`Vocabulary focus: ${live.vocabulary_focus.join(', ')}.`)
+      }
+      if (live.grammar_focus?.length) {
+        lines.push(`Grammar focus: ${live.grammar_focus.join(', ')}.`)
+      }
+      if (live.student_summary) lines.push(`Student prep summary: ${live.student_summary}`)
+      if (live.remaining_weaknesses?.length) {
+        lines.push(`Remain gentle with: ${live.remaining_weaknesses.join('; ')}.`)
+      }
+    }
     if (ctx.current_mission) {
       lines.push(`Current mission: ${ctx.current_mission} — ${ctx.current_mission_purpose || ''}`.trim())
     }
@@ -305,6 +338,7 @@ export function useLiveConversation() {
     if (Array.isArray(ctx.tutor_behavior_contract)) behaviors.push(...ctx.tutor_behavior_contract)
     if (Array.isArray(ctx.mission_behavior)) behaviors.push(...ctx.mission_behavior)
     if (behaviors.length) lines.push(`How to teach now: ${behaviors.join(' ')}`)
+    lines.push('Do not invent a new location, cast, or unrelated situation.')
     return lines.filter(Boolean).join('\n')
   }
 

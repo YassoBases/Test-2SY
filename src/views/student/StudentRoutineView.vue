@@ -1009,6 +1009,7 @@ onMounted(async () => {
     if (profile.sleep_time) form.value.sleep_time = profile.sleep_time
     if (profile.school_days?.length) selectedSchoolDays.value = profile.school_days
     if (profile.chat_stage) currentStage.value = profile.chat_stage
+    if (profile.summary_data) summaryData.value = profile.summary_data
     const scheduleReady = profile.onboarding_complete || ['build', 'review', 'done'].includes(profile.chat_stage)
     if (scheduleReady) {
       if (profile.has_schedule) {
@@ -1018,6 +1019,9 @@ onMounted(async () => {
         pushWelcome()
       }
       void loadWeekSchedule({ showLoading: true })
+    } else if (profile.grade_level) {
+      step.value = 'chat'
+      if (!profile.summary_data && !messages.value.length) pushWelcome()
     }
   } catch {}
 })

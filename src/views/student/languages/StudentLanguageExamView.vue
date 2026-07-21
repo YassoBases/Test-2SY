@@ -33,6 +33,9 @@
       <v-btn color="secondary" variant="flat" size="large" :loading="busy" prepend-icon="mdi-play" class="mt-3" @click="start">
         Start the exam
       </v-btn>
+      <div class="mt-3 d-flex justify-center">
+        <DevSkipPlacementControl />
+      </div>
     </v-card>
 
     <!-- EXAM -->
@@ -396,9 +399,6 @@
         <v-btn color="secondary" variant="flat" :to="ROUTES.STUDENT_LANGUAGES" prepend-icon="mdi-view-dashboard-outline">
           Go to my learning home
         </v-btn>
-        <v-btn variant="tonal" :to="ROUTES.STUDENT_LANGUAGES_CURRICULUM" prepend-icon="mdi-map-marker-path">
-          My learning path
-        </v-btn>
         <v-btn variant="text" :loading="busy" prepend-icon="mdi-restart" @click="restart">Take it again</v-btn>
       </div>
     </template>
@@ -413,6 +413,7 @@ import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import LanguageCorrectionList from '../../../components/language/LanguageCorrectionList.vue'
+import DevSkipPlacementControl from '../../../components/language/DevSkipPlacementControl.vue'
 import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
 import {
   initiateExam,

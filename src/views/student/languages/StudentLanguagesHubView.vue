@@ -50,14 +50,17 @@
               <div class="font-weight-bold">One step before you begin</div>
               <div class="text-body-2">A quick 3-5 minute AI interview sets your starting level.</div>
             </div>
-            <v-btn
-              color="secondary"
-              variant="flat"
-              rounded="lg"
-              :to="ROUTES.STUDENT_LANGUAGES_EXAM"
-            >
-              Take the AI level exam
-            </v-btn>
+            <div class="d-flex flex-wrap gap-2 align-center">
+              <DevSkipPlacementControl />
+              <v-btn
+                color="secondary"
+                variant="flat"
+                rounded="lg"
+                :to="ROUTES.STUDENT_LANGUAGES_EXAM"
+              >
+                Take the AI level exam
+              </v-btn>
+            </div>
           </div>
         </v-alert>
 
@@ -106,9 +109,6 @@
                 Start here<span v-if="focusLabel">: focus on {{ focusLabel }}</span>
               </h3>
             </div>
-            <v-btn color="secondary" variant="flat" rounded="lg" prepend-icon="mdi-map-marker-path" @click="goLearningPath">
-              Go to my learning path
-            </v-btn>
           </div>
           <p v-if="placementRec.topic" class="text-body-2 mb-2">
             <v-icon size="16" color="secondary" icon="mdi-lightbulb-on-outline" /> {{ placementRec.topic }}
@@ -194,6 +194,7 @@ import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguagePaywallCard from '../../../components/language/LanguagePaywallCard.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import LanguageCorrectionList from '../../../components/language/LanguageCorrectionList.vue'
+import DevSkipPlacementControl from '../../../components/language/DevSkipPlacementControl.vue'
 import AuroraBackground from '../../../components/common/AuroraBackground.vue'
 import LevelUpCelebration from '../../../components/language/LevelUpCelebration.vue'
 import { levelUpState, checkLevelUp, dismissLevelUp } from '../../../composables/useLevelUp.js'
@@ -246,10 +247,6 @@ const focusLabel = computed(() => access.value?.levels?.primary_focus_label_ar |
 const strengthLabel = computed(() => access.value?.levels?.strength_label_ar || null)
 const placementRec = computed(() => access.value?.placement_recommendation || null)
 
-function goLearningPath() {
-  router.push(ROUTES.STUDENT_LANGUAGES_CURRICULUM)
-}
-
 const lessonsDoneLabel = computed(() => {
   const lp = hub.value?.learning_path || {}
   return `${lp.items_completed || 0}/${lp.items_total || 0}`
@@ -264,14 +261,15 @@ const growthStats = computed(() => {
   ]
 })
 
+// Exactly six learning modules — Row 1: Reading/Listening/Writing, Row 2: Speaking/Vocabulary/Grammar.
 const featureTiles = [
-  { label: 'Reading', sub: 'Texts & comprehension', icon: 'mdi-book-open-page-variant', to: ROUTES.STUDENT_LANGUAGES_READING, color: 'blue' },
+  { label: 'Reading', sub: 'AI-guided practice path', icon: 'mdi-book-open-page-variant', to: ROUTES.STUDENT_LANGUAGES_READING, color: 'blue' },
   { label: 'Listening', sub: 'Audio & dialogues', icon: 'mdi-headphones', to: ROUTES.STUDENT_LANGUAGES_LISTENING, color: 'deep-purple' },
-  { label: 'Vocabulary', sub: 'Cards & spaced review', icon: 'mdi-cards-outline', to: ROUTES.STUDENT_LANGUAGES_VOCABULARY, color: 'teal' },
   { label: 'Writing', sub: 'Guided prompts', icon: 'mdi-pencil-outline', to: ROUTES.STUDENT_LANGUAGES_WRITING, color: 'orange' },
   { label: 'Speaking', sub: 'Talk with the AI', icon: 'mdi-microphone-outline', to: ROUTES.STUDENT_LANGUAGES_SPEAKING, color: 'pink' },
-  { label: 'Curriculum', sub: 'Your learning path', icon: 'mdi-map-marker-path', to: ROUTES.STUDENT_LANGUAGES_CURRICULUM, color: 'light-green' },
-  { label: 'Progress', sub: 'Levels & growth', icon: 'mdi-chart-line', to: ROUTES.STUDENT_LANGUAGES_PROGRESS, color: 'cyan' },
+  { label: 'Vocabulary', sub: 'Cards & spaced review', icon: 'mdi-cards-outline', to: ROUTES.STUDENT_LANGUAGES_VOCABULARY, color: 'teal' },
+  { label: 'English Journey', sub: 'AI Teacher path & stages', icon: 'mdi-earth', to: ROUTES.STUDENT_ENGLISH_JOURNEY, color: 'indigo' },
+  { label: 'Grammar', sub: 'Personalized grammar lessons', icon: 'mdi-syllabary-hiragana', to: ROUTES.STUDENT_GRAMMAR, color: 'light-green' },
 ]
 
 onMounted(async () => {
@@ -294,10 +292,10 @@ function goSubscribe() {
   router.push(ROUTES.STUDENT_LANGUAGES_SUBSCRIBE)
 }
 function goPlacement() {
-  router.push(ROUTES.STUDENT_LANGUAGES_PLACEMENT)
+  router.push(ROUTES.STUDENT_LANGUAGES_EXAM)
 }
 function goPlacementResults() {
-  router.push({ path: ROUTES.STUDENT_LANGUAGES_PLACEMENT, query: { results: '1' } })
+  router.push(ROUTES.STUDENT_LANGUAGES_PLACEMENT_HISTORY)
 }
 
 const retakeBlocked = computed(() => {

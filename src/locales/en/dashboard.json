@@ -13,9 +13,11 @@
   },
   "student": {
     "nav": {
+      "englishJourney": "English Journey",
       "journey": "My journey",
       "messages": "Messages",
       "languages": "Languages",
+      "grammar": "Grammar",
       "subscriptions": "Subscriptions",
       "routine": "Routine & commitment",
       "planner": "Smart planner",

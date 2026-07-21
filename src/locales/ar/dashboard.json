@@ -13,9 +13,11 @@
   },
   "student": {
     "nav": {
+      "englishJourney": "رحلة الإنجليزية",
       "journey": "رحلتي",
       "messages": "الرسائل",
       "languages": "اللغات",
+      "grammar": "القواعد",
       "subscriptions": "الاشتراكات",
       "routine": "المخطط والالتزام",
       "planner": "المخطط الذكي",

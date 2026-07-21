@@ -304,6 +304,67 @@ const routes = [
         meta: { title: 'Subscriptions' },
       },
       {
+        path: 'english-journey',
+        name: 'student-english-journey',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyHomeView.vue')),
+        meta: {
+          title: 'English Journey',
+          titleKey: 'routes.studentEnglishJourney',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/stage/:grammarId',
+        name: 'student-english-journey-stage',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyStageView.vue')),
+        meta: {
+          title: 'Stage',
+          titleKey: 'routes.studentEnglishJourneyStage',
+          languageModule: true,
+        },
+        props: true,
+      },
+      {
+        path: 'english-journey/session',
+        name: 'student-english-journey-session',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneySessionView.vue')),
+        meta: {
+          title: 'Session',
+          titleKey: 'routes.studentEnglishJourneySession',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/complete',
+        name: 'student-english-journey-complete',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyCompleteView.vue')),
+        meta: {
+          title: 'Stage complete',
+          titleKey: 'routes.studentEnglishJourneyComplete',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/review',
+        name: 'student-english-journey-review',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyReviewView.vue')),
+        meta: {
+          title: 'Review',
+          titleKey: 'routes.studentEnglishJourneyReview',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/achievements',
+        name: 'student-english-journey-achievements',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyAchievementsView.vue')),
+        meta: {
+          title: 'Achievements',
+          titleKey: 'routes.studentEnglishJourneyAchievements',
+          languageModule: true,
+        },
+      },
+      {
         path: 'languages',
         name: 'student-languages',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguagesHubView.vue')),
@@ -317,9 +378,13 @@ const routes = [
       },
       {
         path: 'languages/placement',
-        name: 'student-languages-placement',
+        redirect: { name: 'student-languages-exam' },
+      },
+      {
+        path: 'languages/placement-history',
+        name: 'student-languages-placement-history',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguagePlacementView.vue')),
-        meta: { title: 'Placement Test', languageModule: true },
+        meta: { title: 'Placement History', languageModule: true },
       },
       {
         path: 'languages/reading',
@@ -340,40 +405,10 @@ const routes = [
         meta: { title: 'Listening Promotion', languageModule: true },
       },
       {
-        path: 'languages/progress',
-        name: 'student-languages-progress',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageProgressView.vue')),
-        meta: { title: 'Progress', languageModule: true },
-      },
-      {
-        path: 'languages/insights',
-        name: 'student-languages-insights',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageInsightsView.vue')),
-        meta: { title: 'AI Insights', languageModule: true },
-      },
-      {
-        path: 'languages/curriculum',
-        name: 'student-languages-curriculum',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageCurriculumView.vue')),
-        meta: { title: 'Curriculum', languageModule: true },
-      },
-      {
-        path: 'languages/lessons',
-        name: 'student-languages-lessons',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageLessonsView.vue')),
-        meta: { title: 'Lessons', languageModule: true },
-      },
-      {
         path: 'languages/vocabulary',
         name: 'student-languages-vocabulary',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguageVocabularyView.vue')),
         meta: { title: 'Vocabulary', languageModule: true },
-      },
-      {
-        path: 'languages/dictionary',
-        name: 'student-languages-dictionary',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageDictionaryView.vue')),
-        meta: { title: 'Dictionary', languageModule: true },
       },
       {
         path: 'languages/writing',
@@ -388,16 +423,53 @@ const routes = [
         meta: { title: 'Speaking', languageModule: true },
       },
       {
-        path: 'languages/certificates',
-        name: 'student-languages-certificates',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageCertificatesView.vue')),
-        meta: { title: 'Certificates', languageModule: true },
+        path: 'grammar',
+        name: 'student-grammar',
+        component: lazyRoute(() => import('../views/student/grammar/StudentGrammarView.vue')),
+        meta: {
+          title: 'Grammar',
+          titleKey: 'routes.studentLanguagesGrammar',
+          languageModule: true,
+        },
       },
       {
-        path: 'languages/history',
-        name: 'student-languages-history',
-        component: lazyRoute(() => import('../views/student/languages/StudentLanguageHistoryView.vue')),
-        meta: { title: 'History', languageModule: true },
+        path: 'grammar/review',
+        name: 'student-grammar-review',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarReviewView.vue')),
+        meta: {
+          title: 'Grammar Review',
+          titleKey: 'routes.studentGrammarReview',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'grammar/complete',
+        name: 'student-grammar-complete',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarCompleteView.vue')),
+        meta: {
+          title: 'Grammar Complete',
+          titleKey: 'routes.studentGrammarComplete',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'grammar/lesson-preview',
+        name: 'student-grammar-lesson-preview',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarLessonPreviewView.vue')),
+        meta: {
+          title: 'Grammar Lesson Preview',
+        },
+      },
+      {
+        path: 'grammar/topic/:grammarId',
+        name: 'student-grammar-topic',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarTopicView.vue')),
+        meta: {
+          title: 'Grammar Lesson',
+          titleKey: 'routes.studentGrammarTopic',
+          languageModule: true,
+        },
+        props: true,
       },
       {
         path: 'languages/exam',
@@ -700,6 +772,12 @@ router.beforeEach(async (to) => {
     const placementDone = langAccess.placement_completed
     const routeName = to.name
 
+    // Placement history is an owned, read-only record and remains available independently of
+    // subscription/learning access. The backend never accepts a student id from this route.
+    if (routeName === 'student-languages-placement-history') {
+      return
+    }
+
     if (routeName === 'student-languages-subscribe') {
       if (subscribed) {
         return placementDone ? ROUTES.STUDENT_LANGUAGES : ROUTES.STUDENT_LANGUAGES_EXAM
@@ -711,13 +789,7 @@ router.beforeEach(async (to) => {
       return ROUTES.STUDENT_LANGUAGES_SUBSCRIBE
     }
 
-    // The interactive AI exam is the entry assessment. Let it (and the hub) through; the legacy
-    // placement page stays reachable directly but is no longer the forced gate.
-    if (
-      routeName === 'student-languages-exam' ||
-      routeName === 'student-languages-placement' ||
-      routeName === 'student-languages'
-    ) {
+    if (routeName === 'student-languages-exam' || routeName === 'student-languages') {
       return
     }
 

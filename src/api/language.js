@@ -15,6 +15,20 @@ export async function subscribeLanguage(method = 'card') {
   return data
 }
 
+/** DEBUG-only: skip placement and bootstrap learning from a starting CEFR (404 in production). */
+export async function devSkipPlacementApi({ startingCefr = 'A1', bootstrapLearning = false } = {}) {
+  const { data } = await api.post(
+    '/dev/languages/skip-placement',
+    {
+      starting_cefr: startingCefr,
+      bootstrap_learning: bootstrapLearning,
+    },
+    // Placement unlock is local DB work — keep timeout short. Package gen is deferred.
+    { timeout: 60 * 1000 },
+  )
+  return data
+}
+
 export async function placementStartApi() {
   const { data } = await api.post('/student/languages/placement/start')
   return data
@@ -44,6 +58,11 @@ export async function placementUploadSpeakingApi({ attemptId, questionId, blob, 
 
 export async function placementSubmitApi(attemptId) {
   const { data } = await api.post('/student/languages/placement/submit', { attempt_id: attemptId })
+  return data
+}
+
+export async function fetchPlacementHistory() {
+  const { data } = await api.get('/student/languages/placement-history')
   return data
 }
 
@@ -251,12 +270,6 @@ export async function submitLearnerPractice(results) {
   return data
 }
 
-// Global English dictionary (WordNet): definitions + synonyms + prefix suggestions.
-export async function searchDictionary(q) {
-  const { data } = await api.get('/student/languages/dictionary', { params: { q: q || '' } })
-  return data
-}
-
 export async function fetchWritingPrompts() {
   const { data } = await api.get('/student/languages/writing')
   return data
@@ -326,80 +339,6 @@ export async function applyWritingOfficialPromotion() {
   return data
 }
 
-export async function fetchSpeakingPrompts() {
-  const { data } = await api.get('/student/languages/speaking')
-  return data
-}
-
-export async function fetchSpeakingPrompt(promptId) {
-  const { data } = await api.get(`/student/languages/speaking/${promptId}`)
-  return data
-}
-
-export async function uploadSpeakingPractice(promptId, blob) {
-  const form = new FormData()
-  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
-  const { data } = await api.post(`/student/languages/speaking/${promptId}/upload`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 5 * 60 * 1000,
-  })
-  return data
-}
-
-export async function submitSpeakingPractice(promptId, { media_object_id, duration_seconds }) {
-  const { data } = await api.post(`/student/languages/speaking/${promptId}/submit`, {
-    media_object_id,
-    duration_seconds,
-  })
-  return data
-}
-
-export async function fetchSpeakingConversation() {
-  const { data } = await api.get('/student/languages/speaking/conversation')
-  return data
-}
-
-export async function fetchSpeakingConversationProgress() {
-  const { data } = await api.get('/student/languages/speaking/conversation/progress')
-  return data
-}
-
-export async function postSpeakingConversationTurn(blob, durationSeconds, voice, focus) {
-  const form = new FormData()
-  form.append('file', new File([blob], 'conversation.webm', { type: blob.type || 'audio/webm' }))
-  if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
-  if (voice) form.append('tts_voice', String(voice))
-  if (focus) form.append('focus', String(focus))
-  const { data } = await api.post('/student/languages/speaking/conversation/turn', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 90 * 1000,
-  })
-  return data
-}
-
-export async function resetSpeakingConversation() {
-  const { data } = await api.delete('/student/languages/speaking/conversation')
-  return data
-}
-
-export async function fetchShadowSentences(focus) {
-  const { data } = await api.get('/student/languages/speaking/shadow/sentences', {
-    params: focus ? { focus } : {},
-  })
-  return data
-}
-
-export async function submitShadow(blob, targetText) {
-  const form = new FormData()
-  form.append('target_text', String(targetText))
-  form.append('file', new File([blob], 'shadow.webm', { type: blob.type || 'audio/webm' }))
-  const { data } = await api.post('/student/languages/speaking/shadow', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 90 * 1000,
-  })
-  return data
-}
-
 export async function fetchCurriculum() {
   const { data } = await api.get('/student/languages/curriculum')
   return data
@@ -438,80 +377,6 @@ export async function fetchAdaptiveState() {
 // --- Vocabulary spaced repetition (SM-2) stats ---
 export async function fetchVocabularyStats() {
   const { data } = await api.get('/student/languages/vocabulary/stats')
-  return data
-}
-
-// --- Speaking conversation scenarios (role-play) ---
-export async function fetchScenarios() {
-  const { data } = await api.get('/student/languages/speaking/scenarios')
-  return data
-}
-
-export async function startScenario(scenarioId) {
-  const { data } = await api.post(`/student/languages/speaking/scenarios/${scenarioId}/start`)
-  return data
-}
-
-export async function fetchScenarioSession(sessionId) {
-  const { data } = await api.get(`/student/languages/speaking/scenarios/session/${sessionId}`)
-  return data
-}
-
-export async function scenarioTurn(sessionId, text) {
-  const { data } = await api.post('/student/languages/speaking/scenarios/turn', {
-    session_id: sessionId,
-    text,
-  })
-  return data
-}
-
-export async function scenarioTurnVoice(sessionId, blob) {
-  const form = new FormData()
-  form.append('session_id', String(sessionId))
-  form.append('file', new File([blob], 'scenario.webm', { type: blob.type || 'audio/webm' }))
-  const { data } = await api.post('/student/languages/speaking/scenarios/turn/voice', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 90 * 1000,
-  })
-  return data
-}
-
-export async function endScenario(sessionId) {
-  const { data } = await api.post('/student/languages/speaking/scenarios/end', {
-    session_id: sessionId,
-  })
-  return data
-}
-
-export async function fetchLessons() {
-  const { data } = await api.get('/student/languages/lessons')
-  return data
-}
-
-export async function fetchLesson(id) {
-  const { data } = await api.get(`/student/languages/lessons/${id}`)
-  return data
-}
-
-// On-demand detailed explanation of a conversation turn's correction.
-export async function fetchConversationTurnExplanation(turnId) {
-  const { data } = await api.get(`/student/languages/speaking/conversation/turn/${turnId}/explanation`)
-  return data
-}
-
-// --- Speaking history (past conversations + scenarios) ---
-export async function fetchConversationSessions() {
-  const { data } = await api.get('/student/languages/speaking/conversation/sessions')
-  return data
-}
-
-export async function fetchConversationSessionDetail(sessionId) {
-  const { data } = await api.get(`/student/languages/speaking/conversation/sessions/${sessionId}`)
-  return data
-}
-
-export async function fetchScenarioSessions() {
-  const { data } = await api.get('/student/languages/speaking/scenarios/sessions')
   return data
 }
 
@@ -579,11 +444,6 @@ export async function abandonExam(sessionId) {
   return data
 }
 
-export async function fetchLanguageCertificates() {
-  const { data } = await api.get('/student/languages/certificates')
-  return data
-}
-
 export async function verifyLanguageCertificate(certificateNumber) {
   const { data } = await api.get(`/verify-certificate/${encodeURIComponent(certificateNumber)}`)
   return data
@@ -597,36 +457,6 @@ export async function fetchLearnerMemory() {
 
 export async function updateLearnerMemory(payload) {
   const { data } = await api.put('/student/languages/learner/memory', payload)
-  return data
-}
-
-export async function fetchErrorReport() {
-  const { data } = await api.get('/v2/learner/errors/report')
-  return data
-}
-
-export async function fetchDifficultyProfile() {
-  const { data } = await api.get('/v2/learner/difficulty')
-  return data
-}
-
-export async function fetchCoachRecommendation(refresh = false) {
-  const { data } = await api.get('/v2/coach/recommendation', { params: { refresh } })
-  return data
-}
-
-export async function fetchPronunciationTrends() {
-  const { data } = await api.get('/v2/pronunciation/trends')
-  return data
-}
-
-export async function fetchCefrProgress() {
-  const { data } = await api.get('/v2/analytics/cefr-progress')
-  return data
-}
-
-export async function fetchVocabularyGrowth() {
-  const { data } = await api.get('/v2/analytics/vocabulary-growth')
   return data
 }
 

@@ -795,7 +795,8 @@
       "subtitle": "ولّد مهاماً، اكتب، احصل على ملاحظات المدرب، وعدّل حتى تستوفي معايير النجاح",
       "tabs": {
         "journey": "الرحلة",
-        "practice": "التمرين"
+        "practice": "التمرين",
+        "promotion": "الترقية"
       },
       "hero": {
         "eyebrow": "مسار الكتابة",
@@ -1030,7 +1031,13 @@
           "connect": "تعذر الاتصال بـ Alex. حاول مرة أخرى.",
           "evaluate": "تعذر مراجعة تحدثك الآن.",
           "micDenied": "يلزم الوصول إلى الميكروفون للتحدث مع Alex.",
-          "micUnavailable": "الميكروفون غير متاح حالياً."
+          "micUnavailable": "الميكروفون غير متاح حالياً.",
+          "generic": "حدث خطأ في المحادثة. حاول مرة أخرى.",
+          "reconnect": "انقطع الاتصال. اضغط إعادة المحاولة للاتصال مجدداً.",
+          "mic": "اسمح بالوصول إلى الميكروفون للحديث مع Alex.",
+          "budget": "استهلكت وقت الحديث مع Alex لليوم.",
+          "unavailable": "Alex غير جاهز الآن. عد إلى درسك أو حاول لاحقاً.",
+          "expired": "انتهت جلسة المحادثة. ابدأ من جديد عندما تكون جاهزاً."
         },
         "summary": {
           "title": "ملخص الجلسة",
@@ -1050,20 +1057,219 @@
       "page": {
         "eyebrow": "تعلّم اللغات",
         "title": "رحلة التحدث",
-        "subtitle": "اتبع مهمتك، تدرب مع Alex، واطّلع على تقييم المستوى التالي عندما تكون جاهزاً"
+        "subtitle": "اتبع درس اليوم وقصته، ثم اطّلع على تقييم المستوى التالي عندما تكون جاهزاً"
       },
       "tabs": {
         "journey": "الرحلة",
-        "alex": "تحدث مع Alex",
-        "practice": "تمارين إضافية",
+        "lesson": "درس اليوم",
+        "discussion": "نقاش صوتي",
+        "bridge": "تدريب المشهد",
+        "alex": "محادثة مباشرة",
         "assessment": "تقييم المستوى"
+      },
+      "liveBridge": {
+        "prepEyebrow": "ملخص المهمة",
+        "prepTitle": "مشهدك",
+        "prepLead": "ثماني ثوانٍ فقط — تعرف دورك، ومن معك، وما سيحدث بعد ذلك.",
+        "roleLabel": "دورك",
+        "charactersLabel": "من موجود معك",
+        "settingLabel": "أين أنت",
+        "decisionLabel": "القرار",
+        "speakingGoalLabel": "هدفك في التحدث",
+        "viewDetails": "عرض التفاصيل الكاملة",
+        "hideDetails": "إخفاء التفاصيل الكاملة",
+        "mustDoTitle": "تأكد من أنك",
+        "stakesLabel": "لماذا هذا مهم",
+        "vocabFocus": "كلمات لاستخدامها",
+        "grammarFocus": "تركيز القواعد",
+        "startPractice": "ادخل المشهد",
+        "skipScenePractice": "تخطَّ تدريب المشهد",
+        "micGateTitle": "عن الميكروفون",
+        "micGateBody": "صوت الميكروفون الحقيقي لتدريب المشهد قادم قريباً. الآن تكتب جملك — بوضوح، وبدون صوت مزيّف أبداً.",
+        "allowMic": "فهمت",
+        "rehearsalEyebrow": "تدريب المشهد",
+        "rehearsalTitle": "غرفة التدريب",
+        "rehearsalLead": "شريكك في المشهد يمثّل أشخاص هذه الحالة. ابقَ داخل القصة — والتوجيه يبقى خفيفاً.",
+        "notHume": "تدريب المشهد — المشهد المباشر بعده",
+        "typedFallbackHint": "اكتب هذا الدور (صوت الميكروفون غير متاح لتدريب المشهد).",
+        "listeningLabel": "أستمع…",
+        "yourTurnLabel": "دورك",
+        "connectingScene": "جارٍ الدخول إلى المشهد…",
+        "partnerSpeaking": "شريك المشهد يتحدث",
+        "recordingLabel": "جارٍ التسجيل…",
+        "thinkingLabel": "شريك المشهد يفكر…",
+        "holdToSpeak": "اضغط مع الاستمرار للتحدث",
+        "releaseToSend": "اترك للإرسال",
+        "mutedLabel": "الميكروفون مكتوم",
+        "sceneVoiceActive": "اضغط على الميكروفون، تكلم، ثم اترك للإرسال.",
+        "muteMic": "كتم الميكروفون",
+        "unmuteMic": "إلغاء كتم الميكروفون",
+        "yourLine": "اكتب هذا الدور",
+        "sendLine": "أرسل هذا الدور",
+        "coachWhisper": "همسة المدرب",
+        "finishRehearsal": "أنا جاهز للمشهد المباشر",
+        "liveTitle": "جاهز للمشهد المباشر",
+        "goLive": "ابدأ المحادثة المباشرة",
+        "missionCompleteTitle": "اكتملت المهمة",
+        "missionCompleteBody": "تدرّبت بنجاح على هذا الموقف.",
+        "missionCompleteInsightFallback": "حافظت على شخصيتك وواصلت حركة المشهد.",
+        "missionCompleteConfidence": "نفس المكان. نفس الأشخاص. أنت جاهز للمشهد المباشر.",
+        "alexJoining": "ألكس يلتحق الآن بنفس المشهد…",
+        "handoffEnding": "المشهد يهدأ…",
+        "handoffAlexEntering": "ألكس يدخل نفس المشهد…",
+        "continueToLive": "متابعة",
+        "retryLiveScene": "أعد محاولة المشهد المباشر",
+        "settingSceneLoading": "جارٍ الدخول إلى المشهد…",
+        "modeBrief": "ملخص المهمة",
+        "modeScenePractice": "تدريب المشهد",
+        "modeLive": "مباشر",
+        "continuityCaseLabel": "الحالة التعليمية",
+        "empty": "ابنِ مشهدك من حالة اليوم التعليمية.",
+        "buildScenario": "ابنِ مشهدي"
+      },
+      "framing": {
+        "todaysSpeakingLesson": "درس التحدث لليوم",
+        "todaysLesson": "درس اليوم",
+        "todaysStory": "قصة اليوم",
+        "todaysLearningPackage": "حزمة التعلّم لليوم"
+      },
+      "packageLesson": {
+        "region": "درس الحزمة التعليمية المُجمَّدة",
+        "eyebrow": "حزمة التعلم",
+        "loading": "جاري تحميل درسك المُجهَّز…",
+        "emptyTitle": "لا يوجد درس مفتوح",
+        "emptyBody": "افتح أحدث حزمة تعلّم مُجمَّدة للدراسة قبل المناقشة الموجّهة.",
+        "openLatest": "افتح أحدث حزمة",
+        "progressLabel": "اكتمل {percent}%",
+        "sections": "أقسام الدرس",
+        "section": {
+          "introduction": "مقدمة",
+          "reading": "قراءة القصة",
+          "vocabulary": "المفردات",
+          "teaching": "التدريس",
+          "mini_practice": "تحضير التحدث",
+          "completed": "مكتمل"
+        },
+        "introLead": "الحالة التعليمية لليوم تأتي من حزمة التعلّم المُجمَّدة. اقرأ الموقف، ثم ناقشه وتابع فيه.",
+        "mission": "المهمة",
+        "duration": "طول الدرس",
+        "durationValue": "{band}",
+        "cefr": "المستوى الرسمي",
+        "scenario": "الموقف",
+        "world": "العالم",
+        "conflict": "الصراع",
+        "objectives": "الأهداف",
+        "readinessMessage": "خذ وقتك. كل ما تراه يأتي من الحالة التعليمية المُجهَّزة — لا شيء يُبتكر أثناء التشغيل.",
+        "continue": "متابعة",
+        "materialFallback": "قصة اليوم",
+        "materialKind": {
+          "story": "حالة تعليمية",
+          "dialogue": "حوار",
+          "email": "بريد",
+          "advertisement": "إعلان",
+          "restaurant_menu": "قائمة",
+          "whatsapp": "محادثة",
+          "news_article": "مقال",
+          "blog": "مدونة",
+          "airport_announcement": "إعلان",
+          "travel_brochure": "كتيب",
+          "instructions": "تعليمات",
+          "conversation_transcript": "محادثة",
+          "custom": "مادة"
+        },
+        "vocabTitle": "المفردات في السياق",
+        "vocabEmpty": "لا توجد مفردات في هذه الحزمة.",
+        "gloss": "المعنى",
+        "usage": "إعادة الاستخدام",
+        "contextRef": "ظهرت في: {ref}",
+        "markViewed": "تعيين كمُراجَع",
+        "viewed": "تمت المراجعة",
+        "teachingTitle": "كتل التدريس",
+        "teachingEmpty": "لا توجد كتل تدريس في هذه الحزمة.",
+        "miniTitle": "تحضير التحدث القصير",
+        "miniLead": "حضّر ما ستقوله. لا تسجيل ولا تقييم في هذه الخطوة.",
+        "miniPrompt": "مطلب التحدث",
+        "miniScaffold": "إطار الدعم",
+        "miniNoRecord": "التسجيل والتقييم ليسا جزءاً من خطوة التحضير هذه.",
+        "miniMarkReady": "أنا جاهز",
+        "miniPrepDone": "تم تعليم التحضير",
+        "finishLesson": "إنهاء الدرس",
+        "completeTitle": "اكتمل الدرس",
+        "completeBody": "أنهيت «{title}».",
+        "readyForDiscussion": "أنت جاهز للنقاش الصوتي.",
+        "startDiscussion": "ابدأ النقاش الصوتي",
+        "discussionLater": "مناقشة GPT غير متاحة بعد. عُد عند بدء E3.",
+        "restart": "أعد بدء الدرس"
+      },
+      "discussion": {
+        "region": "نقاش صوتي مباشر",
+        "eyebrow": "نقاش صوتي مباشر",
+        "loading": "جاري تحميل المناقشة…",
+        "emptyTitle": "ابدأ المحادثة",
+        "emptyBody": "بعد الدرس، سيطرح المدرّس أسئلة عن الحالة التعليمية بصوته.",
+        "finishLessonFirst": "أنهِ درس اليوم أولاً، ثم يبدأ المدرّس النقاش الصوتي.",
+        "goToLesson": "اذهب إلى درس اليوم",
+        "start": "ابدأ النقاش الصوتي",
+        "progress": "السؤال {current} من {total}",
+        "currentQuestion": "السؤال الحالي",
+        "band": "التركيز: {band}",
+        "thread": "سجل المناقشة",
+        "yourAnswer": "إجابتك",
+        "placeholder": "اكتب فكرتك التي ستنطقها…",
+        "send": "أرسل الإجابة",
+        "nextQuestion": "السؤال التالي",
+        "correction": "تصحيح سريع",
+        "completeTitle": "أُغلقت الحالة التعليمية",
+        "readyForAlex": "اكتمل النقاش. أنت جاهز للمحادثة الحية مع أليكس.",
+        "alexLater": "الشخصيات تنتظرك لتصبح جزءاً من القصة.",
+        "continueToPrep": "ادخل المشهد",
+        "restart": "أعد بدء المناقشة",
+        "caseClosedTitle": "أُغلقت الحالة التعليمية",
+        "caseClosedLead": "أنهيت مناقشة حالة اليوم بالصوت.",
+        "caseClosedNow": "الآن… القصة لم تعد شيئاً تقرأه فقط.",
+        "caseClosedBecome": "أنت على وشك أن تصبح جزءاً منها.",
+        "caseClosedQuestion": "ماذا ستفعل أنت؟",
+        "characterWaitingTemplate": "{names} — في انتظارك.",
+        "role": {
+          "student": "أنت",
+          "assistant": "المعلّم",
+          "system": "الدرس"
+        },
+        "phase": {
+          "waiting_for_student": "دورك",
+          "student_answering": "إجابة",
+          "processing": "جارٍ التفكير",
+          "assistant_reply": "رد المعلّم",
+          "next_question": "جاهز للمتابعة",
+          "completed": "مكتمل"
+        },
+        "voiceHint": "اضغط مع الاستمرار على الميكروفون، تحدّث، ثم أفلت.",
+        "holdToSpeak": "اضغط للتحدث",
+        "releaseToSend": "أفلت للإرسال",
+        "typedFallback": "الميكروفون غير متاح — اكتب إجابتك.",
+        "heard": "سمعنا: {text}",
+        "continueToAlex": "تحدث مع أليكس",
+        "listenAgain": "استمع للسؤال",
+        "tutorSpeaking": "المعلّم يتكلم الآن…",
+        "yourTurn": "دورك للإجابة",
+        "audioPreparing": "جاري تجهيز الصوت…",
+        "audioPreparingHint": "سيظهر زر الاستماع هنا عند جاهزية الصوت. يمكنك قراءة السؤال أعلاه الآن.",
+        "voiceMode": {
+          "idle": "جاهز",
+          "priming": "تجهيز الميكروفون…",
+          "listening": "جاهز لسماعك",
+          "recording": "جاري التسجيل…",
+          "thinking": "يفكّر…",
+          "partner_speaking": "المعلّم يتكلم",
+          "fallback": "وضع الكتابة"
+        }
       },
       "hero": {
         "eyebrow": "مسار التحدث",
         "emptyFocus": "سيظهر محور تحدثك هنا",
         "level": "المستوى الرسمي",
         "stage": "مرحلة التعلّم",
-        "alexTime": "وقت Alex اليوم",
+        "alexTime": "وقت التحدث المباشر",
         "alexUnknown": "—",
         "alexSeconds": "متبقي {seconds} ثانية",
         "alexMinutes": "متبقي {minutes} د و{seconds} ث",
@@ -1073,36 +1279,106 @@
         "readinessBuilding": "قيد البناء"
       },
       "actions": {
-        "startSession": "ابدأ جلسة اليوم",
-        "practiceAlex": "تدرب مع Alex",
-        "talkAlex": "تحدث مع Alex",
+        "startSession": "ابدأ درس اليوم",
+        "practiceAlex": "تدريب تحدث مباشر",
+        "talkAlex": "تحدث مباشر",
+        "startTalkAlex": "ابدأ التحدث المباشر",
         "continue": "متابعة",
-        "viewAssessment": "عرض تقييم المستوى"
+        "viewAssessment": "أداء تقييم المستوى"
       },
       "activeSession": "الجلسة جارية — {title}",
       "todayMissions": "مهام اليوم",
       "alex": {
-        "needSession": "جهّز مهمة التحدث لليوم قبل الحديث مع Alex."
+        "needSession": "ابدأ درس التحدث لليوم قبل المحادثة المباشرة.",
+        "inLessonTitle": "تابع نفس الموقف",
+        "inLessonBody": "تبقى في: {lesson}. التحدث المباشر يكمّل نفس الحالة التعليمية — نفس الأشخاص ونفس المكان.",
+        "backToLesson": "العودة إلى الدرس"
+      },
+      "runtime": {
+        "loading": "جاري تحميل مسار التحدث…",
+        "retry": "إعادة المحاولة",
+        "continueLearning": "متابعة التعلّم",
+        "backToJourney": "العودة إلى المسار",
+        "returnedFromAlex": "مرحباً بعودتك — تأمّل الدرس جاهز أدناه.",
+        "noPlanTitle": "لا يوجد درس تحدث بعد",
+        "noPlanBody": "ابدأ درس اليوم لفتح حزمة التعلّم المخصصة لك.",
+        "emptyActivityTitle": "لا توجد مهمة حالية",
+        "emptyActivityBody": "سيظهر النشاط التالي عند تقدّم الدرس.",
+        "missionCompleteTitle": "اكتملت المهمة",
+        "missionCompleteBody": "أنجزت: {completed}",
+        "missionNextBody": "التالي: {next}",
+        "readyForAlex": "جاهز للتحدث المباشر",
+        "reflectTitle": "تأمّل هذا الدرس",
+        "lessonRegion": "درس التحدث اليوم",
+        "continuityLabel": "تقدّم مسار التعلّم",
+        "continuity": {
+          "home": "الرئيسية",
+          "lesson": "الدرس",
+          "alex": "مباشر",
+          "reflection": "التأمّل"
+        },
+        "errorTitles": {
+          "generic": "حدث خطأ ما",
+          "message": "حدث خطأ ما",
+          "alex_budget": "انتهى وقت التحدث المباشر",
+          "mic": "الميكروفون مطلوب",
+          "reconnect": "انقطع الاتصال",
+          "session_expired": "انتهت الجلسة",
+          "alex_unavailable": "التحدث المباشر غير متاح"
+        },
+        "errors": {
+          "generic": "حاول مرة أخرى بعد لحظات. تقدّمك محفوظ.",
+          "alex_budget": "استهلكت وقت التحدث المباشر لليوم. تابع التعلّم في درسك.",
+          "mic": "اسمح بالوصول إلى الميكروفون للتحدث المباشر.",
+          "reconnect": "انقطع الاتصال. اضغط إعادة المحاولة للاتصال مجدداً.",
+          "session_expired": "انتهت جلسة التحدث. عد إلى درسك للمتابعة.",
+          "alex_unavailable": "التحدث المباشر غير جاهز الآن. تابع درسك أو حاول لاحقاً."
+        },
+        "stages": {
+          "observe": "تهيئة وتعلّم",
+          "practice": "تدريب موجّه",
+          "speak": "مهمة التحدث",
+          "reflect": "تأمّل"
+        },
+        "stageLeads": {
+          "observe": "افهم هدف اليوم قبل أن تتحدث.",
+          "practice": "جهّز إجاباتك خطوة بخطوة.",
+          "speak": "استخدم ما تعلّمته في لحظة تحدث حقيقية.",
+          "reflect": "التقط ما تحسّن وما يحتاج تمريناً لاحقاً."
+        }
       },
       "mission": {
         "title": "المهمة الحالية",
         "position": "المهمة {position} من {total}",
-        "usesAlex": "تستخدم Alex",
+        "usesAlex": "تتضمن تحدثاً مباشراً",
         "emptyTitle": "لا توجد مهمة نشطة بعد",
-        "emptyBody": "ابدأ جلسة اليوم لاستلام مهمة التحدث التالية."
+        "emptyBody": "ابدأ درس اليوم لاستلام مهمة التحدث التالية."
       },
       "task": {
         "title": "المهمة التفصيلية",
         "goal": "هدف التعلّم",
+        "scenario": "السيناريو",
+        "prepState": "التحضير",
+        "prepLearning": "تابع التعلّم — أنهِ درس اليوم أولاً.",
+        "prepAlmost": "أنت تستعد للحظة التحدث لليوم.",
+        "prepReady": "أنت جاهز. ابدأ التحدث المباشر عندما تشعر بالاستعداد.",
         "recording": "تسجيل",
         "controlled": "إجابة موجّهة",
         "emptyTitle": "لا توجد مهمة بعد",
-        "emptyBody": "تظهر تعليمات مهمة التحدث عندما تكون المهمة جاهزة."
+        "emptyBody": "تظهر تعليمات مهمة التحدث عندما تكون المهمة جاهزة.",
+        "modes": {
+          "study": "دراسة",
+          "guided_response": "إجابة موجّهة",
+          "recorded_speaking": "تحدث مسجّل",
+          "talk_with_alex": "تحدث مباشر",
+          "review": "مراجعة"
+        }
       },
       "attempt": {
         "label": "المحاولة",
         "first": "المحاولة {n}",
-        "retry": "إعادة {n}"
+        "retry": "إعادة {n}",
+        "completedTasks": "{n} محاولات مهام مكتملة"
       },
       "support": {
         "title": "دعم تعليمّي",
@@ -1122,16 +1398,33 @@
         "title": "تقدّم الدرس",
         "current": "الآن",
         "completed": "{n} مكتمل",
-        "remaining": "{n} متبقٍ"
+        "remaining": "{n} متبقٍ",
+        "phaseGeneric": "المرحلة: {phase}",
+        "phases": {
+          "planned": "مخطط",
+          "in_progress": "جارٍ",
+          "live_ready": "جاهز للتحدث المباشر",
+          "completed": "مكتمل"
+        }
       },
       "timeline": {
         "title": "الخط الزمني للدرس",
+        "railTitle": "المهام",
         "now": "الآن",
         "done": "تم",
         "upcoming": "التالي"
       },
       "teaching": {
         "title": "تعلّم قبل أن تتحدث",
+        "prev": "السابق",
+        "next": "البطاقة التالية",
+        "empty": "لا توجد كتل تعليمية لهذه الخطوة بعد.",
+        "groups": {
+          "concepts": "مفاهيم أساسية",
+          "examples": "أمثلة",
+          "hints": "تلميحات ودعائم",
+          "notes": "ملاحظات وتذكيرات"
+        },
         "kinds": {
           "explanation": "شرح المعلّم",
           "example": "مثال",
@@ -1144,49 +1437,62 @@
       },
       "guided": {
         "title": "تدريب موجّه",
-        "lead": "اتبع خطوات خطة الدرس. هذا تدريب فقط — بلا تصحيح هنا.",
+        "lead": "انتقل من الملاحظة إلى الجاهزية — تحضير فقط بلا تصحيح هنا.",
         "instructions": "تعليمات التدريب",
+        "nextStep": "خطوة التحضير التالية",
+        "readyContinue": "أنا جاهز — متابعة",
+        "flow": {
+          "observe": "لاحظ",
+          "practice": "تمرّن",
+          "prepare": "جهّز",
+          "ready": "جاهز للمتابعة",
+          "observeHint": "اقرأ اللغة النموذجية بعناية.",
+          "practiceHint": "قل العبارات بصوت عالٍ لنفسك.",
+          "prepareHint": "خطّط لما ستقوله في قصة اليوم.",
+          "readyHint": "عندما تشعر بالاستعداد، تابع الدرس."
+        },
         "actions": {
           "read": "اقرأ",
           "practice": "تمرّن",
           "respond": "أجب",
           "record": "سجّل",
-          "alex": "تحدث مع Alex"
+          "alex": "تحدث مباشر"
         }
       },
       "skills": {
         "weak": "مهارات للتقوية",
         "improving": "مهارات تتحسّن",
         "retention": "تركيز الاحتفاظ",
-        "transfer": "تركيز النقل"
+        "transfer": "تركيز النقل",
+        "emptyTitle": "إشارات المهارات ستظهر هنا",
+        "emptyBody": "بعد التمرين سيظهر المسار ما يتحسّن وما يحتاج عملاً.",
+        "emptyImproving": "لا توجد إشارة تحسّن بعد.",
+        "emptyRetention": "لا توجد إشارة احتفاظ بعد.",
+        "emptyTransfer": "لا توجد إشارة نقل بعد."
       },
       "todaySteps": "خطوات جلسة اليوم",
       "reflection": {
         "title": "تأمل بعد الجلسة",
+        "titleComplete": "اكتمل الدرس",
+        "titleRetry": "يُفضّل إعادة مركّزة",
         "improved": "ما يتحسّن",
         "needsPractice": "ما يحتاج تمريناً",
-        "nextLesson": "معاينة الدرس التالي",
-        "retryHint": "خطتك توصي بمحاولة أخرى على تركيز اليوم"
+        "transfer": "تركيز النقل",
+        "nextLesson": "تركيز التعلّم التالي",
+        "retryHint": "خطتك توصي بمحاولة أخرى على تركيز اليوم",
+        "alexUsage": "وقت التحدث المباشر المتبقي اليوم",
+        "alexUnknown": "سيظهر استخدام التحدث المباشر بعد جلستك المباشرة التالية.",
+        "alexRemaining": "يتبقى {minutes}د {seconds}ث اليوم",
+        "promoUnlocked": "معاينة تقييم التحدث للمستوى التالي مفتوحة عندما تكون جاهزاً.",
+        "dismiss": "إغلاق"
       },
       "lessonBrief": {
         "title": "ملخص الدرس"
       },
-      "practice": {
-        "conversation": "محادثة ذكية",
-        "shadowing": "التظليل",
-        "scenarios": "سيناريوهات",
-        "exercises": "تمارين",
-        "chooseExercise": "اختر تمريناً من القائمة للبدء.",
-        "exerciseDone": "اكتمل التمرين",
-        "exerciseSubmitted": "تم الإرسال — حاول تسجيلاً أطول في المرة القادمة",
-        "aiFeedback": "ملاحظات الذكاء الاصطناعي",
-        "heard": "ما سمعناه",
-        "tutorReply": "رد المدرب"
-      },
       "assessment": {
         "eyebrow": "تقييم التحدث للمستوى التالي",
-        "title": "معاينة تقييم الترقية",
-        "defaultMessage": "عندما تكون جاهزاً يمكنك معاينة تقييم التحدث للمستوى التالي.",
+        "title": "تقييم الترقية",
+        "defaultMessage": "عندما تكون جاهزاً يمكنك أداء تقييم التحدث للمستوى التالي.",
         "source": "المستوى الحالي",
         "target": "المستوى التالي",
         "duration": "المدة التقريبية",
@@ -1194,22 +1500,93 @@
         "state": "الحالة",
         "unlocked": "مفتوح",
         "locked": "مقفل",
-        "previewOnly": "معاينة فقط — لا يمكنك أداء التقييم أو تصحيحه الآن. التنفيذ سيأتي في مرحلة لاحقة.",
-        "previewCta": "معاينة مهام التقييم",
-        "refreshPreview": "تحديث المعاينة",
         "lockedTitle": "التقييم غير مفتوح بعد",
         "lockedBody": "واصل التمرين في مرحلة Advanced حتى يُفتح تقييم المستوى التالي.",
         "whyLockedTitle": "لماذا هو مقفل",
-        "whyLockedBody": "تُفتح المعاينة عندما تجتاز بوابتي الجاهزية والاستقرار للتحدث.",
+        "whyLockedBody": "يُفتح هذا التقييم عندما تجتاز بوابتي الجاهزية والاستقرار للتحدث.",
         "whyUnlockedTitle": "لماذا هو مفتوح",
-        "whyUnlockedBody": "تحققت متطلبات الجاهزية والاستقرار في مرحلة Advanced. يمكنك معاينة بنية التقييم.",
-        "whatNext": "بعد المعاينة، ستتيح مرحلة لاحقة أداء التقييم. النجاح فيه هو ما قد يرفع مستواك الرسمي للتحدث.",
-        "blueprintTitle": "مهام التقييم (معاينة)",
+        "whyUnlockedBody": "تحققت متطلبات الجاهزية والاستقرار في مرحلة Advanced. يمكنك أداء التقييم عندما تكون جاهزاً.",
         "taskCount": "{n} مهام",
         "taskOrder": "المهمة {n}",
         "spontaneousProduction": "إنتاج عفوي",
         "timing": "تحضير {prep} ث · تحدث حتى {max} ث",
-        "interactionGapNote": "بعض مهارات المحادثة التفاعلية مذكورة كفجوات تغطية — المهام المسجّلة تثبت الإنتاج الشفهي وليس تبادل الأدوار الحي."
+        "interactionGapNote": "بعض مهارات المحادثة التفاعلية مذكورة كفجوات تغطية — المهام المسجّلة تثبت الإنتاج الشفهي وليس تبادل الأدوار الحي.",
+        "home": {
+          "start": "بدء التقييم",
+          "resume": "متابعة التقييم",
+          "viewResult": "عرض النتيجة",
+          "inProgressBody": "لديك تقييم جارٍ. تابع من مهمتك الحالية.",
+          "passedBody": "لقد اجتزت تقييم الترقية. تحديث المستوى الرسمي يتم عبر الخادم.",
+          "terminalBody": "انتهت محاولتك الأخيرة. افتح النتيجة لمعرفة الخطوة التالية.",
+          "states": {
+            "loading": "جارٍ التحميل",
+            "error": "غير متاح",
+            "locked": "مقفل",
+            "eligible": "مؤهل",
+            "available": "التقييم متاح",
+            "in_progress": "جارٍ",
+            "completed": "مكتمل",
+            "passed": "ناجح",
+            "failed": "لم يجتز",
+            "abandoned": "متروك",
+            "timeout": "انتهى الوقت",
+            "incomplete": "غير مكتمل"
+          }
+        },
+        "intro": {
+          "title": "قبل أن تبدأ",
+          "lead": "يتحقق هذا التقييم مما إذا كنت جاهزاً للمستوى الرسمي التالي في التحدث.",
+          "tasks": "المهام",
+          "instructions": "ستُكمل مجموعة ثابتة من مهام التحدث. اعمل بهدوء، اتبع كل توجيه، وأرسل عندما تكون جاهزاً. لا يوجد مدرّس مباشر أثناء هذا التقييم.",
+          "preparation": "استخدم أي وقت تحضير يظهر على المهمة، ثم تحدّث بوضوح. يمكنك مراجعة تسجيلك قبل الإرسال.",
+          "begin": "ابدأ التقييم",
+          "back": "رجوع"
+        },
+        "runtime": {
+          "title": "التقييم جارٍ",
+          "progressLabel": "تقدّم مهام التقييم",
+          "progressChip": "المهمة {current} من {total}",
+          "remaining": "متبقّي {n} مهام",
+          "responseLabel": "إجابتك",
+          "transcriptLabel": "ما قلته",
+          "transcriptHint": "اكتب الكلمات التي نطقتها حتى يتمكّن التقييم من تصحيح إجابتك.",
+          "startRecording": "بدء التسجيل",
+          "stopRecording": "إيقاف التسجيل",
+          "playback": "تشغيل التسجيل",
+          "reRecord": "إعادة التسجيل",
+          "submitTask": "إرسال المهمة",
+          "waitingEval": "جارٍ الإرسال — بانتظار التقييم…",
+          "evalComplete": "اكتمل تقييم هذه المهمة.",
+          "abandon": "إنهاء التقييم",
+          "reconnect": "إعادة الاتصال",
+          "micError": "اسمح بالوصول إلى الميكروفون لتسجيل إجابتك."
+        },
+        "completing": {
+          "title": "اكتمل التقييم",
+          "body": "بانتظار نتيجة التقييم الرسمية…"
+        },
+        "result": {
+          "passTitle": "نجحت!",
+          "failTitle": "واصل التمرين",
+          "abandonedTitle": "تم إنهاء التقييم",
+          "timeoutTitle": "انتهى وقت التقييم",
+          "incompleteTitle": "التقييم غير مكتمل",
+          "fallbackTitle": "نتيجة التقييم",
+          "fallbackMessage": "نتيجة تقييمك جاهزة.",
+          "passBody": "اجتزت تقييم الترقية. احتفل بهذه المرحلة.",
+          "officialPending": "أكد تحديث المستوى الرسمي عندما تكون جاهزاً. يتم ذلك عبر محرك الترقية في الخادم فقط.",
+          "confirmPromotion": "تأكيد تحديث المستوى الرسمي",
+          "promotedSummary": "تم تحديث مستوى التحدث الرسمي: {old} ← {next}",
+          "promotedBody": "مسار التحدث للمستوى الجديد جاهز.",
+          "blockedCompetency": "لم تُستوفَ إحدى الكفاءات المطلوبة في هذه المحاولة.",
+          "bridgeTitle": "التركيز المقترح",
+          "focusSkills": "المهارات المقترحة",
+          "abandonedBody": "توقفت هذه المحاولة قبل إكمال كل المهام.",
+          "timeoutBody": "انتهى وقت هذه المحاولة قبل أن تكتمل.",
+          "incompleteBody": "تعذّر إكمال هذه المحاولة.",
+          "retry": "إعادة محاولة التقييم",
+          "backHome": "العودة إلى صفحة التقييم"
+        }
       }
     },
     "reading": {
@@ -1844,71 +2221,6 @@
         "load": "تعذر تحميل الدروس"
       }
     },
-    "scenarios": {
-      "eyebrow": "السيناريوهات",
-      "library": {
-        "title": "سيناريوهات المحادثة",
-        "subtitle": "تمرّن على الإنجليزية في مواقف حياتية موجّهة"
-      },
-      "all": "الكل",
-      "recommended": "موصى به",
-      "empty": "لا توجد سيناريوهات",
-      "errors": {
-        "load": "تعذر تحميل السيناريوهات"
-      },
-      "detail": {
-        "back": "كل السيناريوهات",
-        "defaultTitle": "سيناريو",
-        "level": "المستوى {level}+",
-        "adaptive": "تكيّف: {level}",
-        "studentRole": "ستلعب دور",
-        "aiRole": "شخصية الذكاء الاصطناعي",
-        "targetSkills": "المهارات المستهدفة",
-        "opening": "الرسالة الافتتاحية",
-        "locked": "مقفل — يتطلب {level}",
-        "start": "بدء السيناريو",
-        "errors": {
-          "load": "تعذر تحميل السيناريو",
-          "start": "تعذر بدء السيناريو"
-        }
-      },
-      "conversation": {
-        "defaultTitle": "محادثة",
-        "back": "السيناريوهات",
-        "level": "المستوى {level}",
-        "stop": "إيقاف",
-        "finish": "إنهاء والحصول على التقييم",
-        "thinking": "جاري التفكير…",
-        "speak": "تحدّث",
-        "recording": "جاري التسجيل…",
-        "placeholder": "أو اكتب ردّك بالإنجليزية…",
-        "errors": {
-          "load": "تعذر تحميل الجلسة",
-          "message": "تعذر إرسال الرسالة",
-          "voice": "تعذر معالجة الصوت",
-          "end": "تعذر إنهاء الجلسة"
-        }
-      },
-      "completion": {
-        "title": "اكتمل السيناريو",
-        "subtitle": "ملخص أدائك",
-        "defaultTitle": "انتهى السيناريو",
-        "wentWell": "ما نجح",
-        "toImprove": "ما يحتاج تحسين",
-        "corrections": "التصحيحات",
-        "vocabulary": "مفردات مقترحة",
-        "nextRecommended": "السيناريو التالي الموصى به",
-        "start": "ابدأ",
-        "browse": "تصفّح السيناريوهات",
-        "noFeedback": "لا يتوفر تقييم لهذه الجلسة."
-      },
-      "scores": {
-        "communication": "تواصل",
-        "grammar": "قواعد",
-        "vocabulary": "مفردات",
-        "fluency": "طلاقة"
-      }
-    },
     "subscribe": {
       "eyebrow": "اشتراك مميز",
       "title": "تعلّم اللغة الإنجليزية",
@@ -2234,6 +2546,421 @@
       "religious": "نشاط ديني",
       "music": "موسيقى",
       "languages": "لغات"
+    }
+  },
+  "englishJourney": {
+    "shell": {
+      "journey": "الرحلة",
+      "practice": "تدريب",
+      "review": "مراجعة",
+      "achievements": "إنجازات",
+      "profile": "الملف"
+    },
+    "hero": {
+      "kicker": "المعلّم الذكي",
+      "greeting": "مرحباً {name}",
+      "headline": "رحلتك في الإنجليزية اليوم",
+      "headlineWithStage": "اليوم: {stage}",
+      "lead": "مسار واضح بالمراحل — ابدأ جلسة المعلّم الذكي وتقدّم خطوة بخطوة.",
+      "cta": "ابدأ جلسة اليوم",
+      "ctaDisabled": "المعلّم الذكي غير متاح حالياً",
+      "streak": "سلسلة {days} يوم",
+      "goal": "هدف اليوم",
+      "eta": "حوالي {minutes} دقيقة",
+      "currentStage": "مرحلتك الحالية"
+    },
+    "timeline": {
+      "title": "مسار الرحلة",
+      "subtitle": "مستويات CEFR ومراحل القواعد — المقفلة تبقى مقفلة حتى يفتحها المحرّك.",
+      "stagesInLevel": "مراحل المستوى {cefr}"
+    },
+    "sessionEntry": {
+      "eyebrow": "دخول الجلسة",
+      "title": "جلسة اليوم مع المعلّم الذكي",
+      "titleWithStage": "جلسة اليوم: {stage}",
+      "cta": "ادخل الجلسة الآن",
+      "viewStage": "تفاصيل المرحلة"
+    },
+    "progress": {
+      "level": "المستوى {cefr}",
+      "stageOf": "المرحلة {index} من {total}",
+      "overall": "{done} من {total} مكتملة"
+    },
+    "status": {
+      "completed": "مكتملة",
+      "current": "الحالية",
+      "unlocked": "متاحة",
+      "locked": "مقفلة",
+      "done": "منتهٍ",
+      "levelCurrent": "جاري",
+      "levelLocked": "مقفل"
+    },
+    "stage": {
+      "minutes": "{n} دقيقة",
+      "duration": "المدة",
+      "skills": "المهارات",
+      "startSession": "ابدأ الجلسة",
+      "reviewStage": "مراجعة المرحلة",
+      "lockedHint": "أكمل المراحل السابقة لفتح هذه المرحلة",
+      "structure": "هيكل الجلسة",
+      "mastery": "الإتقان"
+    },
+    "session": {
+      "title": "جلسة اليوم",
+      "complete": "إنهاء الجلسة",
+      "empty": "لا توجد جلسة نشطة. ابدأ من رحلتك.",
+      "backHome": "العودة للرحلة"
+    },
+    "complete": {
+      "title": "أحسنت! أنهيت المرحلة",
+      "next": "المرحلة التالية",
+      "encouragement": "استمر — أنت تتقدّم",
+      "backJourney": "العودة للرحلة"
+    },
+    "review": {
+      "title": "المراجعة",
+      "empty": "ممتاز. واصل التقدّم.",
+      "emptyHint": "عندما تُكمل مراحل ستظهر هنا للمراجعة."
+    },
+    "achievements": {
+      "title": "إنجازات الرحلة",
+      "completedStages": "مراحل مكتملة",
+      "streak": "سلسلة التعلّم",
+      "confidence": "الثقة",
+      "levelProgress": "تقدّم المستوى",
+      "empty": "ابدأ جلستك الأولى لفتح إنجازاتك."
+    },
+    "sidebar": {
+      "title": "المعلّم الذكي",
+      "mission": "المهمة",
+      "energy": "الطاقة",
+      "confidence": "الثقة",
+      "nextMilestone": "الهدف التالي",
+      "collapsed": "المعلّم"
+    },
+    "empty": {
+      "disabledTitle": "رحلة الإنجليزية تُحضَّر",
+      "disabledBody": "المعلّم الذكي يجهّز جلسة اليوم.",
+      "teacherOff": "المعلّم الذكي غير مفعّل حالياً. يمكنك استكشاف الجدول."
+    },
+    "errors": {
+      "load": "تعذّر تحميل الرحلة. حاول مجدداً.",
+      "session": "تعذّر بدء الجلسة. حاول مجدداً."
+    }
+  },
+  "grammarV2": {
+    "shell": {
+      "navLabel": "القواعد",
+      "home": "الرئيسية",
+      "review": "مراجعة"
+    },
+    "common": {
+      "minutes": "{n} دقيقة"
+    },
+    "hero": {
+      "kicker": "محرّك القواعد",
+      "title": "القواعد",
+      "currentGrammar": "القواعد الحالية",
+      "currentCefr": "مستوى CEFR",
+      "currentStage": "المرحلة الحالية",
+      "overallProgress": "التقدّم الكلي",
+      "eta": "وقت الدرس المتوقع",
+      "startLesson": "ابدأ الدرس الحالي",
+      "reviewCompleted": "مراجعة المواضيع المكتملة"
+    },
+    "progress": {
+      "title": "التقدّم",
+      "completed": "مواضيع مكتملة",
+      "cefr": "CEFR الحالي",
+      "stage": "المرحلة",
+      "remaining": "المتبقي",
+      "percent": "نسبة الإكمال"
+    },
+    "roadmap": {
+      "title": "خريطة القواعد",
+      "subtitle": "المنهج الكامل حسب مستويات CEFR — الحالة من المحرّك فقط.",
+      "completedOf": "مكتمل {done} / {total}"
+    },
+    "card": {
+      "mastery": "إتقان {n}%"
+    },
+    "status": {
+      "completed": "مكتمل",
+      "current": "الحالي",
+      "unlocked": "متاح",
+      "locked": "مقفل",
+      "levelDone": "منتهٍ",
+      "levelCurrent": "جاري",
+      "levelLocked": "مقفل"
+    },
+    "sidebar": {
+      "title": "ملخص المحرّك",
+      "collapsed": "الملخص",
+      "currentGrammar": "القواعد الحالية",
+      "currentCefr": "CEFR",
+      "confidence": "الثقة",
+      "mastery": "الإتقان",
+      "nextGrammar": "التالي",
+      "eta": "وقت الدرس",
+      "recommendation": "توصية اليوم"
+    },
+    "lesson": {
+      "back": "العودة",
+      "finish": "إنهاء الدرس",
+      "goal": "الهدف",
+      "explanation": "شرح القواعد",
+      "warmup": "إحماء",
+      "mainActivity": "النشاط الرئيسي",
+      "followUp": "أسئلة متابعة",
+      "hints": "تلميحات",
+      "mistakes": "أخطاء شائعة",
+      "patterns": "أنماط متوقعة",
+      "reflection": "تأمّل"
+    },
+    "review": {
+      "title": "مراجعة القواعد",
+      "empty": "لا مواضيع مكتملة بعد.",
+      "emptyHint": "أكمل درساً لتظهر مواضيعك هنا.",
+      "backHome": "العودة للقواعد"
+    },
+    "complete": {
+      "title": "اكتملت القواعد",
+      "mastery": "الإتقان",
+      "confidence": "الثقة",
+      "skillsImproved": "مهارات معزّزة",
+      "next": "القواعد التالية",
+      "continue": "متابعة"
+    },
+    "empty": {
+      "disabled": "وحدة القواعد غير متاحة حالياً.",
+      "noRoadmap": "خريطة القواعد غير جاهزة",
+      "noRoadmapHint": "عند تفعيل المحرّك ستظهر كل المواضيع هنا."
+    },
+    "errors": {
+      "load": "تعذّر تحميل خريطة القواعد.",
+      "lesson": "تعذّر تحميل الدرس.",
+      "complete": "تعذّر إنهاء الدرس."
+    }
+  },
+  "grammarSession": {
+    "leaveConfirm": "مغادرة جلسة القواعد؟ موقعك في الجلسة محفوظ على هذا الجهاز.",
+    "header": {
+      "kicker": "جلسة قواعد بالذكاء الاصطناعي",
+      "remaining": "متبقي ~{n} د",
+      "exit": "خروج"
+    },
+    "timeline": {
+      "label": "مراحل الجلسة"
+    },
+    "progress": {
+      "step": "الخطوة {current} من {total}",
+      "elapsed": "{time}",
+      "session": "تقدّم الجلسة {n} بالمئة"
+    },
+    "controls": {
+      "back": "رجوع",
+      "continue": "متابعة",
+      "toComplete": "المتابعة للإكمال",
+      "finish": "إنهاء الدرس"
+    },
+    "teacher": {
+      "aria": "المعلّم الذكي"
+    },
+    "stages": {
+      "welcome": "ترحيب",
+      "mission": "المهمة",
+      "learn": "التدريس",
+      "practice": "تدريب",
+      "speaking": "محادثة",
+      "writing": "كتابة",
+      "reflection": "تأمّل",
+      "complete": "إكمال"
+    },
+    "welcome": {
+      "title": "مرحباً بك في جلستك",
+      "subtitle": "معلّمك الذكي يرشدك خطوة بخطوة — مرحلة واحدة في كل مرة.",
+      "hello": "لنبدأ معاً.",
+      "todayTopic": "قواعد اليوم",
+      "whyMatters": "لماذا هذا مهم"
+    },
+    "mission": {
+      "title": "مهمة اليوم",
+      "subtitle": "اعرف ما ستحققه قبل أن تبدأ التعلّم.",
+      "todayMission": "المهمة",
+      "fallbackGoal": "أتقن قواعد اليوم بأمثلة واضحة وتدريب.",
+      "successCriteria": "معايير النجاح",
+      "outcome": "النتيجة المتوقعة",
+      "outcomeBody": "بنهاية الجلسة ستستخدم قواعد اليوم بثقة أكبر."
+    },
+    "learn": {
+      "title": "التدريس",
+      "subtitle": "تعلّم الفكرة بخطوات واضحة — لا مستند طويل.",
+      "concept": "المفهوم",
+      "warmup": "إحماء",
+      "empty": "سيظهر محتوى التدريس هنا عندما تكون حزمة الدرس جاهزة."
+    },
+    "practice": {
+      "title": "التدريب",
+      "subtitle": "جرّب قواعد اليوم. المشاركة أولاً.",
+      "empty": "ستظهر تمارين التدريب هنا عندما تكون حزمة الدرس جاهزة."
+    },
+    "speaking": {
+      "title": "المحادثة",
+      "subtitle": "تدريب الصوت جاهز لمدرب لاحق — تابع الآن.",
+      "readyTitle": "مدرب المحادثة قريباً",
+      "readyBody": "هذه المرحلة جزء من مسار الجلسة. تدريب الصوت سيعمل هنا دون تغيير بنية التشغيل.",
+      "hint": "حالات الميكروفون والاستماع مُجهَّزة في بنية الجلسة."
+    },
+    "writing": {
+      "title": "الكتابة",
+      "subtitle": "مدرب الكتابة سيتصل بهذه المرحلة لاحقاً.",
+      "readyTitle": "مدرب الكتابة قريباً",
+      "readyBody": "هذه المرحلة تُكمل بنية الجلسة. ملاحظات الكتابة ستظهر هنا في مرحلة لاحقة.",
+      "hint": "تابع إلى التأمّل عندما تكون جاهزاً."
+    },
+    "reflection": {
+      "title": "التأمّل",
+      "subtitle": "توقّف ولاحظ ما تعلّمته اليوم.",
+      "summaryTitle": "ملاحظة الجلسة",
+      "summaryBody": "مررت بمراحل الجلسة خطوة بخطوة. أنهِ عندما تكون جاهزاً لإكمال الدرس."
+    },
+    "complete": {
+      "title": "اكتملت الجلسة",
+      "subtitle": "أحسنت. أنهِ لحفظ التقدّم عبر محرّك القواعد.",
+      "topic": "القواعد التي غُطّيت",
+      "nextTitle": "جاهز للإنهاء",
+      "nextBody": "اضغط إنهاء الدرس لإكمال النشاط بالجلسة المعتمدة من الخادم."
+    }
+  },
+  "grammarTeacher": {
+    "panel": {
+      "aria": "المعلّم الذكي",
+      "role": "معلّم الإنجليزية",
+      "focus": "التركيز",
+      "idle": "أنا معك — خذ وقتك."
+    },
+    "presence": {
+      "withYou": "معك",
+      "speaking": "يتحدث",
+      "listening": "يستمع",
+      "thinking": "يفكّر"
+    },
+    "mood": {
+      "encouraging": "يشجّعك",
+      "curious": "فضولي معك",
+      "proud": "فخور بتقدّمك",
+      "calm": "هادئ وواضح"
+    },
+    "voice": {
+      "speaking": "تحدث",
+      "listening": "استمع",
+      "thinking": "فكّر"
+    },
+    "ask": {
+      "cta": "اسأل المعلّم",
+      "title": "اسأل معلّمك",
+      "hint": "اسأل عن قواعد اليوم. يبقى المعلّم داخل هذا الدرس.",
+      "placeholder": "لماذا نستخدم هذا الشكل هنا؟",
+      "send": "اسأل",
+      "cancel": "إلغاء",
+      "close": "إغلاق"
+    },
+    "cards": {
+      "concept": "المفهوم",
+      "explanation": "شرح المعلّم",
+      "example": "مثال صغير",
+      "pattern": "نمط",
+      "checkpoint": "تحقق سريع",
+      "step": "بطاقة {current} / {total}",
+      "next": "الفكرة التالية",
+      "doneHint": "رأيت كل بطاقات التدريس — تابع عندما تكون جاهزاً."
+    },
+    "welcome": {
+      "title": "معلّمك جاهز",
+      "subtitle": "ترحيب موجّه — وليس مستنداً.",
+      "fallback": "مرحباً! اليوم سنتعلّم {topic} معاً.",
+      "whySelected": "لماذا اختير هذا",
+      "whySelectedBody": "هذا هو تركيزك الحالي في القواعد: {topic}. مسار تعلّمك اختاره لليوم.",
+      "achieve": "ما الذي ستحققه"
+    },
+    "mission": {
+      "title": "مهمة اليوم",
+      "subtitle": "لنتحدث عما نهدف إليه.",
+      "lead": "اليوم سنتعلّم… {goal}",
+      "leadFallback": "اليوم سنتعلّم كيف نستخدم {topic} بثقة.",
+      "whereUsed": "أين ستستخدمه",
+      "whereUsedBody": "في الإنجليزية اليومية — التعارف والوصف والجمل الواضحة مع الآخرين.",
+      "whyUseful": "لماذا يفيدك",
+      "whyUsefulBody": "عندما يصبح هذا طبيعياً، تصبح خطوات القواعد التالية أسهل بكثير."
+    },
+    "learn": {
+      "title": "لنتعلّم معاً",
+      "subtitle": "بطاقة صغيرة في كل مرة. اسألني متى شئت."
+    }
+  },
+  "grammarV4": {
+    "back": "رجوع",
+    "minutes": "{n} د",
+    "playAudio": "تشغيل الصوت",
+    "retry": "إعادة المحاولة",
+    "explain": {
+      "title": "شرح القواعد",
+      "english": "🇬🇧 الشرح بالإنجليزية",
+      "arabic": "🇸🇾 الشرح بالعربية",
+      "arabicPending": "جارٍ تحميل الشرح بالعربية…",
+      "what": "ما هي؟",
+      "why": "لماذا نستخدمها؟",
+      "when": "متى نستخدمها؟",
+      "structure": "التركيب",
+      "rules": "القواعد",
+      "mistakes": "أخطاء شائعة"
+    },
+    "examples": {
+      "title": "أمثلة",
+      "more": "توليد المزيد من الأمثلة",
+      "moreIn": "المزيد — {cat}",
+      "easy": "أمثلة سهلة",
+      "daily": "الحياة اليومية",
+      "school": "المدرسة",
+      "university": "الجامعة",
+      "work": "العمل",
+      "travel": "السفر",
+      "mistakes": "أخطاء شائعة"
+    },
+    "ask": {
+      "title": "اسأل عن هذه القواعد",
+      "subtitle": "أسئلة عن «{topic}» فقط. ليست محادثة عامة.",
+      "empty": "اسأل عن القاعدة أو الأمثلة أو الأخطاء في هذا الدرس.",
+      "placeholder": "اشرح هذه القاعدة مرة أخرى…",
+      "send": "إرسال"
+    },
+    "practice": {
+      "title": "تدريب",
+      "subtitle": "يبدأ سهلاً ثم يزداد صعوبة. 15 سؤالاً على الأقل.",
+      "progress": "السؤال {current} من {total}",
+      "typeAnswer": "اكتب إجابتك",
+      "check": "تحقق",
+      "correct": "صحيح",
+      "incorrect": "ليس بعد",
+      "answer": "الإجابة الصحيحة",
+      "next": "السؤال التالي",
+      "trySimilar": "جرّب سؤالاً مشابهاً",
+      "reset": "إعادة",
+      "done": "اكتمل التدريب — انظر الملخص أدناه."
+    },
+    "summary": {
+      "title": "ملخص",
+      "learned": "ما تعلّمته",
+      "mistakes": "أخطاؤك",
+      "score": "{correct} صحيحة · {mistakes} للمراجعة",
+      "noMistakes": "لا أخطاء في التدريب — ممتاز.",
+      "suggestions": "اقتراحات",
+      "suggestGreat": "أنت جاهز للمتابعة. استمر في استخدام أنماط اليوم في جمل حقيقية.",
+      "suggestReview": "راجع التصحيحات أعلاه، ثم جرّب المزيد من الأمثلة.",
+      "suggestMore": "اقضِ دقائق إضافية مع الأمثلة واسأل المعلّم عن أخطائك.",
+      "next": "جاهز للدرس التالي",
+      "nextBody": "أنهِ لحفظ هذا الدرس عبر محرّك القواعد.",
+      "finish": "إنهاء الدرس"
     }
   }
 }

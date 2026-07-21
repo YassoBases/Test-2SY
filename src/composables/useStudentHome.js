@@ -199,7 +199,7 @@ export function useStudentHome() {
         meta: languageDailyPlan.value
           ? `${languageDailyPlan.value.completed_today || 0}/${languageDailyPlan.value.goal || 0} اليوم`
           : 'تابع مسارك',
-        to: ROUTES.STUDENT_LANGUAGES_LESSONS,
+        to: ROUTES.STUDENT_LANGUAGES,
       })
     }
     if (continueCourse.value?.unlocked) {

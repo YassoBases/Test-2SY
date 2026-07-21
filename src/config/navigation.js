@@ -9,6 +9,7 @@ export const teacherNavItems = [
 ]
 
 export const studentNavItems = [
+  { titleKey: 'dashboard.student.nav.englishJourney', icon: 'mdi-earth', to: '/student/english-journey', premium: true, matchChildren: true, section: 'learning' },
   { titleKey: 'dashboard.student.nav.journey', icon: 'mdi-map-marker-path', to: '/student/dashboard#courses', section: 'learning' },
   { titleKey: 'dashboard.student.nav.messages', icon: 'mdi-message-text-outline', to: '/student/messages', section: 'learning' },
   { titleKey: 'dashboard.student.nav.languages', icon: 'mdi-translate', to: '/student/languages', premium: true, matchChildren: true, section: 'learning' },
