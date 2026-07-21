@@ -159,11 +159,12 @@ def _build_prompt(skill: str, level: str, count: int, themes: str, topics: str =
         if goal_aware_recommendation is not None:
             from app.services.language_learning_goal import build_learning_goal_prompt_block
 
-            goal_block = f"\n\n{build_learning_goal_prompt_block(
+            goal_prompt = build_learning_goal_prompt_block(
                 goal_aware_recommendation.learning_goal,
                 plan=listening_plan,
                 objective_hints=goal_aware_recommendation.goal_objective_hints,
-            )}"
+            )
+            goal_block = f"\n\n{goal_prompt}"
         challenge_block = ""
         if challenge_level is not None:
             from app.services.language_listening_challenge import build_adaptive_challenge_prompt_block

@@ -19,6 +19,15 @@ from app.services.language_writing_runtime.provider_types import (
 # Runtime passes blueprint separately; mock reconstructs from prompt sections where possible.
 
 
+def _value_after_label(block: str, label: str) -> str:
+    prefix = f"{label}:"
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(prefix.lower()):
+            return stripped[len(prefix) :].strip()
+    return ""
+
+
 class MockWritingModelProvider(WritingModelProvider):
     """Returns mission-shaped JSON — used by verification and offline dev."""
 
@@ -88,8 +97,8 @@ class MockWritingModelProvider(WritingModelProvider):
                 if line.strip().startswith("-")
             ],
             "expected_output": output_format.replace("Expected output: ", ""),
-            "grammar_display": grammar.replace("Primary focus: ", "").split("\n")[0],
-            "vocabulary_display": vocabulary.replace("Primary lemmas: ", "").split("\n")[0],
+            "grammar_display": _value_after_label(grammar, "Primary focus"),
+            "vocabulary_display": _value_after_label(vocabulary, "Primary lemmas"),
         }
         raw_text = json.dumps(payload, ensure_ascii=False)
         duration_ms = int((time.perf_counter() - started) * 1000)

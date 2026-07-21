@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -15,6 +16,25 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 T = TypeVar("T", bound=BaseModel)
+
+
+@dataclass(slots=True)
+class ClaudeCallResult:
+    """Text plus Anthropic response metadata (never dropped)."""
+
+    text: str
+    model: str | None = None
+    stop_reason: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+    def to_metadata_dict(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "stop_reason": self.stop_reason,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+        }
 
 _JSON_ONLY_SUFFIX = (
     "\n\nRespond with valid JSON only. Do not wrap the JSON in markdown fences or add commentary."
@@ -65,6 +85,17 @@ def _extract_text(response: Any) -> str:
         if text:
             parts.append(text)
     return "".join(parts).strip()
+
+
+def _result_from_response(response: Any, *, fallback_model: str | None = None) -> ClaudeCallResult:
+    usage = getattr(response, "usage", None)
+    return ClaudeCallResult(
+        text=_extract_text(response),
+        model=getattr(response, "model", None) or fallback_model,
+        stop_reason=getattr(response, "stop_reason", None),
+        input_tokens=getattr(usage, "input_tokens", None) if usage is not None else None,
+        output_tokens=getattr(usage, "output_tokens", None) if usage is not None else None,
+    )
 
 
 def _messages_create_sync(
@@ -136,6 +167,33 @@ def generate_claude_json_sync(
     )
 
 
+def generate_claude_json_result_sync(
+    prompt: str,
+    *,
+    system: str = "",
+    temperature: float = 0.4,
+    max_output_tokens: int = 1024,
+    model_name: str | None = None,
+    timeout: float = 120.0,
+) -> ClaudeCallResult:
+    """Structured JSON via Claude with provider metadata for offline audit trails."""
+
+    resolved_model = claude_model_name(model_name)
+    if not is_claude_configured():
+        return ClaudeCallResult(text="", model=resolved_model)
+    json_system = f"{system}{_JSON_ONLY_SUFFIX}" if system else _JSON_ONLY_SUFFIX.strip()
+    response = _messages_create_sync(
+        prompt=prompt,
+        system=json_system,
+        temperature=temperature,
+        max_tokens=max_output_tokens,
+        model_name=resolved_model,
+        timeout=timeout,
+        return_response=True,
+    )
+    return _result_from_response(response, fallback_model=resolved_model)
+
+
 async def generate_claude_text(
     prompt: str,
     *,
@@ -162,6 +220,37 @@ async def generate_claude_text(
         return ""
 
 
+async def generate_claude_json_result(
+    prompt: str,
+    *,
+    system: str = "",
+    temperature: float = 0.4,
+    max_output_tokens: int = 1024,
+    model_name: str | None = None,
+    timeout: float = 120.0,
+) -> ClaudeCallResult:
+    """Structured JSON via Claude — returns text plus Anthropic response metadata."""
+    resolved_model = claude_model_name(model_name)
+    if not is_claude_configured():
+        return ClaudeCallResult(text="", model=resolved_model)
+    json_system = f"{system}{_JSON_ONLY_SUFFIX}" if system else _JSON_ONLY_SUFFIX.strip()
+    try:
+        response = await asyncio.to_thread(
+            _messages_create_sync,
+            prompt=prompt,
+            system=json_system,
+            temperature=temperature,
+            max_tokens=max_output_tokens,
+            model_name=resolved_model,
+            timeout=timeout,
+            return_response=True,
+        )
+        return _result_from_response(response, fallback_model=resolved_model)
+    except Exception as exc:
+        logger.warning("Claude JSON generation failed: %s", exc)
+        return ClaudeCallResult(text="", model=resolved_model)
+
+
 async def generate_claude_json(
     prompt: str,
     *,
@@ -172,17 +261,15 @@ async def generate_claude_json(
     timeout: float = 120.0,
 ) -> str:
     """Structured JSON via Claude — shared helper for modules that need JSON output."""
-    if not is_claude_configured():
-        return ""
-    json_system = f"{system}{_JSON_ONLY_SUFFIX}" if system else _JSON_ONLY_SUFFIX.strip()
-    return await generate_claude_text(
+    result = await generate_claude_json_result(
         prompt,
-        system=json_system,
+        system=system,
         temperature=temperature,
-        max_tokens=max_output_tokens,
+        max_output_tokens=max_output_tokens,
         model_name=model_name,
         timeout=timeout,
     )
+    return result.text
 
 
 async def generate_claude_json_model(

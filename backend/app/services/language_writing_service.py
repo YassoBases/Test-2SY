@@ -97,6 +97,7 @@ async def submit_writing(
     student_id: int,
     prompt_id: int,
     response_text: str,
+    activity_session_id: str | None = None,
 ) -> dict:
     item = await get_content_item(
         db,
@@ -181,12 +182,46 @@ async def submit_writing(
         db, student_id=student_id, language_id=language.id, skill=LanguageSkill.writing,
         level=item.level, score_percent=float(score_pct), source="writing",
     )
+    # Wave D: attested session only (never trust body_json grammar stamp alone).
+    grammar_id = None
+    session_id = activity_session_id or str((body or {}).get("activity_session_id") or "")
+    if session_id:
+        from app.services.language_grammar_integrity import (
+            AttestedCompletionRequest,
+            GrammarIntegrityError,
+            complete_attested_activity,
+            load_owned_open_session,
+        )
+
+        try:
+            session = await load_owned_open_session(
+                db, activity_session_id=session_id, student_id=student_id
+            )
+            if session.content_item_id is not None and int(session.content_item_id) != int(prompt_id):
+                raise GrammarIntegrityError(
+                    "activity_ownership",
+                    "Activity session does not match this writing prompt",
+                )
+            completion = await complete_attested_activity(
+                db,
+                AttestedCompletionRequest(
+                    student_id=student_id,
+                    language_id=language.id,
+                    activity_session_id=session_id,
+                    response_text=text,
+                    server_score=float(score_pct),
+                ),
+            )
+            grammar_id = completion.grammar_id
+        except GrammarIntegrityError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     return {
         "prompt_id": prompt_id,
         "score_percent": float(score_pct),
         "passed": passed,
         "word_count": wc,
         "sentence_count": sc,
+        "grammar_id": grammar_id,
         "completed_at": progress.completed_at,
         "status": "completed" if progress.completed_at else "in_progress",
     }

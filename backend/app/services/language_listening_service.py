@@ -383,6 +383,24 @@ async def _generate_pool_lessons(
 ) -> int:
     if count <= 0 or not can_generate():
         return 0
+    # Wave C: resolver-first grammar stamp + shared prompt block.
+    from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+    from app.services.language_grammar_skill_context import (
+        build_skill_grammar_context,
+        merge_prompt_context,
+    )
+
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        source_skill=GrammarEvidenceSourceSkill.listening,
+    )
+    if grammar_ctx is None:
+        return 0
+    adaptive = merge_prompt_context(learner_context, grammar_ctx)
+    extras: dict = dict(metadata or {})
+    extras.update(grammar_ctx.as_stamp_dict())
     try:
         made = await generate_and_store(
             db,
@@ -390,10 +408,10 @@ async def _generate_pool_lessons(
             skill="listening",
             level=level,
             count=count,
-            adaptive_context=learner_context,
+            adaptive_context=adaptive,
             student_id=student_id,
             source=_PERSONALIZED_SOURCE,
-            body_extras=metadata,
+            body_extras=extras,
         )
         if made:
             note_generation_success()
@@ -677,4 +695,33 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
     active_after = await _active_unseen_count(
         db, student_id=student_id, language_id=language.id, level=level
     )
+    # Wave D: per-student attested session for grammar evidence.
+    try:
+        from app.services.language_content_service import get_answer_key
+        from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+        from app.services.language_grammar_integrity import issue_and_stamp_for_context
+        from app.services.language_grammar_skill_context import build_skill_grammar_context
+
+        grammar_ctx = await build_skill_grammar_context(
+            db,
+            student_id=student_id,
+            language_id=language.id,
+            source_skill=GrammarEvidenceSourceSkill.listening,
+        )
+        if grammar_ctx is not None:
+            session = await issue_and_stamp_for_context(
+                db,
+                student_id=student_id,
+                language_id=language.id,
+                grammar_ctx=grammar_ctx,
+                skill=GrammarEvidenceSourceSkill.listening,
+                activity_type="listening",
+                lesson_id=str(item.id),
+                content_item_id=int(item.id),
+                server_payload={"answer_key": get_answer_key(item.body_json)},
+            )
+            lesson["activity_session_id"] = str(session.id)
+            lesson["grammar_id"] = grammar_ctx.grammar_id
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("listening activity session issue failed: %s", exc)
     return lesson, _needs_background_prefill(active_after)

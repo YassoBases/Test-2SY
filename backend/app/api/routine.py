@@ -25,6 +25,7 @@ from app.services.routine_service import (
     _save_exams,
     _validate_slots,
     _review_schedule_claude,
+    _build_summary_data,
 )
 
 router = APIRouter(prefix="/student/routine", tags=["Daily Routine"])
@@ -167,6 +168,13 @@ async def get_profile(
         select(func.count(RoutineSlot.id)).where(RoutineSlot.profile_id == profile.id)
     )
     slot_count = slot_count_result.scalar_one_or_none() or 0
+    summary_data = None
+    if profile.chat_stage == "confirm":
+        try:
+            day_data = json.loads(profile.day_data_json or "{}")
+        except Exception:
+            day_data = {}
+        summary_data = _build_summary_data(profile, day_data)
     return {
         "grade_level": profile.grade_level,
         "school_start": profile.school_start,
@@ -178,6 +186,7 @@ async def get_profile(
         "onboarding_complete": profile.onboarding_complete,
         "has_schedule": slot_count > 0,
         "chat_stage": profile.chat_stage,
+        "summary_data": summary_data,
     }
 
 

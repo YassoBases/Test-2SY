@@ -62,7 +62,7 @@ def build_body_json(
     }
     if selection_metadata:
         curriculum.update(selection_metadata)
-    return {
+    body: dict[str, object] = {
         "prompt": canonical.writing_prompt,
         "mission_title": canonical.mission_title,
         "writing_context": canonical.writing_context,
@@ -90,6 +90,20 @@ def build_body_json(
         ),
         "canonical_lesson": canonical.to_dict(),
     }
+    # Wave C: hoist resolver grammar stamp to top-level for evidence completion.
+    if selection_metadata:
+        for key in (
+            "grammar_id",
+            "display_code",
+            "grammar_title",
+            "grammar_cefr",
+            "grammar_targets",
+            "grammar_source_skill",
+            "grammar_vocabulary_reinforcement",
+        ):
+            if key in selection_metadata:
+                body[key] = selection_metadata[key]
+    return body
 
 
 async def persist_generated_writing_lesson(

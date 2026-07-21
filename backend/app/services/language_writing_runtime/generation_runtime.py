@@ -79,6 +79,19 @@ async def generate_writing_lesson(
             ),
         )
 
+    # Wave C: resolver-first grammar context for prompt + persistence stamp.
+    from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+    from app.services.language_grammar_skill_context import build_skill_grammar_context
+
+    grammar_ctx = None
+    if db is not None:
+        grammar_ctx = await build_skill_grammar_context(
+            db,
+            student_id=student_id,
+            language_id=language_id,
+            source_skill=GrammarEvidenceSourceSkill.writing,
+        )
+
     planner_result = assemble_blueprint(
         LessonPlannerInput(
             official_cefr=official_cefr,
@@ -89,6 +102,32 @@ async def generate_writing_lesson(
     )
     blueprint = planner_result.blueprint
     prompt_bundle = build_prompt_from_blueprint(blueprint)
+    if grammar_ctx is not None:
+        from app.services.language_writing_generation.prompt_builder_types import (
+            PromptSectionKey,
+            WritingPromptBundle,
+            WritingPromptSection,
+        )
+
+        block = grammar_ctx.prompt_block()
+        new_sections: list[WritingPromptSection] = []
+        for section in prompt_bundle.sections:
+            if section.key == PromptSectionKey.grammar:
+                new_sections.append(
+                    WritingPromptSection(
+                        key=PromptSectionKey.grammar,
+                        content=f"{block}\n\n{section.content}".strip(),
+                    )
+                )
+            else:
+                new_sections.append(section)
+        prompt_bundle = WritingPromptBundle(
+            sections=tuple(new_sections),
+            blueprint_id=prompt_bundle.blueprint_id,
+            blueprint_version=prompt_bundle.blueprint_version,
+            blueprint_hash=prompt_bundle.blueprint_hash,
+            builder_version=prompt_bundle.builder_version,
+        )
     model_provider = provider or get_writing_model_provider()
     provider_info = model_provider.info()
 
@@ -194,6 +233,9 @@ async def generate_writing_lesson(
     content_item = None
     if persist and db is not None:
         try:
+            stamp_meta = dict(selection_metadata or {})
+            if grammar_ctx is not None:
+                stamp_meta.update(grammar_ctx.as_stamp_dict())
             content_item = await persist_generated_writing_lesson(
                 db,
                 language_id=language_id,
@@ -203,8 +245,34 @@ async def generate_writing_lesson(
                 audit=pipeline_result.audit,
                 model_name=provider_response.model_name,
                 provider_name=provider_response.provider_name,
-                selection_metadata=selection_metadata,
+                selection_metadata=stamp_meta or None,
             )
+            # Wave D: issue attested activity session bound to this writing item.
+            if grammar_ctx is not None and content_item is not None:
+                from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+                from app.services.language_grammar_integrity import issue_and_stamp_for_context
+
+                session = await issue_and_stamp_for_context(
+                    db,
+                    student_id=student_id,
+                    language_id=language_id,
+                    grammar_ctx=grammar_ctx,
+                    skill=GrammarEvidenceSourceSkill.writing,
+                    activity_type="writing",
+                    lesson_id=str(content_item.id),
+                    content_item_id=int(content_item.id),
+                    server_payload={
+                        "min_words": int(blueprint.success_criteria.min_words),
+                        "content_item_id": int(content_item.id),
+                    },
+                )
+                body = dict(content_item.body_json or {})
+                body["activity_session_id"] = str(session.id)
+                content_item.body_json = body
+                from sqlalchemy.orm.attributes import flag_modified
+
+                flag_modified(content_item, "body_json")
+                await db.flush()
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to persist writing lesson")
             note_failure()

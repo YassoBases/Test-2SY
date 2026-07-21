@@ -592,6 +592,144 @@ def _parse_last_json(text: str):
             return None
 
 
+def _time_to_minutes(value: str | None, fallback: str) -> int:
+    raw = str(value or fallback or "00:00").strip()
+    match = re.match(r"^(\d{1,2})(?::(\d{2}))?$", raw)
+    if not match:
+        raw = fallback
+        match = re.match(r"^(\d{1,2})(?::(\d{2}))?$", raw)
+    if not match:
+        return 0
+    hour = max(0, min(23, int(match.group(1))))
+    minute = max(0, min(59, int(match.group(2) or 0)))
+    return hour * 60 + minute
+
+
+def _minutes_to_time(value: int) -> str:
+    value = max(0, min(23 * 60 + 59, int(value)))
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def _append_routine_slot(
+    days: dict[str, list[dict]],
+    day: int,
+    *,
+    start: int,
+    end: int,
+    activity_type: str,
+    title: str,
+    subject: str | None = None,
+    fixed: bool = False,
+) -> None:
+    if end <= start:
+        return
+    days.setdefault(str(day), []).append(
+        {
+            "start": _minutes_to_time(start),
+            "end": _minutes_to_time(end),
+            "type": activity_type,
+            "title": title,
+            "subject": subject,
+            "fixed": fixed,
+        }
+    )
+
+
+def _build_deterministic_schedule(profile, day_data: dict, weak_subjects: list | None = None) -> dict[str, list[dict]]:
+    """Fallback weekly routine when the LLM is unavailable or returns unusable JSON."""
+    weak_subjects = [str(s).strip() for s in (weak_subjects or []) if str(s).strip()]
+    gk = _gk(profile.grade_level)
+    try:
+        school_days = {int(day) for day in json.loads(profile.school_days_json or "[0,1,2,3,4]")}
+    except Exception:
+        school_days = {0, 1, 2, 3, 4}
+
+    wake = _time_to_minutes(profile.wake_time, gk.get("wake_time") or "06:30")
+    sleep = _time_to_minutes(profile.sleep_time, gk.get("sleep_time") or "22:00")
+    school_start = _time_to_minutes(profile.school_start, "07:30")
+    school_end = _time_to_minutes(profile.school_end, "13:00")
+    if sleep <= wake:
+        sleep = 22 * 60
+
+    subjects = weak_subjects or ["رياضيات", "إنجليزي", "عربي", "علوم", "مراجعة"]
+    days: dict[str, list[dict]] = {str(day): [] for day in range(7)}
+    subject_index = 0
+
+    for day in range(7):
+        day_key = str(day)
+        is_school_day = day in school_days
+        cursor = wake
+
+        _append_routine_slot(days, day, start=cursor, end=cursor + 20, activity_type="other", title="استيقاظ وتجهيز", fixed=True)
+        cursor += 20
+        _append_routine_slot(days, day, start=cursor, end=cursor + 25, activity_type="meal", title="فطور", fixed=True)
+        cursor += 25
+
+        if is_school_day and school_end > school_start:
+            if cursor < school_start:
+                cursor = school_start
+            _append_routine_slot(days, day, start=school_start, end=school_end, activity_type="school", title="المدرسة", fixed=True)
+            cursor = school_end + 30
+            _append_routine_slot(days, day, start=school_end + 10, end=cursor, activity_type="meal", title="غداء وراحة", fixed=True)
+        else:
+            cursor += 30
+
+        if cursor + 55 < sleep:
+            subject = subjects[subject_index % len(subjects)]
+            _append_routine_slot(
+                days,
+                day,
+                start=cursor,
+                end=cursor + 50,
+                activity_type="study",
+                title=f"دراسة {subject}",
+                subject=subject,
+            )
+            subject_index += 1
+            cursor += 65
+
+        if cursor + 45 < sleep:
+            subject = subjects[subject_index % len(subjects)]
+            _append_routine_slot(
+                days,
+                day,
+                start=cursor,
+                end=cursor + 40,
+                activity_type="study",
+                title=f"مراجعة {subject}",
+                subject=subject,
+            )
+            subject_index += 1
+            cursor += 50
+
+        note = str(day_data.get(day_key) or "").strip()
+        if note and cursor + 35 < sleep:
+            _append_routine_slot(
+                days,
+                day,
+                start=cursor,
+                end=cursor + 35,
+                activity_type="other",
+                title="نشاط حسب ما ذكرت",
+                subject=note[:80],
+            )
+            cursor += 45
+
+        if cursor + 45 < sleep:
+            _append_routine_slot(days, day, start=cursor, end=cursor + 45, activity_type="free", title="وقت حر أو عائلة")
+            cursor += 50
+
+        dinner_start = max(cursor, min(19 * 60, sleep - 70))
+        if dinner_start + 30 < sleep:
+            _append_routine_slot(days, day, start=dinner_start, end=dinner_start + 30, activity_type="meal", title="عشاء", fixed=True)
+
+        _append_routine_slot(days, day, start=sleep, end=23 * 60 + 59, activity_type="sleep", title="نوم", fixed=True)
+
+        days[day_key] = sorted(days[day_key], key=lambda slot: slot.get("start", "00:00"))
+
+    return days
+
+
 async def _extract_with_claude(message: str, stage: str, profile) -> dict:
     from app.core.config import get_settings
     from app.services.claude_service import generate_claude_text_sync, is_claude_configured
@@ -740,7 +878,13 @@ async def _generate_schedule_claude(db: AsyncSession, profile, day_data: dict, w
 
     settings = get_settings()
     if not is_claude_configured():
-        return None
+        logger.warning(
+            "Routine schedule generation using deterministic fallback: Claude is not configured "
+            "profile_id=%s student_id=%s",
+            getattr(profile, "id", None),
+            getattr(profile, "student_id", None),
+        )
+        return _build_deterministic_schedule(profile, day_data, weak_subjects)
 
     gk = _gk(profile.grade_level)
     school_days_list = []
@@ -751,6 +895,11 @@ async def _generate_schedule_claude(db: AsyncSession, profile, day_data: dict, w
 
     school_day_names = [DAY_NAMES[d] for d in school_days_list if d in DAY_NAMES]
     holiday_day_names = [DAY_NAMES[d] for d in range(7) if d not in school_days_list and d in DAY_NAMES]
+    day_data = {
+        str(k): v
+        for k, v in (day_data or {}).items()
+        if str(k).startswith("_") or str(k).isdigit()
+    }
 
     day_summary = "\n".join(
         [f"يوم {DAY_NAMES.get(int(k), k)} ({'مدرسة' if int(k) in school_days_list else 'عطلة'}): {v}"
@@ -877,8 +1026,16 @@ async def _generate_schedule_claude(db: AsyncSession, profile, day_data: dict, w
                 m = re.search(r'\{[\s\S]*"days"[\s\S]*\}', text)
                 if m:
                     parsed = json.loads(m.group())
-                    return parsed.get("days", parsed)
-                last_err = "no JSON match in response"
+                    candidate = parsed.get("days", parsed)
+                    if isinstance(candidate, dict):
+                        errors = _validate_slots(candidate)
+                        if not errors:
+                            return candidate
+                        last_err = f"validation failed: {errors[:2]}"
+                    else:
+                        last_err = "JSON response did not contain a days object"
+                else:
+                    last_err = "no JSON match in response"
             except Exception as e:
                 last_err = e
                 logger.error("Claude generate error (attempt %d): %s", attempt + 1, repr(e)[:300])
@@ -886,7 +1043,7 @@ async def _generate_schedule_claude(db: AsyncSession, profile, day_data: dict, w
             logger.error("Claude generate_schedule failed after retries: %s", repr(last_err)[:300])
     except Exception as e:
         logger.error("Claude generate error: %s", repr(e)[:300])
-    return None
+    return _build_deterministic_schedule(profile, day_data, weak_subjects)
 
 
 async def _review_schedule_claude(profile, weak_subjects: list, user_suggestion: str = "") -> dict:
@@ -941,6 +1098,10 @@ def _validate_slots(days: dict) -> list[str]:
     errors = []
     for day, slots in days.items():
         if not isinstance(slots, list):
+            continue
+        try:
+            int(day)
+        except Exception:
             continue
         ss = sorted(slots, key=lambda s: s.get("start", "00:00"))
         for i in range(len(ss) - 1):

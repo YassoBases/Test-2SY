@@ -52,8 +52,13 @@ class VocabularyChallengeOut(BaseModel):
     words: list[str] = Field(default_factory=list)        # the target words being reviewed
     paragraph_challenge: str = ""                          # text with [blank1], [blank2], ... placeholders
     context_hint: str = ""                                 # short English hint about the paragraph's meaning
-    blanks_mapping: dict[str, str] = Field(default_factory=dict)  # {"[blank1]": "word", ...}
+    blanks_mapping: dict[str, str] = Field(default_factory=dict)  # client sees mapping only after submit in some UIs
     options_pool: list[str] = Field(default_factory=list)  # correct words + distractors (shuffled)
+    # Wave C/D: resolver stamp — vocabulary supports grammar; never an independent path.
+    grammar_id: str | None = None
+    display_code: str | None = None
+    grammar_vocabulary_reinforcement: bool = False
+    activity_session_id: str | None = None
 
 
 class VocabularyChallengeResultItem(BaseModel):
@@ -65,12 +70,15 @@ class VocabularyChallengeSubmitIn(BaseModel):
     """Per-blank results of a finished daily challenge, fed to the learner model (English only)."""
 
     results: list[VocabularyChallengeResultItem] = Field(default_factory=list)
+    # Wave D — server session only (client grammar_id rejected)
+    activity_session_id: str | None = None
 
 
 class VocabularyChallengeSubmitOut(BaseModel):
     recorded: int = 0
     correct: int = 0
     total: int = 0
+    grammar_id: str | None = None
 
 
 class LearnerComponentOut(BaseModel):
@@ -213,6 +221,8 @@ class ListeningLessonOut(BaseModel):
 class LessonSubmitIn(BaseModel):
     answers: dict[str, dict] = Field(default_factory=dict)
     duration_seconds: int | None = None  # reading: time spent on the passage, for WPM
+    # Wave D — required for grammar evidence; server session binds student+grammar
+    activity_session_id: str | None = None
 
 
 class ReadingQuestionResultOut(BaseModel):
@@ -401,6 +411,7 @@ class WritingListOut(BaseModel):
 
 class WritingSubmitIn(BaseModel):
     response_text: str
+    activity_session_id: str | None = None
 
 
 class WritingSubmitOut(BaseModel):
@@ -411,6 +422,7 @@ class WritingSubmitOut(BaseModel):
     sentence_count: int
     completed_at: datetime | None = None
     status: str
+    grammar_id: str | None = None
 
 
 class SpeakingPromptOut(BaseModel):

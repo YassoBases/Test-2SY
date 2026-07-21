@@ -199,7 +199,28 @@ def _collect_review_words(cards: list[dict], *, limit: int = 6) -> list[str]:
 
 
 async def generate_vocabulary_challenge(db: AsyncSession, *, student_id: int) -> VocabularyChallengeOut:
-    """Build a fill-in-the-blanks paragraph from the student's due vocabulary (English only)."""
+    """Build a fill-in-the-blanks paragraph from the student's due vocabulary (English only).
+
+    Wave C: resolver-first — vocabulary supports the current grammar node (never independent progression).
+    """
+    language = await get_default_language(db)
+    from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+    from app.services.language_grammar_skill_context import build_skill_grammar_context
+
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language.id,
+        source_skill=GrammarEvidenceSourceSkill.vocabulary,
+    )
+    stamp_kwargs = {
+        "grammar_id": grammar_ctx.grammar_id if grammar_ctx else None,
+        "display_code": grammar_ctx.display_code if grammar_ctx else None,
+        "grammar_vocabulary_reinforcement": bool(
+            grammar_ctx.vocabulary_reinforcement if grammar_ctx else False
+        ),
+    }
+
     data = await list_vocabulary(db, student_id=student_id)
     level = data.get("student_level") or "A2"
     words = _collect_review_words(data.get("cards", []))
@@ -207,9 +228,23 @@ async def generate_vocabulary_challenge(db: AsyncSession, *, student_id: int) ->
         return VocabularyChallengeOut(
             words=words,
             context_hint="You have no vocabulary to review yet — learn a few words first, then come back.",
+            **stamp_kwargs,
         )
 
+    grammar_block = grammar_ctx.prompt_block() if grammar_ctx else ""
+    if grammar_ctx and grammar_ctx.vocabulary_reinforcement:
+        vocab_mode = (
+            "Align the paragraph with the grammar target: prefer collocations and forms that "
+            "naturally exercise that grammar."
+        )
+    else:
+        vocab_mode = (
+            "Keep lexical support light for the grammar target; do not invent a separate "
+            "vocabulary curriculum path."
+        )
     prompt = (
+        (f"{grammar_block}\n\n" if grammar_block else "")
+        + f"{vocab_mode}\n"
         f"The student needs to review these English words today: {', '.join(words)}.\n"
         f"Write ONE cohesive short paragraph (3-5 sentences) at {level} level that naturally uses ALL of "
         "them, then turn it into a fill-in-the-blanks challenge." + level_calibration_line(level) + "\n"
@@ -232,12 +267,34 @@ async def generate_vocabulary_challenge(db: AsyncSession, *, student_id: int) ->
             for correct in mapping.values():
                 if correct not in pool:
                     pool.append(str(correct))
+            mapping_norm = {str(k): str(v) for k, v in mapping.items()}
+            session_id = None
+            if grammar_ctx is not None and mapping_norm:
+                from app.services.language_grammar_integrity import issue_and_stamp_for_context
+
+                try:
+                    session = await issue_and_stamp_for_context(
+                        db,
+                        student_id=student_id,
+                        language_id=language.id,
+                        grammar_ctx=grammar_ctx,
+                        skill=GrammarEvidenceSourceSkill.vocabulary,
+                        activity_type="vocabulary",
+                        lesson_id="vocabulary_challenge",
+                        server_payload={"blanks_mapping": mapping_norm},
+                    )
+                    session_id = str(session.id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("vocabulary activity session issue failed: %s", exc)
             return VocabularyChallengeOut(
                 words=words,
                 paragraph_challenge=str(parsed.get("paragraph_challenge") or ""),
                 context_hint=str(parsed.get("context_hint") or ""),
-                blanks_mapping={str(k): str(v) for k, v in mapping.items()},
+                # Do not leak answer key; scoring uses server session payload.
+                blanks_mapping={},
                 options_pool=pool,
+                activity_session_id=session_id,
+                **stamp_kwargs,
             )
     except Exception as exc:  # pragma: no cover - LLM variance
         logger.warning("Vocabulary challenge generation failed: %s", exc)
@@ -247,6 +304,7 @@ async def generate_vocabulary_challenge(db: AsyncSession, *, student_id: int) ->
         words=words,
         context_hint="The interactive challenge is temporarily unavailable — review these words instead.",
         options_pool=words,
+        **stamp_kwargs,
     )
 
 
@@ -279,15 +337,8 @@ async def save_word(db: AsyncSession, *, student_id: int, word: str) -> dict:
         )
     ).scalar_one_or_none()
     if existing is None:
-        from app.services.language_progression_service import select_skill_level
-
-        level = await select_skill_level(
-            db,
-            student_id=student_id,
-            language_id=language.id,
-            skill=LanguageSkill.reading,
-            default=LanguageLevel.A2,
-        )
+        analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language.id})
+        level = (analytics.reading_level if analytics and analytics.reading_level else LanguageLevel.A2)
         db.add(
             LanguageContentItem(
                 language_id=language.id, skill=None, level=level, content_type=CONTENT_TYPE,
@@ -303,13 +354,27 @@ async def save_word(db: AsyncSession, *, student_id: int, word: str) -> dict:
 
 
 async def submit_vocabulary_challenge(
-    db: AsyncSession, *, student_id: int, results: list[dict]
+    db: AsyncSession,
+    *,
+    student_id: int,
+    results: list[dict],
+    activity_session_id: str | None = None,
+    grammar_id: str | None = None,
 ) -> dict:
     """Grade a finished daily challenge into the learner model (source='daily').
 
-    Feeds one piece of evidence per blank without touching the flashcard SM-2 schedule (the
-    flashcard review path stays the single authority for per-word spaced repetition).
+    Wave D: grammar evidence only via attested activity_session_id.
+    Client grammar_id is ignored (forged stamps rejected).
     """
+    if grammar_id:
+        # Explicit reject path for hostile clients sending grammar_id.
+        from fastapi import HTTPException, status as http_status
+
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Client grammar_id is not accepted; use activity_session_id",
+        )
+
     language = await get_default_language(db)
     recorded = await record_challenge_results(
         db, student_id=student_id, language_id=language.id, results=results
@@ -325,7 +390,47 @@ async def submit_vocabulary_challenge(
             skill=LanguageSkill.reading,
             payload_json={"correct": correct, "total": total},
         )
-    return {"recorded": recorded, "correct": correct, "total": total}
+    grammar_completion_id = None
+    if activity_session_id and total:
+        from app.services.language_grammar_integrity import (
+            AttestedCompletionRequest,
+            GrammarIntegrityError,
+            complete_attested_activity,
+        )
+
+        answers = [
+            {
+                "blank": str(r.get("blank") or r.get("id") or ""),
+                "word": str(r.get("word") or ""),
+            }
+            for r in (results or [])
+        ]
+        # Prefer blank keys from word when blank missing — also pass dict form
+        answer_dict = {str(a["blank"]): a["word"] for a in answers if a["blank"]}
+        try:
+            completion = await complete_attested_activity(
+                db,
+                AttestedCompletionRequest(
+                    student_id=student_id,
+                    language_id=language.id,
+                    activity_session_id=activity_session_id,
+                    answers=answer_dict or answers,
+                ),
+            )
+            grammar_completion_id = completion.grammar_id
+        except GrammarIntegrityError as exc:
+            from fastapi import HTTPException, status as http_status
+
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=exc.message,
+            ) from exc
+    return {
+        "recorded": recorded,
+        "correct": correct,
+        "total": total,
+        "grammar_id": grammar_completion_id,
+    }
 
 
 async def _progress_by_lemma(

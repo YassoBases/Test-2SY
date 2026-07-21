@@ -12,7 +12,14 @@ from app.services.language_writing_generation.repair_types import (
     RepairResult,
 )
 from app.services.language_writing_generation.validator_types import ValidationResult
+from app.services.language_writing_generation.validator_types import ValidationIssueCode
 from app.services.language_writing_lesson_planner.types import WritingLessonBlueprint
+
+
+def _has_issue(validation: ValidationResult | None, code: ValidationIssueCode, field: str) -> bool:
+    if validation is None:
+        return False
+    return any(issue.code == code and issue.field == field for issue in validation.issues)
 
 
 def _normalize_expected_output(value: str, blueprint: WritingLessonBlueprint) -> tuple[str, RepairAction | None]:
@@ -108,7 +115,7 @@ def repair_lesson_draft(
         actions.append(expected_action)
 
     grammar_display = draft.grammar_display
-    if not grammar_display:
+    if not grammar_display or _has_issue(validation, ValidationIssueCode.grammar_metadata_mismatch, "grammar_display"):
         grammar_display = blueprint.grammar_targets.primary.replace("_", " ")
         actions.append(
             RepairAction(
@@ -119,7 +126,7 @@ def repair_lesson_draft(
         )
 
     vocabulary_display = draft.vocabulary_display
-    if not vocabulary_display:
+    if not vocabulary_display or _has_issue(validation, ValidationIssueCode.vocabulary_metadata_mismatch, "vocabulary_display"):
         vocabulary_display = ", ".join(blueprint.vocabulary_targets.primary[:6])
         actions.append(
             RepairAction(

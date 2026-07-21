@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageSkill
+from app.models.language.progress import LanguageWritingProgress
 from app.services.language_writing_generation import WRITING_CURRICULUM_KEY, WRITING_GOAL_KEY
 from app.services.language_writing_revision.persistence import WRITING_COMPLETION_KEY
 
@@ -72,8 +73,10 @@ async def load_completed_nodes_from_lessons(
 ) -> frozenset[str]:
     """Derive completed chain nodes from persisted writing lessons."""
     result = await db.execute(
-        select(LanguageContentItem.body_json).where(
-            LanguageContentItem.student_id == student_id,
+        select(LanguageContentItem.body_json)
+        .join(LanguageWritingProgress, LanguageWritingProgress.content_item_id == LanguageContentItem.id)
+        .where(
+            LanguageWritingProgress.student_id == student_id,
             LanguageContentItem.language_id == language_id,
             LanguageContentItem.skill == LanguageSkill.writing,
             LanguageContentItem.content_type == "writing_prompt",

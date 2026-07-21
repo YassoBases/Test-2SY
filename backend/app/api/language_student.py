@@ -32,16 +32,6 @@ from app.schemas.language_learning import (
     LessonSubmitOut,
     ListeningLessonOut,
     ReadingLessonOut,
-    SpeakingListOut,
-    SpeakingPromptOut,
-    SpeakingConversationProgressOut,
-    SpeakingConversationResetOut,
-    SpeakingConversationStateOut,
-    SpeakingConversationTurnOut,
-    SpeakingSubmitIn,
-    SpeakingSubmitOut,
-    ShadowSentenceListOut,
-    ShadowSubmitOut,
     DictionarySearchOut,
     VocabularyCardOut,
     LearnerModelProfileOut,
@@ -148,31 +138,7 @@ from app.services.language_listening_acquisition import acquire_next_listening
 from app.services.language_listening_prefill_task import background_prefill_listening_pool
 from app.services.language_skill_progress_service import submit_listening, submit_reading
 from app.services.language_tts_service import get_lesson_audio
-from app.services.language_speaking_service import (
-    get_speaking_prompt,
-    list_speaking,
-    submit_speaking,
-    upload_speaking_recording,
-)
-from app.services.language_conversation_service import (
-    get_conversation_progress,
-    get_conversation_session_detail,
-    get_conversation_state,
-    get_turn_explanation,
-    list_conversation_sessions,
-    process_conversation_turn,
-    reset_conversation,
-)
-from app.services.language_conversation_scenario_service import (
-    end_session_with_feedback,
-    get_scenario_session,
-    list_scenario_sessions,
-    list_scenarios,
-    process_scenario_turn,
-    start_scenario_session,
-)
-from app.services.language_shadowing_service import list_shadow_sentences, submit_shadow
-from app.services.language_transcription_service import transcribe_english_audio
+from app.services.language_rate_limit_service import check_or_raise
 from app.services.language_adaptive_service import get_adaptive_state_overview
 from app.services.language_learner_memory_service import get_memory, update_memory
 from app.services.language_learner_model_service import LanguageLearnerModelService
@@ -658,8 +624,12 @@ async def reading_submit(
     db: AsyncSession = Depends(get_db),
 ):
     result = await submit_reading(
-        db, student_id=student.id, content_id=content_id, answers=body.answers,
+        db,
+        student_id=student.id,
+        content_id=content_id,
+        answers=body.answers,
         duration_seconds=body.duration_seconds,
+        activity_session_id=body.activity_session_id,
     )
     await db.commit()
     return LessonSubmitOut(**result)
@@ -823,7 +793,13 @@ async def listening_submit(
 ):
     from app.services.language_subscription_service import get_default_language
 
-    result = await submit_listening(db, student_id=student.id, content_id=content_id, answers=body.answers)
+    result = await submit_listening(
+        db,
+        student_id=student.id,
+        content_id=content_id,
+        answers=body.answers,
+        activity_session_id=body.activity_session_id,
+    )
     await db.commit()
     item, progress, _url, _avail = await get_listening_lesson(
         db, student_id=student.id, content_id=content_id
@@ -970,7 +946,10 @@ async def vocabulary_challenge_submit(
 ):
     """Record a finished daily challenge as learner-model evidence (source='daily')."""
     result = await submit_vocabulary_challenge(
-        db, student_id=student.id, results=[r.model_dump() for r in body.results]
+        db,
+        student_id=student.id,
+        results=[r.model_dump() for r in body.results],
+        activity_session_id=body.activity_session_id,
     )
     await db.commit()
     return result
@@ -1130,275 +1109,14 @@ async def writing_submit(
     db: AsyncSession = Depends(get_db),
 ):
     result = await submit_writing(
-        db, student_id=student.id, prompt_id=prompt_id, response_text=body.response_text
-    )
-    await db.commit()
-    return WritingSubmitOut(**result)
-
-
-@router.get("/speaking", response_model=SpeakingListOut)
-async def speaking_list(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    return await list_speaking(db, student_id=student.id)
-
-
-@router.get("/speaking/conversation", response_model=SpeakingConversationStateOut)
-async def speaking_conversation_state(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    payload = await get_conversation_state(db, student_id=student.id)
-    await db.commit()
-    return SpeakingConversationStateOut(**payload)
-
-
-@router.get("/speaking/conversation/progress", response_model=SpeakingConversationProgressOut)
-async def speaking_conversation_progress(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    payload = await get_conversation_progress(db, student_id=student.id)
-    await db.commit()
-    return SpeakingConversationProgressOut(**payload)
-
-
-@router.post("/speaking/conversation/turn", response_model=SpeakingConversationTurnOut)
-async def speaking_conversation_turn(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    duration_seconds: int | None = Form(default=None),
-    tts_voice: str | None = Form(default=None),
-    focus: str | None = Form(default=None),
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    check_or_raise("speaking", student.id)  # per-user rate limit on the costly audio turn
-    result = await process_conversation_turn(
-        db,
-        student_id=student.id,
-        file=file,
-        duration_seconds=duration_seconds,
-        voice=tts_voice,
-        focus=focus,
-    )
-    bg = result.pop("_background_tts", None)
-    result.pop("turn_id", None)
-    await db.commit()
-    if bg:
-        from app.services.language_conversation_tts_task import generate_conversation_reply_audio
-
-        background_tasks.add_task(generate_conversation_reply_audio, **bg)
-    return SpeakingConversationTurnOut(**result)
-
-
-@router.get("/speaking/conversation/sessions")
-async def speaking_conversation_sessions(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    return await list_conversation_sessions(db, student_id=student.id)
-
-
-@router.get("/speaking/conversation/sessions/{session_id}")
-async def speaking_conversation_session_detail(
-    session_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    return await get_conversation_session_detail(db, student_id=student.id, session_id=session_id)
-
-
-@router.get("/speaking/conversation/turn/{turn_id}/explanation")
-async def speaking_conversation_turn_explanation(
-    turn_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await get_turn_explanation(db, student_id=student.id, turn_id=turn_id)
-    await db.commit()
-    return result
-
-
-@router.delete("/speaking/conversation", response_model=SpeakingConversationResetOut)
-async def speaking_conversation_reset(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await reset_conversation(db, student_id=student.id)
-    await db.commit()
-    return SpeakingConversationResetOut(**result)
-
-
-class ScenarioTurnIn(BaseModel):
-    session_id: int
-    text: str
-
-
-class ScenarioEndIn(BaseModel):
-    session_id: int
-
-
-@router.get("/speaking/scenarios")
-async def speaking_scenarios(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    language = await get_default_language(db)
-    scenarios = await list_scenarios(db, student_id=student.id, language_id=language.id)
-    return {"scenarios": scenarios}
-
-
-@router.get("/speaking/scenarios/sessions")
-async def speaking_scenario_sessions(
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    language = await get_default_language(db)
-    return await list_scenario_sessions(db, student_id=student.id, language_id=language.id)
-
-
-@router.post("/speaking/scenarios/{scenario_id}/start")
-async def speaking_scenario_start(
-    scenario_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    language = await get_default_language(db)
-    result = await start_scenario_session(
-        db, student_id=student.id, language_id=language.id, scenario_id=scenario_id
-    )
-    await db.commit()
-    return result
-
-
-@router.get("/speaking/scenarios/session/{session_id}")
-async def speaking_scenario_session(
-    session_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    return await get_scenario_session(db, session_id=session_id, student_id=student.id)
-
-
-@router.post("/speaking/scenarios/turn")
-async def speaking_scenario_turn(
-    body: ScenarioTurnIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    language = await get_default_language(db)
-    result = await process_scenario_turn(
-        db, session_id=body.session_id, student_id=student.id, user_text=body.text, language_id=language.id
-    )
-    await db.commit()
-    return result
-
-
-@router.post("/speaking/scenarios/turn/voice")
-async def speaking_scenario_turn_voice(
-    session_id: int = Form(...),
-    file: UploadFile = File(...),
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    """Voice turn for a role-play scenario: transcribe the audio, then run the same
-    text turn pipeline so vocabulary/reply still respect the student's CEFR level."""
-    language = await get_default_language(db)
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The audio file is empty")
-    suffix = ".webm"
-    if file.filename and "." in file.filename:
-        suffix = "." + file.filename.rsplit(".", 1)[-1].lower()
-    stt = await transcribe_english_audio(data, suffix=suffix)
-    transcript = (stt.text or "").strip()
-    if not transcript:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Could not understand the audio — please try again.",
-        )
-    result = await process_scenario_turn(
-        db, session_id=session_id, student_id=student.id, user_text=transcript, language_id=language.id
-    )
-    await db.commit()
-    result["transcript"] = transcript
-    return result
-
-
-@router.post("/speaking/scenarios/end")
-async def speaking_scenario_end(
-    body: ScenarioEndIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await end_session_with_feedback(db, session_id=body.session_id, student_id=student.id)
-    await db.commit()
-    return result
-
-
-@router.get("/speaking/shadow/sentences", response_model=ShadowSentenceListOut)
-async def shadow_sentences(
-    focus: str | None = None,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    payload = await list_shadow_sentences(db, student_id=student.id, focus=focus)
-    return ShadowSentenceListOut(**payload)
-
-
-@router.post("/speaking/shadow", response_model=ShadowSubmitOut)
-async def shadow_submit(
-    target_text: str = Form(...),
-    file: UploadFile = File(...),
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await submit_shadow(db, student_id=student.id, target_text=target_text, file=file)
-    await db.commit()
-    return ShadowSubmitOut(**result)
-
-
-@router.get("/speaking/{prompt_id:int}", response_model=SpeakingPromptOut)
-async def speaking_detail(
-    prompt_id: int,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    return await get_speaking_prompt(db, student_id=student.id, prompt_id=prompt_id)
-
-
-@router.post("/speaking/{prompt_id:int}/upload", response_model=PlacementSpeakingUploadOut)
-async def speaking_upload(
-    prompt_id: int,
-    file: UploadFile = File(...),
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    media = await upload_speaking_recording(
-        db, student_id=student.id, prompt_id=prompt_id, file=file
-    )
-    await db.commit()
-    return PlacementSpeakingUploadOut(ok=True, media_object_id=media["media_object_id"], public_url=media["public_url"])
-
-
-@router.post("/speaking/{prompt_id:int}/submit", response_model=SpeakingSubmitOut)
-async def speaking_submit(
-    prompt_id: int,
-    body: SpeakingSubmitIn,
-    student: User = Depends(require_language_learning_ready()),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await submit_speaking(
         db,
         student_id=student.id,
         prompt_id=prompt_id,
-        media_object_id=body.media_object_id,
-        duration_seconds=body.duration_seconds,
+        response_text=body.response_text,
+        activity_session_id=body.activity_session_id,
     )
     await db.commit()
-    return SpeakingSubmitOut(**result)
+    return WritingSubmitOut(**result)
 
 
 @router.get("/certificates", response_model=LanguageCertificateListOut)

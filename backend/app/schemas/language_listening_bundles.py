@@ -100,6 +100,8 @@ class LessonExperienceBundleOut(BaseModel):
     playback: LessonPlaybackOut = Field(default_factory=LessonPlaybackOut)
     after_lesson: AfterLessonOut | None = None
     meta: LessonExperienceMetaOut = Field(default_factory=LessonExperienceMetaOut)
+    activity_session_id: str | None = None
+    grammar_id: str | None = None
 
 
 class JourneyTargetOut(BaseModel):
