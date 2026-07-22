@@ -370,6 +370,7 @@ def test_validator_rejects_high_level_repeated_simple_padding():
     ("cefr", "stage"),
     [
         ("B1", "Intermediate"),
+        ("B1", "Advanced"),
         ("B2", "Advanced"),
         ("C1", "Advanced"),
         ("C2", "Advanced"),
@@ -394,6 +395,9 @@ def test_local_mock_high_level_passages_follow_difficulty_policy(cefr, stage):
     assert result.valid is True
     assert "Reading Routine" not in activity.title
     assert reading_service._paragraph_count(activity.passage) >= blueprint.passage_difficulty_policy["paragraph_count_min"]
+    assert reading_service._repeated_ngram_ratio(reading_service._word_tokens(activity.passage)) <= float(
+        blueprint.passage_difficulty_policy["max_repeated_ngram_ratio"]
+    )
 
 
 def test_a2_advanced_readiness_local_mock_passes_difficulty_validation():
@@ -416,6 +420,68 @@ def test_a2_advanced_readiness_local_mock_passes_difficulty_validation():
     assert len(activity.questions) == 12
     assert len(set(question_stems)) > 8
     assert reading_service._repeated_sentence_ratio(reading_service._sentence_texts(activity.passage)) == 0.0
+
+
+def test_b1_advanced_practice_and_readiness_local_mocks_pass_difficulty_validation():
+    practice_count = reading_service.get_practice_question_count("B1", "Advanced")
+    readiness_count = reading_service.get_readiness_question_count("B2")
+    assert practice_count == 6
+    assert readiness_count == 12
+
+    for mode, question_count in (("practice", practice_count), ("readiness", readiness_count)):
+        blueprint = _blueprint(
+            cefr_level="B1",
+            internal_stage="Advanced",
+            mode=mode,
+            reading_subskills=reading_service._SUBSKILLS_BY_STAGE["Advanced"],
+            question_count=question_count,
+            number_of_questions=question_count,
+            question_types=reading_service.question_types_for_count(question_count, mode=mode),
+        )
+        activity = generate_reading_activity_from_blueprint(blueprint)
+        result = validate_generated_activity(activity, blueprint)
+        tokens = reading_service._word_tokens(activity.passage)
+
+        assert result.valid is True, [issue.code for issue in result.issues]
+        assert len(activity.questions) == question_count
+        assert reading_service._paragraph_count(activity.passage) >= 2
+        assert reading_service._repeated_sentence_ratio(reading_service._sentence_texts(activity.passage)) == 0.0
+        assert reading_service._repeated_ngram_ratio(tokens) <= float(
+            blueprint.passage_difficulty_policy["max_repeated_ngram_ratio"]
+        )
+        assert "repeated_phrase_ratio_too_high" not in _issue_codes(result)
+
+
+@pytest.mark.parametrize("cefr", ["B1", "B2", "C1", "C2"])
+def test_validator_rejects_repetitive_padded_passages_for_upper_levels(cefr):
+    stage = "Advanced"
+    blueprint = _blueprint(
+        cefr_level=cefr,
+        internal_stage=stage,
+        reading_subskills=reading_service._SUBSKILLS_BY_STAGE[stage],
+        question_count=reading_service.get_practice_question_count(cefr, stage),
+        number_of_questions=reading_service.get_practice_question_count(cefr, stage),
+        question_types=reading_service.question_types_for_count(
+            reading_service.get_practice_question_count(cefr, stage),
+            mode="practice",
+        ),
+    )
+    activity = generate_reading_activity_from_blueprint(blueprint).model_dump()
+    sentence = "Mira reads a simple book at home and writes one new word in her notebook."
+    needed = max(40, int(blueprint.passage_difficulty_policy["sentence_count_min"]) + 10)
+    sentences = [sentence for _index in range(needed)]
+    paragraph_min = max(1, int(blueprint.passage_difficulty_policy["paragraph_count_min"]))
+    chunk = max(1, needed // paragraph_min)
+    activity["passage"] = "\n\n".join(
+        " ".join(sentences[index : index + chunk]) for index in range(0, len(sentences), chunk)
+    )
+
+    result = validate_generated_activity(activity, blueprint)
+
+    assert result.valid is False
+    assert _issue_codes(result).intersection(
+        {"repeated_sentence_ratio_too_high", "repeated_phrase_ratio_too_high", "lexical_diversity_too_low"}
+    )
 
 
 @pytest.mark.parametrize(

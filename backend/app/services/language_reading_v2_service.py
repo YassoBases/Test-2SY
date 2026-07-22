@@ -928,6 +928,8 @@ def _mock_base_sentences(cefr: str, stage: str) -> list[str]:
             "Ben keeps the paper list for his next visit.",
         ]
     if cefr == "B1":
+        # Keep a long unique pool so Advanced word targets do not depend on
+        # near-duplicate extension templates that inflate repeated 5-grams.
         return [
             "Mira volunteers at a community garden that publishes a short newsletter each month.",
             "The newest article explains why neighbors changed the watering schedule during a dry week.",
@@ -941,6 +943,34 @@ def _mock_base_sentences(cefr: str, stage: str) -> list[str]:
             "She also marks words that show contrast, such as however and although.",
             "The newsletter ends by asking people to try the schedule for two weeks.",
             "Mira thinks the writer wants readers to cooperate before judging the new plan.",
+            "A sidebar interview shows how a teenager learned to measure soil moisture with a simple stick test.",
+            "Instead of guessing, he checks the top layer and then digs a little deeper before watering.",
+            "His advice surprises older gardeners who usually follow the same routine every evening.",
+            "The newsletter also describes a Saturday swap table where people exchange seeds and unused pots.",
+            "Because the table is free, families with tight budgets can still join seasonal planting.",
+            "Mira likes a short opinion piece that compares noisy group chats with calm face-to-face planning.",
+            "The author argues that quick messages create confusion when people miss important details.",
+            "A printed notice on the garden gate, by contrast, stays visible for everyone who walks past.",
+            "Readers learn that the compost corner now accepts vegetable peels but refuses oily leftovers.",
+            "This rule protects the mixture and reduces bad smells near the children's play space.",
+            "One paragraph warns that plastic labels break in strong sun, so wooden markers last longer.",
+            "Mira underlines a tip about rotating crops so the same plant does not exhaust the soil.",
+            "She remembers her science class and connects the tip with what she already knows about nutrients.",
+            "The newsletter includes a map of shaded and sunny beds so newcomers choose the right spot.",
+            "A retired nurse explains how gentle walking between the paths helps her stay active after work.",
+            "Her story makes the garden feel useful for health, not only for growing food.",
+            "Near the end, the editor invites comments about a plan to host a quiet reading hour outdoors.",
+            "Some neighbors support the idea, while others worry about chairs blocking the narrow paths.",
+            "The editor does not force a decision; he asks people to vote at the next meeting.",
+            "Mira finishes the page feeling that careful reasons are stronger than angry complaints.",
+            "She copies three useful phrases that show agreement, disagreement, and polite suggestion.",
+            "Those phrases will help her write a short reply without sounding rude.",
+            "Before she leaves the bench, she photographs a chart that lists watering times by plant type.",
+            "The chart uses simple icons, so even visitors who struggle with long texts can follow it.",
+            "Mira decides to share the chart with her cousin, who grows herbs on a balcony.",
+            "She also plans to ask the editor whether next month can include a beginner vocabulary box.",
+            "If common garden words appear with short meanings, more students may enjoy the newsletter.",
+            "That final idea shows Mira reading as a neighbor who wants the community project to grow.",
         ]
     if cefr == "B2":
         return [
@@ -1045,12 +1075,42 @@ def _mock_extension_sentence(cefr: str, index: int) -> str:
         ]
     elif cefr == "B1":
         options = [
-            f"In the {label} example, a volunteer explains how the new rule changes weekend work.",
-            f"The {label} detail helps readers connect the writer's opinion with everyday choices.",
-            f"A short comment from the {label} group makes the reason easier to understand.",
-            f"The {label} note reminds readers that small changes can still need careful planning.",
-            f"Because of the {label} result, Mira can see why the neighbors test the plan slowly.",
-            f"The writer uses the {label} case to show both a problem and a possible answer.",
+            "In a later box, a volunteer explains how the new weekend rule changes shared work.",
+            "A neighbor's brief comment links the writer's opinion with everyday shopping choices.",
+            "Readers hear from a cycling group that prefers early watering before school traffic.",
+            "A sticky note on the tool shed reminds people that small changes still need planning.",
+            "Because the soil test improved, Mira understands why neighbors move slowly.",
+            "One short case study shows both a watering problem and a practical answer.",
+            "The editor prints a calendar of frost dates so beginners protect young seedlings.",
+            "Children draw insects they find near the bean plants and bring the pictures to class.",
+            "A local baker donates empty flour bags that become soft covers for seed trays.",
+            "Mira compares last month's complaints with this month's calmer suggestions.",
+            "She notices fewer angry comments when the newsletter includes clear numbers.",
+            "A photograph of healthy mint beds proves that shade can help during hot afternoons.",
+            "The article thanks night-shift workers who water at sunrise before they sleep.",
+            "Someone suggests translating key tips into Arabic so grandparents can join discussions.",
+            "Mira circles the translation idea and writes that it supports fair participation.",
+            "A weather warning tells readers to cover soft leaves when wind arrives suddenly.",
+            "The garden committee promises to review broken taps within three working days.",
+            "That promise matters because leaks waste water and create muddy paths.",
+            "Mira practices scanning headings first, then reading only the sections she needs.",
+            "She finishes with a personal goal: try morning watering on her balcony herbs.",
+            "A tip about labeling jars prevents people from mixing sweet and spicy peppers.",
+            "New members learn where to leave borrowed gloves after they finish cleaning.",
+            "The newsletter praises a quiet helper who repairs fences without asking for praise.",
+            "Mira likes how the writer separates facts, opinions, and invitations to act.",
+            "She copies that structure into her notebook for future school reports.",
+            "A final checklist asks readers to bring one idea, one question, and one spare seed packet.",
+            "With that list, the next meeting should feel organized instead of confusing.",
+            "Mira leaves the garden feeling ready to explain the schedule to a friend.",
+            "She also wants to check whether the compost rule appears on the public noticeboard.",
+            "If the noticeboard matches the newsletter, fewer people will miss important updates.",
+            "A short glossary defines mulch, seedling, and harvest in everyday language.",
+            "Those definitions help students who are learning English through real community texts.",
+            "Mira decides that useful reading can live outside the classroom and still feel friendly.",
+            "She texts her cousin a summary that keeps the main reason and one clear example.",
+            "The cousin replies with a photo of dry soil, so Mira sends the stick-test advice.",
+            "Their exchange shows how one newsletter can start practical help between families.",
         ]
     elif cefr == "B2":
         options = [
@@ -1201,7 +1261,12 @@ def _build_mock_passage(blueprint: GenerationBlueprint) -> str:
         word_total += sentence_words
         index += 1
 
-    return _paragraphize_sentences(selected, int(policy["paragraph_count_min"]))
+    paragraph_target = int(policy["paragraph_count_min"])
+    if cefr == "B1" and stage == "Advanced":
+        # Prefer readable multi-paragraph structure for the longer Advanced mock
+        # without changing the shared difficulty policy thresholds.
+        paragraph_target = max(paragraph_target, 2)
+    return _paragraphize_sentences(selected, paragraph_target)
 
 
 def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> GeneratedReadingActivity:
