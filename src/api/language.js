@@ -15,35 +15,8 @@ export async function subscribeLanguage(method = 'card') {
   return data
 }
 
-export async function placementStartApi() {
-  const { data } = await api.post('/student/languages/placement/start')
-  return data
-}
-
-export async function placementSaveResponseApi({ attempt_id, question_id, response_json }) {
-  const { data } = await api.put('/student/languages/placement/responses', {
-    attempt_id,
-    question_id,
-    response_json,
-  })
-  return data
-}
-
-export async function placementUploadSpeakingApi({ attemptId, questionId, blob, durationSeconds }) {
-  const form = new FormData()
-  form.append('attempt_id', String(attemptId))
-  form.append('question_id', String(questionId))
-  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
-  if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
-  const { data } = await api.post('/student/languages/placement/speaking/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 5 * 60 * 1000,
-  })
-  return data
-}
-
-export async function placementSubmitApi(attemptId) {
-  const { data } = await api.post('/student/languages/placement/submit', { attempt_id: attemptId })
+export async function fetchPlacementHistory() {
+  const { data } = await api.get('/student/languages/placement-history')
   return data
 }
 
@@ -70,34 +43,75 @@ export async function submitReadingLesson(contentId, answers, durationSeconds = 
   return data
 }
 
-// Adaptive reading: the next passage at the student's level (generates content on demand).
-// `length` (short|medium|long) controls how long a freshly generated passage is.
 export async function fetchNextReading(length = '') {
   const { data } = await api.get('/student/languages/reading/next', { params: length ? { length } : {} })
   return data
 }
 
-// Pre-computed definitions for every hard word in a passage (so taps are instant).
 export async function fetchReadingGlossary(contentId) {
   const { data } = await api.get(`/student/languages/reading/${contentId}/glossary`)
   return data
 }
 
-// Explain one sentence from a passage (meaning + a grammar note) for the learner's level.
 export async function explainReadingSentence(sentence, level = 'A2') {
   const { data } = await api.post('/student/languages/reading/explain-sentence', { sentence, level })
   return data
 }
 
-// Narration audio for a passage (read-along), synthesized + cached server-side on first request.
 export async function fetchReadingAudio(contentId) {
   const { data } = await api.get(`/student/languages/reading/${contentId}/audio`)
   return data
 }
 
-// Grade the student's own-words summary of a passage for comprehension.
 export async function submitReadingSummary(contentId, summary) {
   const { data } = await api.post(`/student/languages/reading/${contentId}/summary`, { summary })
+  return data
+}
+
+export async function fetchReadingTopics() {
+  const { data } = await api.get('/student/languages/reading/topics')
+  return data
+}
+
+export async function saveReadingTopics(topics) {
+  const { data } = await api.put('/student/languages/reading/topics', { topics })
+  return data
+}
+
+export async function fetchReadingHistory() {
+  const { data } = await api.get('/student/languages/reading/history')
+  return data
+}
+
+export async function fetchReadingInsights() {
+  const { data } = await api.get('/student/languages/reading/insights')
+  return data
+}
+
+export async function fetchReadingV2Overview() {
+  const { data } = await api.get('/student/languages/reading-v2/overview')
+  return data
+}
+
+export async function fetchReadingV2Path() {
+  const { data } = await api.get('/student/languages/reading-v2/path')
+  return data
+}
+
+export async function createReadingV2Attempt(mode = 'practice') {
+  const { data } = await api.post('/student/languages/reading-v2/attempts', { mode })
+  return data
+}
+
+export async function submitReadingV2Attempt(attemptId, answers, durationSeconds = null) {
+  const payload = { answers }
+  if (durationSeconds != null) payload.duration_seconds = durationSeconds
+  const { data } = await api.post(`/student/languages/reading-v2/attempts/${attemptId}/submit`, payload)
+  return data
+}
+
+export async function fetchReadingV2History() {
+  const { data } = await api.get('/student/languages/reading-v2/history')
   return data
 }
 
@@ -107,48 +121,15 @@ export async function saveVocabularyWord(word) {
   return data
 }
 
-// Reading interests: curated options + the learner's picks (drives generated-passage topics).
-export async function fetchReadingTopics() {
-  const { data } = await api.get('/student/languages/reading/topics')
-  return data
-}
-export async function saveReadingTopics(topics) {
-  const { data } = await api.put('/student/languages/reading/topics', { topics })
-  return data
-}
-
-// Reading library: passages the learner has completed (for re-reading).
-export async function fetchReadingHistory() {
-  const { data } = await api.get('/student/languages/reading/history')
-  return data
-}
-
-// Reading analytics: WPM trend, comprehension, and per-skill strengths/gaps.
-export async function fetchReadingInsights() {
-  const { data } = await api.get('/student/languages/reading/insights')
-  return data
-}
-
-// Adaptive listening: Learning Session entry (bundle or explicit acquisition state).
 export async function fetchListeningNextSession(attempt = 1) {
   const { data } = await api.get('/student/languages/listening/next', { params: { attempt } })
   return data
 }
 
-/** @deprecated Use fetchListeningNextSession — returns bundle only when ready. */
+// Adaptive listening: the next clip at the student's level.
 export async function fetchNextListening() {
   const data = await fetchListeningNextSession()
   if (data?.outcome === 'lesson_ready' && data.bundle) return data.bundle
-  return data
-}
-
-export async function pollListeningAcquisition(attempt = 1) {
-  const { data } = await api.get('/student/languages/listening/acquisition', { params: { attempt } })
-  return data
-}
-
-export async function fetchListeningJourney() {
-  const { data } = await api.get('/student/languages/listening/journey')
   return data
 }
 
@@ -167,7 +148,16 @@ export async function submitListeningLesson(contentId, answers) {
   return data
 }
 
-// ---- Listening promotion journey (STAB-4) ----
+export async function pollListeningAcquisition(attempt = 1) {
+  const { data } = await api.get('/student/languages/listening/acquisition', { params: { attempt } })
+  return data
+}
+
+export async function fetchListeningJourney() {
+  const { data } = await api.get('/student/languages/listening/journey')
+  return data
+}
+
 export async function fetchListeningPromotionStatus() {
   const { data } = await api.get('/student/languages/listening/promotion-test/status')
   return data
@@ -274,13 +264,11 @@ export async function submitWritingPrompt(promptId, responseText) {
   return data
 }
 
-/** W6 — generate adaptive writing lesson (Claude + blueprint pipeline). */
 export async function fetchWritingJourney() {
   const { data } = await api.get('/student/languages/writing/journey')
   return data
 }
 
-/** W6 — generate adaptive writing lesson (Claude + blueprint pipeline). */
 export async function generateWritingLesson({ goal = null, chain_id = null, node_id = null, official_cefr = null } = {}) {
   const body = {}
   if (goal) body.goal = goal
@@ -293,7 +281,6 @@ export async function generateWritingLesson({ goal = null, chain_id = null, node
   return data
 }
 
-/** W7 — submit draft for evaluation + coach revision plan. */
 export async function submitWritingDraft(contentItemId, { draft_text, complete_if_ready = false } = {}) {
   const { data } = await api.post(`/student/languages/writing/${contentItemId}/draft`, {
     draft_text,
@@ -302,7 +289,6 @@ export async function submitWritingDraft(contentItemId, { draft_text, complete_i
   return data
 }
 
-// ---- Writing promotion journey (WPA) ----
 export async function fetchWritingPromotionStatus() {
   const { data } = await api.get('/student/languages/writing/promotion-test/status')
   return data
@@ -530,26 +516,38 @@ export async function initiateExam() {
   return data
 }
 
-export async function fetchExamState(sessionId) {
-  const { data } = await api.get(`/student/languages/exam/${sessionId}/state`)
-  return data
-}
-
-export async function transcribeExamSpeaking(sessionId, blob) {
-  const form = new FormData()
-  form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/transcribe`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 2 * 60 * 1000,
+export async function fetchExamState(sessionId, section) {
+  const { data } = await api.get(`/student/languages/exam/${sessionId}/state`, {
+    params: section ? { section } : undefined,
   })
   return data
 }
 
-export async function submitSpeakingTurn(sessionId, blob, durationSeconds, transcription = '') {
+// Speaking's live transcript preview (MVP, display-only) -- mints a short-lived OpenAI Realtime
+// client secret. Never the grading source of truth; callers must treat a thrown/rejected result
+// or `{ available: false }` as "not available right now" and fall back silently.
+export async function createSpeakingLiveTranscriptionSession(sessionId) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/live-transcription-session`)
+  return data
+}
+
+export async function submitSpeakingTurn(
+  sessionId,
+  blob,
+  durationSeconds,
+  requestId,
+  stateRevision,
+  turnToken,
+  section,
+) {
   const form = new FormData()
   form.append('file', new File([blob], 'speaking.webm', { type: blob.type || 'audio/webm' }))
   if (durationSeconds != null) form.append('duration_seconds', String(durationSeconds))
-  if (transcription) form.append('transcription', transcription)
+  form.append('request_id', requestId)
+  form.append('state_revision', String(stateRevision))
+  form.append('turn_token', turnToken)
+  // Free section navigation: which speaking-like section (speaking/interview) this turn answers.
+  if (section) form.append('section', section)
   const { data } = await api.post(`/student/languages/exam/${sessionId}/speaking/turn`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 2 * 60 * 1000,
@@ -557,20 +555,50 @@ export async function submitSpeakingTurn(sessionId, blob, durationSeconds, trans
   return data
 }
 
-export async function answerExamMcq(sessionId, choiceIndex) {
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, {
-    choice_index: choiceIndex,
-  })
+export async function answerExamMcq(
+  sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText, choiceIndices, answerTexts, section, subquestionAnswers,
+) {
+  const body = {
+    request_id: requestId,
+    state_revision: stateRevision,
+    question_token: questionToken,
+  }
+  // Exactly one answer shape, matching the backend's McqAnswerIn contract. Mixed Reading bundles
+  // use subquestion_answers because they can contain both MCQ choice indices and short text.
+  if (subquestionAnswers != null) {
+    body.subquestion_answers = subquestionAnswers
+  } else if (choiceIndices != null) {
+    body.choice_indices = choiceIndices
+  } else if (answerTexts != null) {
+    body.answer_texts = answerTexts
+  } else if (answerText != null) {
+    body.answer_text = answerText
+  } else {
+    body.choice_index = choiceIndex
+  }
+  // Free section navigation: which section (listening/reading/grammar_vocab) this answers.
+  if (section) body.section = section
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/answer`, body)
   return data
 }
 
-export async function submitExamWriting(sessionId, text) {
-  const { data } = await api.post(`/student/languages/exam/${sessionId}/writing`, { text })
+export async function submitExamWriting(sessionId, text, requestId, stateRevision, promptToken) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/writing`, {
+    text,
+    request_id: requestId,
+    state_revision: stateRevision,
+    prompt_token: promptToken,
+  })
   return data
 }
 
 export async function fetchExamReport(sessionId) {
   const { data } = await api.get(`/student/languages/exam/${sessionId}/report`)
+  return data
+}
+
+export async function retryExamEvaluation(sessionId) {
+  const { data } = await api.post(`/student/languages/exam/${sessionId}/evaluation/retry`)
   return data
 }
 
@@ -591,12 +619,12 @@ export async function verifyLanguageCertificate(certificateNumber) {
 
 // ---- Adaptive Intelligence Layer (v2) ----
 export async function fetchLearnerMemory() {
-  const { data } = await api.get('/student/languages/learner/memory')
+  const { data } = await api.get('/v2/learner/memory')
   return data
 }
 
 export async function updateLearnerMemory(payload) {
-  const { data } = await api.put('/student/languages/learner/memory', payload)
+  const { data } = await api.put('/v2/learner/memory', payload)
   return data
 }
 

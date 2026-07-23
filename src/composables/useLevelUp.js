@@ -8,24 +8,49 @@ const KEY = 'lang_last_overall_level'
 
 export const levelUpState = reactive({ show: false, from: '', to: '' })
 
-export function checkLevelUp(currentLevel) {
-  if (!currentLevel || !CEFR.includes(currentLevel)) return
+function isLevel(level) {
+  return Boolean(level && CEFR.includes(level))
+}
+
+function levelRank(level) {
+  return CEFR.indexOf(level)
+}
+
+function readSeenLevel() {
   let prev = null
   try {
     prev = localStorage.getItem(KEY)
   } catch {
     /* storage unavailable */
   }
-  if (prev && CEFR.indexOf(currentLevel) > CEFR.indexOf(prev)) {
+  return isLevel(prev) ? prev : null
+}
+
+function writeSeenLevel(level) {
+  try {
+    localStorage.setItem(KEY, level)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function syncLevelSeen(currentLevel, { allowLower = false } = {}) {
+  if (!isLevel(currentLevel)) return
+  const prev = readSeenLevel()
+  if (!prev || allowLower || levelRank(currentLevel) >= levelRank(prev)) {
+    writeSeenLevel(currentLevel)
+  }
+}
+
+export function checkLevelUp(currentLevel) {
+  if (!isLevel(currentLevel)) return
+  const prev = readSeenLevel()
+  if (prev && levelRank(currentLevel) > levelRank(prev)) {
     levelUpState.from = prev
     levelUpState.to = currentLevel
     levelUpState.show = true
   }
-  try {
-    localStorage.setItem(KEY, currentLevel)
-  } catch {
-    /* storage unavailable */
-  }
+  syncLevelSeen(currentLevel)
 }
 
 export function dismissLevelUp() {

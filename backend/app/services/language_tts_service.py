@@ -11,13 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.language.content import LanguageContentItem
-from app.models.language.enums import LanguageSkill
 from app.models.language.tts_cache import LanguageLessonAudioCache
-from app.services.language_listening_tts.renderer import (
-    listening_cache_filename,
-    synthesize_listening_lesson_audio,
-)
-from app.services.language_listening_tts.speakers import build_synthesis_segments
 from app.services.language_supertonic_service import language_tts_audio_extension, synthesize_language_speech
 
 logger = logging.getLogger(__name__)
@@ -70,6 +64,7 @@ async def synthesize_exam_audio(text: str, *, voice: str = "en-US-AriaNeural") -
         cleaned,
         language="en",
         output_path=dest,
+        voice_name=voice,
     )
     if ok:
         return "/uploads/" + _storage_key(dest)
@@ -148,22 +143,14 @@ async def _synthesize_supertonic(
 
     voice_source = "supertonic"
     cache_teacher_id: int | None = None
-    body = item.body_json if isinstance(item.body_json, dict) else {}
+    fname = f"{voice_source}{language_tts_audio_extension()}"
+    dest = _audio_dir(item.id) / fname
 
-    if item.skill == LanguageSkill.listening and body.get("audio_transcript"):
-        segments = build_synthesis_segments(body)
-        fname = listening_cache_filename(segments)
-        dest = _audio_dir(item.id) / fname
-        ok = await synthesize_listening_lesson_audio(body, output_path=dest, language="en")
-    else:
-        fname = f"{voice_source}{language_tts_audio_extension()}"
-        dest = _audio_dir(item.id) / fname
-        ok = await synthesize_language_speech(
-            text,
-            language="en",
-            output_path=dest,
-        )
-
+    ok = await synthesize_language_speech(
+        text,
+        language="en",
+        output_path=dest,
+    )
     if not ok:
         return None
 
