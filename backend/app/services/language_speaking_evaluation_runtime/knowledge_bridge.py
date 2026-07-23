@@ -64,6 +64,7 @@ def build_speaking_skill_observations(
     session_id: str,
     observed_at: str | None = None,
     revision_number: int = 0,
+    source_type: ObservationSourceType = ObservationSourceType.evaluation_turn,
 ) -> SpeakingKnowledgeMutationBridgeResult:
     """Translate S7 candidate evidence into S2 observations (pure, no DB)."""
     ts = observed_at or evaluation.evaluated_at
@@ -71,6 +72,25 @@ def build_speaking_skill_observations(
     unavailable: list[SkippedCandidateEvidence] = []
     skipped: list[SkippedCandidateEvidence] = []
     observations: list[SpeakingSkillEvidenceObservation] = []
+
+    # S19 quarantine: promotion_assessment evidence is labeled but not mastery-applied.
+    if source_type == ObservationSourceType.promotion_assessment:
+        return SpeakingKnowledgeMutationBridgeResult(
+            bridge_version=LANGUAGE_SPEAKING_KNOWLEDGE_BRIDGE_VERSION,
+            source_evaluation_version=evaluation.engine_version,
+            turn_reference=turn_reference,
+            observations=(),
+            skipped_candidate_evidence=tuple(
+                SkippedCandidateEvidence(
+                    skill_id=c.skill_id,
+                    source_dimension=c.source_dimension,
+                    reason="quarantined_promotion_assessment",
+                )
+                for c in evaluation.candidate_skill_evidence
+            ),
+            mutation_status=SpeakingKnowledgeMutationStatus.quarantined_promotion_assessment,
+            mutation_error_code="quarantined_promotion_assessment",
+        )
 
     for candidate in evaluation.candidate_skill_evidence:
         node = SPEAKING_SKILL_GRAPH.node_by_id(candidate.skill_id)
@@ -130,7 +150,7 @@ def build_speaking_skill_observations(
                 revision_number=revision_number,
                 previous_observation_id=None,
                 communicative_impact=candidate.communicative_impact,
-                source_type=ObservationSourceType.evaluation_turn,
+                source_type=source_type,
             )
         )
 
@@ -164,6 +184,7 @@ async def apply_speaking_evaluation_to_knowledge_model(
     turn_reference: str,
     session_id: str,
     now: datetime | None = None,
+    source_type: ObservationSourceType = ObservationSourceType.evaluation_turn,
 ) -> SpeakingKnowledgeMutationBridgeResult:
     """Apply S7 evaluation facts to S2 via atomic JSONB mutation."""
     if evaluation is None:
@@ -175,6 +196,16 @@ async def apply_speaking_evaluation_to_knowledge_model(
             mutation_error_code="s7_unavailable",
         )
 
+    # S19: never mutate S2 mastery from SPA evidence (quarantine).
+    if source_type == ObservationSourceType.promotion_assessment:
+        return SpeakingKnowledgeMutationBridgeResult(
+            bridge_version=LANGUAGE_SPEAKING_KNOWLEDGE_BRIDGE_VERSION,
+            source_evaluation_version=evaluation.engine_version,
+            turn_reference=turn_reference,
+            mutation_status=SpeakingKnowledgeMutationStatus.quarantined_promotion_assessment,
+            mutation_error_code="quarantined_promotion_assessment",
+        )
+
     ts = now or datetime.now(tz=timezone.utc)
     built = build_speaking_skill_observations(
         evaluation,
@@ -182,6 +213,7 @@ async def apply_speaking_evaluation_to_knowledge_model(
         session_id=session_id,
         observed_at=evaluation.evaluated_at,
         revision_number=evaluation.revision_number,
+        source_type=source_type,
     )
 
     if not built.observations:

@@ -1,16 +1,38 @@
 """Student Language Learning — access, placement, and Phase C1 lessons."""
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_student_actor
+from app.core.listening_deployment_deps import require_listening_deployment_ready
 from app.db.session import get_db
-from app.models.language.enums import LanguageSkill
+from app.models.language.analytics import LanguageAnalytics
+from app.models.language.enums import LanguageLevel, LanguageOnboardingStep, LanguageSkill
 from app.models.user import User
-from app.schemas.language import LanguageAccessOut, LanguageProductOut, LanguageSubscribeOut, LanguageSubscribeRequest
+from app.schemas.language import (
+    LanguageAccessOut,
+    LanguagePlacementSkipRequest,
+    LanguageProductOut,
+    LanguageSubscribeOut,
+    LanguageSubscribeRequest,
+)
+from app.schemas.language_listening_acquisition import ListeningNextResponseOut
+from app.schemas.language_listening_bundles import (
+    LessonExperienceBundleOut,
+    ListeningJourneyBundleOut,
+    ListeningLessonSubmitBundleOut,
+)
+from app.schemas.language_writing_bundles import (
+    WritingDraftSubmitIn,
+    WritingDraftSubmitOut,
+    WritingGenerateIn,
+    WritingGenerateOut,
+    WritingJourneyBundleOut,
+)
 from app.schemas.language_learning import (
     LanguageHubOut,
     LanguageProgressOut,
@@ -90,7 +112,14 @@ from app.schemas.language_curriculum import (
     ObjectivePracticeIn,
     ObjectivePracticeOut,
 )
-from app.services.language_listening_service import next_listening
+from app.services.language_listening_acquisition import acquire_next_listening
+from app.services.language_listening_journey.builder import build_listening_journey_bundle
+from app.services.language_listening_lesson_experience.service import (
+    build_student_lesson_bundle,
+    build_submit_bundle,
+)
+from app.services.language_listening_prefill_task import background_prefill_listening_pool
+from app.services.language_listening_service import skip_listening
 from app.services.language_skill_progress_service import submit_listening
 from app.services.language_tts_service import get_lesson_audio
 from app.services.language_speaking_service import (
@@ -128,7 +157,14 @@ from app.services.language_reading_v2_service import (
     create_reading_v2_attempt,
     submit_reading_v2_attempt,
 )
-from app.services.language_subscription_service import get_default_language, get_default_product, subscribe_language
+from app.services.language_learning_path_service import generate_learning_path
+from app.services.language_progression_service import sync_progression_from_skill_levels
+from app.services.language_subscription_service import (
+    ensure_language_profile,
+    get_default_language,
+    get_default_product,
+    subscribe_language,
+)
 from app.services.language_vocabulary_service import (
     analyze_word,
     assess_word_pronunciation,
@@ -141,6 +177,10 @@ from app.services.language_vocabulary_service import (
     submit_vocabulary_challenge,
 )
 from app.services.language_vocabulary_sr_service import get_vocabulary_stats
+from app.services.language_writing.enums import OfficialWritingCEFR, WritingGoal
+from app.services.language_writing_evaluation_runtime.runtime_api import submit_writing_draft_for_evaluation
+from app.services.language_writing_journey.builder import build_writing_journey_bundle
+from app.services.language_writing_runtime.runtime_api import generate_writing_lesson_for_student
 from app.services.language_writing_service import get_writing_prompt, list_writing, submit_writing
 from app.services.language_certificate_service import list_student_certificates
 
@@ -204,6 +244,62 @@ async def language_subscribe(
     result = await subscribe_language(db, student.id, body.method)
     await db.commit()
     return result
+
+
+@router.post("/placement/skip", response_model=LanguageAccessOut)
+async def skip_language_placement(
+    body: LanguagePlacementSkipRequest | None = None,
+    student: User = Depends(require_active_language_subscription()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Learner shortcut: unlock language learning at a selected CEFR baseline."""
+    language = await get_default_language(db)
+    profile = await ensure_language_profile(db, student.id, language.id)
+    now = datetime.now(timezone.utc)
+    payload = body or LanguagePlacementSkipRequest()
+    baseline = LanguageLevel(payload.baseline_level)
+    skill_levels = {
+        LanguageSkill.reading: baseline,
+        LanguageSkill.listening: baseline,
+        LanguageSkill.writing: baseline,
+        LanguageSkill.speaking: baseline,
+    }
+
+    profile.placement_completed_at = profile.placement_completed_at or now
+    profile.last_assessment_date = profile.last_assessment_date or profile.placement_completed_at
+    profile.onboarding_step = LanguageOnboardingStep.dashboard
+
+    analytics = await db.get(LanguageAnalytics, {"student_id": student.id, "language_id": language.id})
+    if analytics is None:
+        analytics = LanguageAnalytics(student_id=student.id, language_id=language.id)
+        db.add(analytics)
+        await db.flush()
+    analytics.reading_level = baseline
+    analytics.listening_level = baseline
+    analytics.writing_level = baseline
+    analytics.speaking_level = baseline
+    analytics.overall_level_internal = baseline
+    analytics.primary_focus_skill = "reading"
+    analytics.strength_skill = "reading"
+
+    await sync_progression_from_skill_levels(
+        db,
+        student_id=student.id,
+        language_id=language.id,
+        skill_levels=skill_levels,
+        overall=baseline,
+        source="placement_skip",
+    )
+    await generate_learning_path(
+        db,
+        student_id=student.id,
+        language_id=language.id,
+        assessment_id=None,
+        overall_level=baseline,
+        skill_levels=skill_levels,
+    )
+    await db.commit()
+    return await build_language_access(db, student.id)
 
 
 @router.api_route(
@@ -431,29 +527,104 @@ async def vocabulary_save(
     return VocabularySaveOut(**result)
 
 
-@router.get("/listening/next")
-async def listening_next(
+@router.get("/listening/journey", response_model=ListeningJourneyBundleOut)
+async def listening_journey(
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
 ):
-    """Adaptive listening: the next clip at the student's level (generates + voices on demand)."""
-    lesson = await next_listening(db, student_id=student.id)
-    if not lesson:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No listening content available yet")
-    return lesson
+    """Canonical journey bundle: timeline, promotion, and personal goal only."""
+
+    language = await get_default_language(db)
+    return await build_listening_journey_bundle(db, student_id=student.id, language_id=language.id)
 
 
-@router.get("/listening/{content_id}", response_model=ListeningLessonOut)
+@router.get("/listening/next", response_model=ListeningNextResponseOut)
+async def listening_next(
+    background_tasks: BackgroundTasks,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
+    attempt: int = 1,
+):
+    """Adaptive listening session entry: returns a lesson or explicit acquisition state."""
+
+    response, schedule_prefill = await acquire_next_listening(
+        db, student_id=student.id, attempt=max(1, attempt)
+    )
+    if schedule_prefill:
+        background_tasks.add_task(background_prefill_listening_pool, student_id=student.id)
+    return response
+
+
+@router.get("/listening/acquisition", response_model=ListeningNextResponseOut)
+async def listening_acquisition_status(
+    background_tasks: BackgroundTasks,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
+    attempt: int = 1,
+):
+    """Poll-friendly alias with the same response contract as /listening/next."""
+
+    response, schedule_prefill = await acquire_next_listening(
+        db, student_id=student.id, attempt=max(1, attempt)
+    )
+    if schedule_prefill:
+        background_tasks.add_task(background_prefill_listening_pool, student_id=student.id)
+    return response
+
+
+@router.post("/listening/skip")
+async def listening_skip_active(
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
+):
+    cleared = await skip_listening(db, student_id=student.id, content_id=None)
+    return {"cleared": cleared}
+
+
+@router.post("/listening/{content_id}/skip")
+async def listening_skip(
+    content_id: int,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
+):
+    cleared = await skip_listening(db, student_id=student.id, content_id=content_id)
+    return {"cleared": cleared}
+
+
+@router.get("/listening/{content_id}", response_model=LessonExperienceBundleOut)
 async def listening_detail(
     content_id: int,
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
 ):
     item, progress, audio_url, audio_available = await get_listening_lesson(
         db, student_id=student.id, content_id=content_id
     )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+    from app.services.language_listening_reservation import listening_session_reservation_service
+
+    language = await get_default_language(db)
+    await listening_session_reservation_service.touch_started(
+        db,
+        student_id=student.id,
+        language_id=language.id,
+        content_item_id=content_id,
+    )
+    await db.commit()
+    return await build_student_lesson_bundle(
+        db,
+        item=item,
+        student_id=student.id,
+        language_id=language.id,
+        progress_out=_progress_out(progress).model_dump(),
+    )
     body = lesson_body_for_student(item)
     # No pre-recorded audio? Synthesize (and cache) lesson audio on demand — best effort.
     if not audio_url:
@@ -477,16 +648,30 @@ async def listening_detail(
     )
 
 
-@router.post("/listening/{content_id}/submit", response_model=LessonSubmitOut)
+@router.post("/listening/{content_id}/submit", response_model=ListeningLessonSubmitBundleOut)
 async def listening_submit(
     content_id: int,
     body: LessonSubmitIn,
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
+    _deployment: None = Depends(require_listening_deployment_ready),
 ):
     result = await submit_listening(db, student_id=student.id, content_id=content_id, answers=body.answers)
     await db.commit()
-    return LessonSubmitOut(**result)
+    item, progress, _audio_url, _audio_available = await get_listening_lesson(
+        db, student_id=student.id, content_id=content_id
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+    language = await get_default_language(db)
+    return await build_submit_bundle(
+        db,
+        item=item,
+        student_id=student.id,
+        language_id=language.id,
+        progress_out=_progress_out(progress).model_dump(),
+        submit_result=result,
+    )
 
 
 @router.get("/progress", response_model=LanguageProgressOut)
@@ -707,6 +892,61 @@ async def writing_list(
     payload = await list_writing(db, student_id=student.id)
     await db.commit()
     return payload
+
+
+@router.get("/writing/journey", response_model=WritingJourneyBundleOut)
+async def writing_journey(
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    return await build_writing_journey_bundle(db, student_id=student.id, language_id=language.id)
+
+
+@router.post("/writing/generate", response_model=WritingGenerateOut)
+async def writing_generate(
+    body: WritingGenerateIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        goal = WritingGoal(body.goal) if body.goal else None
+        official_cefr = OfficialWritingCEFR(body.official_cefr) if body.official_cefr else None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "invalid_writing_generation_request", "message": str(exc)},
+        ) from exc
+    result = await generate_writing_lesson_for_student(
+        db,
+        student_id=student.id,
+        goal=goal,
+        chain_id=body.chain_id,
+        node_id=body.node_id,
+        official_cefr=official_cefr,
+    )
+    await db.commit()
+    return WritingGenerateOut.model_validate(result)
+
+
+@router.post("/writing/{content_item_id}/draft", response_model=WritingDraftSubmitOut)
+async def writing_draft_submit(
+    content_item_id: int,
+    body: WritingDraftSubmitIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    language = await get_default_language(db)
+    result = await submit_writing_draft_for_evaluation(
+        db,
+        student_id=student.id,
+        content_item_id=content_item_id,
+        draft_text=body.draft_text,
+        complete_if_ready=body.complete_if_ready,
+        language_id=language.id,
+    )
+    await db.commit()
+    return WritingDraftSubmitOut.model_validate(result)
 
 
 @router.get("/writing/{prompt_id}", response_model=WritingPromptOut)

@@ -19,7 +19,8 @@ export function useWritingRevision(getContentItemId) {
 
   async function submitDraft({ completeIfReady = false } = {}) {
     const contentItemId = typeof getContentItemId === 'function' ? getContentItemId() : getContentItemId?.value
-    if (!contentItemId) {
+    const numericContentItemId = Number(contentItemId)
+    if (!Number.isInteger(numericContentItemId) || numericContentItemId <= 0) {
       error.value = 'No active lesson'
       return null
     }
@@ -30,13 +31,16 @@ export function useWritingRevision(getContentItemId) {
     submitting.value = true
     error.value = ''
     try {
-      lastTurn.value = await submitWritingDraft(contentItemId, {
+      lastTurn.value = await submitWritingDraft(numericContentItemId, {
         draft_text: draftText.value,
         complete_if_ready: completeIfReady,
       })
       return lastTurn.value
     } catch (err) {
-      error.value = getErrorMessage(err, 'Could not submit draft')
+      error.value =
+        err?.response?.status === 404
+          ? 'انتهت صلاحية درس الكتابة. أنشئ درساً جديداً وحاول مرة ثانية.'
+          : getErrorMessage(err, 'Could not submit draft')
       throw err
     } finally {
       submitting.value = false

@@ -14,11 +14,18 @@ from app.services.language_supertonic_service import (
 logger = logging.getLogger(__name__)
 
 
+def _safe_voice_name(value: str) -> str:
+    cleaned = "".join(ch if (ch.isalnum() or ch in "-_.") else "-" for ch in str(value or "").strip())
+    return cleaned.strip("-.") or "unknown"
+
+
 def listening_cache_filename(segments: list[tuple[str, str]]) -> str:
-    voices = {voice for _, voice in segments}
-    if len(segments) <= 1 and len(voices) <= 1:
-        return f"supertonic{language_tts_audio_extension()}"
-    return f"supertonic_multivoice{language_tts_audio_extension()}"
+    voices = sorted({_safe_voice_name(voice) for _, voice in segments if voice})
+    if len(voices) == 1:
+        return f"supertonic_{voices[0]}{language_tts_audio_extension()}"
+    if voices:
+        return f"supertonic_multivoice_{'_'.join(voices)}{language_tts_audio_extension()}"
+    return f"supertonic_unknown{language_tts_audio_extension()}"
 
 
 async def synthesize_listening_lesson_audio(

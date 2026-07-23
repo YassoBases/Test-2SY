@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -17,6 +18,12 @@ from app.services.language_analytics_service import refresh_language_analytics
 from app.services.language_content_service import get_content_item, list_content_items, pass_threshold_for_item
 from app.services.language_curriculum_service import credit_skill_objectives
 from app.services.language_engagement_service import record_activity
+from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+from app.services.language_grammar_skill_context import (
+    SkillGrammarContext,
+    build_skill_grammar_context,
+    complete_current_skill_activity_async,
+)
 from app.services.language_learner_events import record_scored_practice
 from app.services.language_learner_model_service import LanguageLearnerModelService, LearningEvent
 from app.services.language_validation import count_sentences, validate_writing_submission
@@ -25,6 +32,7 @@ from app.services.language_placement_scoring_service import percent_to_level, sc
 from app.services.language_subscription_service import get_default_language
 
 CONTENT_TYPE = "writing_prompt"
+logger = logging.getLogger(__name__)
 
 LEVEL_RANK = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
 
@@ -36,6 +44,28 @@ LEVEL_DEFAULT_COMPONENT = {
     "C1": "writing.formal_register",
     "C2": "writing.formal_register",
 }
+
+
+def _grammar_writing_instruction(ctx: SkillGrammarContext | None) -> str:
+    if ctx is None:
+        return ""
+    targets = ", ".join(ctx.grammar_targets[:4]) or ctx.display_name
+    examples = "; ".join(ctx.examples[:3])
+    instruction = (
+        f"Grammar focus: {ctx.display_name}. You must use this grammar directly in your answer "
+        f"at least three times, not only mention the grammar name. Useful forms: {targets}."
+    )
+    if examples:
+        instruction += f" Model examples: {examples}."
+    return instruction
+
+
+def _with_grammar_writing_instruction(prompt: str, ctx: SkillGrammarContext | None) -> str:
+    instruction = _grammar_writing_instruction(ctx)
+    base = (prompt or "").strip()
+    if not instruction or instruction in base:
+        return base
+    return f"{base}\n\n{instruction}" if base else instruction
 
 COMPONENT_LABELS = {
     "grammar.present_simple": "Present simple and basic sentence structure",
@@ -550,6 +580,7 @@ async def _ensure_personalized_prompt(
     level: str,
     grade_band: str,
     component: str,
+    grammar_ctx: SkillGrammarContext | None = None,
 ) -> LanguageContentItem | None:
     try:
         level_enum = LanguageLevel(level)
@@ -559,7 +590,7 @@ async def _ensure_personalized_prompt(
     spec = _personalized_prompt_spec(level=level, grade_band=grade_band, component=component)
     source_version = "personalized_writing_path_v2"
     desired_body = {
-        "prompt": spec["prompt"],
+        "prompt": _with_grammar_writing_instruction(spec["prompt"], grammar_ctx),
         "min_words": spec["min_words"],
         "min_sentences": spec["min_sentences"],
         "task_type": spec["task_type"],
@@ -580,6 +611,16 @@ async def _ensure_personalized_prompt(
         "source": source_version,
         "pass_threshold_percent": 70,
     }
+    if grammar_ctx is not None:
+        desired_body.update(
+            {
+                "grammar_id": grammar_ctx.grammar_id,
+                "display_code": grammar_ctx.display_code,
+                "grammar_title": grammar_ctx.display_name,
+                "grammar_targets": list(grammar_ctx.grammar_targets),
+                "grammar_source_skill": grammar_ctx.source_skill.value,
+            }
+        )
     existing_result = await db.execute(
         select(LanguageContentItem)
         .where(
@@ -967,6 +1008,7 @@ def _prompt_out(
     *,
     recommended_id: int | None = None,
     recommended_reason: str = "",
+    grammar_ctx: SkillGrammarContext | None = None,
 ) -> dict:
     body = item.body_json or {}
     metadata = _prompt_metadata(item)
@@ -974,8 +1016,10 @@ def _prompt_out(
         "id": item.id,
         "title": item.title,
         "level": item.level.value if item.level else None,
-        "prompt": body.get("prompt") or "",
+        "prompt": _with_grammar_writing_instruction(body.get("prompt") or "", grammar_ctx),
         "prompt_ar": body.get("prompt_ar"),
+        "grammar_id": grammar_ctx.grammar_id if grammar_ctx else body.get("grammar_id"),
+        "grammar_title": grammar_ctx.display_name if grammar_ctx else body.get("grammar_title"),
         "min_words": int(body.get("min_words") or 20),
         "min_sentences": int(body.get("min_sentences") or 2),
         "target_component": metadata["target_component"],
@@ -1127,6 +1171,12 @@ async def list_writing(db: AsyncSession, *, student_id: int) -> dict:
         level_skill=LanguageSkill.writing,
     )
     language = await get_default_language(db)
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language.id,
+        source_skill=GrammarEvidenceSourceSkill.writing,
+    )
     grade = await _student_grade(db, student_id=student_id)
     grade_band = _grade_band(grade)
     placement_level = _level_str(student_level)
@@ -1162,6 +1212,7 @@ async def list_writing(db: AsyncSession, *, student_id: int) -> dict:
         level=practice_level,
         grade_band=grade_band,
         component=str(next_focus.get("code") or LEVEL_DEFAULT_COMPONENT.get(practice_level, "grammar.present_simple")),
+        grammar_ctx=grammar_ctx,
     )
     if personalized and all(item.id != personalized.id for item in items):
         items = [personalized, *items]
@@ -1204,6 +1255,7 @@ async def list_writing(db: AsyncSession, *, student_id: int) -> dict:
                 prog.get(i.id),
                 recommended_id=recommended_id,
                 recommended_reason=recommended_reason,
+                grammar_ctx=grammar_ctx,
             )
             for i in items
         ],
@@ -1222,7 +1274,14 @@ async def get_writing_prompt(db: AsyncSession, *, student_id: int, prompt_id: in
     if not item or not _is_visible_to_student(item, student_id=student_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exercise is not available")
     prog = await _writing_progress_map(db, student_id=student_id, ids=[item.id])
-    return _prompt_out(item, prog.get(item.id))
+    language = await get_default_language(db)
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language.id,
+        source_skill=GrammarEvidenceSourceSkill.writing,
+    )
+    return _prompt_out(item, prog.get(item.id), grammar_ctx=grammar_ctx)
 
 
 async def _record_writing_component(
@@ -1281,8 +1340,19 @@ async def submit_writing(
         min_sentences=min_sentences,
     )
 
+    language = await get_default_language(db)
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language.id,
+        source_skill=GrammarEvidenceSourceSkill.writing,
+    )
+
     # Real CEFR grading when available; otherwise the rule heuristic. Track which one ran.
-    prompt_text = body.get("prompt") or body.get("instructions") or ""
+    prompt_text = _with_grammar_writing_instruction(
+        body.get("prompt") or body.get("instructions") or "",
+        grammar_ctx,
+    )
     ai_writing = await score_writing_ai(text=text, prompt=prompt_text)
     if ai_writing:
         score_pct, metrics = ai_writing
@@ -1362,7 +1432,6 @@ async def submit_writing(
         progress.completed_at = submitted_at
     await db.flush()
 
-    language = await get_default_language(db)
     event = "writing_completed" if completed else "writing_submitted"
     await record_activity(
         db,
@@ -1403,6 +1472,22 @@ async def submit_writing(
             db, student_id=student_id, language_id=language.id, skill=LanguageSkill.writing,
             level=item.level, score_percent=float(score_pct), source="writing",
         )
+    if completed:
+        try:
+            await complete_current_skill_activity_async(
+                db,
+                student_id=student_id,
+                language_id=language.id,
+                skill=GrammarEvidenceSourceSkill.writing,
+                score=float(score_pct),
+                activity_id=f"writing:{prompt_id}:{attempt_number}",
+                activity_type="writing",
+                lesson_id=str(prompt_id),
+                context=f"writing:{prompt_id}",
+                observation_id=f"ev_writing_{prompt_id}_{attempt_number}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("grammar writing evidence completion failed: %s", exc)
     return {
         "prompt_id": prompt_id,
         "score_percent": float(score_pct),

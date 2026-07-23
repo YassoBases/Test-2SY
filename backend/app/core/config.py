@@ -134,7 +134,9 @@ class Settings(BaseSettings):
     LANGUAGE_CONVERSATION_SPEAKER_WAV: str = ""
     LANGUAGE_CONVERSATION_HISTORY_TURNS: int = 12
     LANGUAGE_TTS_PROVIDER: str = "supertonic"
-    LANGUAGE_SUPERTONIC_VOICE: str = "M1"
+    LANGUAGE_SUPERTONIC_VOICE: str = "F1"
+    LANGUAGE_SUPERTONIC_VOICE_FEMALE: str = "F1"
+    LANGUAGE_SUPERTONIC_VOICE_MALE: str = "M1"
     LANGUAGE_SUPERTONIC_AUTO_DOWNLOAD: bool = True
     LANGUAGE_CONVERSATION_LEVEL_WINDOW: int = 30
     LANGUAGE_CONVERSATION_WHISPER_MODEL: str = "small.en"
@@ -144,9 +146,14 @@ class Settings(BaseSettings):
     LANGUAGE_CONVERSATION_WHISPER_INITIAL_PROMPT: str = ""
     LANGUAGE_CONVERSATION_ASYNC_TTS: bool = True
     OPENAI_API_KEY: str = ""
+    LANGUAGE_OPENAI_TTS_VOICE: str = "nova"
+    SPEAKING_TTS_MODEL: str = "gpt-4o-mini-tts"
+    SPEAKING_TTS_VOICE: str = "verse"
+    SPEAKING_TTS_TIMEOUT_SECONDS: int = 30
     LANGUAGE_STT_PROVIDER: str = "openai"  # openai | whisper
     LANGUAGE_STT_MODEL: str = "gpt-4o-transcribe"
-    LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: bool = True
+    LANGUAGE_STT_ALLOW_WHISPER_FALLBACK: bool = False
+    SPEAKING_OPENAI_STT_MODEL: str = "gpt-4o-transcribe"
     LANGUAGE_FFMPEG_TIMEOUT_SECONDS: int = 20
     LANGUAGE_AUDIO_DECODE_MAX_SECONDS: int = 181
     GENAI_EXAM_MAX_AUDIO_MB: int = 10
@@ -157,15 +164,63 @@ class Settings(BaseSettings):
     LANGUAGE_MASTERY_WINDOW_SIZE: int = 8
     LANGUAGE_MASTERY_UP_THRESHOLD: float = 82.0
     LANGUAGE_MASTERY_DOWN_THRESHOLD: float = 40.0
+    LANG_PROGRESSION_ENABLED: bool = False
+    LANG_PROGRESSION_DUAL_READ: bool = False
+    LANG_PROGRESSION_OFFICIAL_SELECT: bool = False
     READING_V2_GENERATION_PROVIDER: str = "local_mock"  # local_mock | ai
     READING_V2_AI_MODEL: str = ""
     READING_V2_AI_MAX_RETRIES: int = 2
     READING_V2_AI_MAX_OUTPUT_TOKENS: int = 8192
+    WRITING_MODEL_PROVIDER: str = "claude"
+    WRITING_GENERATION_TEMPERATURE: float = 0.2
+    WRITING_GENERATION_MAX_TOKENS: int = 2048
+    WRITING_GENERATION_TIMEOUT_SECONDS: float = 60.0
+    WRITING_EDUCATIONAL_ANALYZER: str = "claude"
+
+    # Grammar spine (G0+) - shared language engine, not a fifth Official CEFR skill.
+    LANG_GRAMMAR_ENGINE_ENABLED: bool = False
+    LANG_GRAMMAR_ENGINE_SELECT: bool = False
+    LANG_GRAMMAR_STAMP_SECRET: str = ""
+    LANG_GRAMMAR_STAMP_TTL_SECONDS: int = 86400
+    LANG_GRAMMAR_ACTIVITY_PROVIDER: str = "template"
+    LANG_GRAMMAR_ACTIVITY_SPEC_STRICT: bool = True
+    LANG_GRAMMAR_SKILL_EXECUTOR_ENABLED: bool = False
+    LANG_GRAMMAR_SKILL_EXECUTOR_STRICT: bool = True
+    LANG_GRAMMAR_SKILL_EXECUTION_ENGINE_ENABLED: bool = True
+    LANG_GRAMMAR_SPEAKING_DOMAIN_ENABLED: bool = True
+    LANG_GRAMMAR_ACTIVITY_AUTHORING_ENABLED: bool = True
+    LANG_GRAMMAR_ACTIVITY_AUTHORING_STRICT: bool = True
+    LANG_GRAMMAR_LLM_AUTHORING_ENABLED: bool = False
+    LANG_GRAMMAR_LLM_AUTHORING_PROVIDER: str = "claude"  # claude | gemini | gpt | local
+    LANG_GRAMMAR_LLM_AUTHORING_FALLBACK: bool = True
+    LANG_GRAMMAR_LLM_AUTHORING_MAX_RETRIES: int = 3
+    LANG_GRAMMAR_LLM_AUTHORING_TIMEOUT_SECONDS: float = 60.0
+    LANG_GRAMMAR_EVALUATION_ENABLED: bool = True
+    LANG_GRAMMAR_EVALUATION_STRICT: bool = True
+    LANG_GRAMMAR_PIPELINE_ENABLED: bool = False
+    LANG_GRAMMAR_PIPELINE_STRICT: bool = True
+    LANG_GRAMMAR_MODULE_ENABLED: bool = False
+    LANG_GRAMMAR_CANONICAL_PREVIEW_ENABLED: bool = False
+    LANG_GRAMMAR_LESSON_CHAT_MAX_USER_CHARS: int = 800
+    LANG_GRAMMAR_LESSON_CHAT_RECENT_MESSAGES: int = 10
+    LANG_GRAMMAR_LESSON_CHAT_MAX_SESSION_MESSAGES: int = 60
+    LANG_GRAMMAR_LESSON_CHAT_TIMEOUT_SECONDS: float = 30.0
+    LANG_GRAMMAR_LESSON_CHAT_MAX_OUTPUT_TOKENS: int = 900
+    LANG_ADAPTIVE_INTELLIGENCE_ENABLED: bool = False
+    LANG_ADAPTIVE_PROFILE_PERSIST: bool = True
+    LANG_AI_TUTOR_ENABLED: bool = False
+    LANG_AI_TUTOR_MEMORY_PERSIST: bool = True
+    LANG_AI_TUTOR_LLM_ENABLED: bool = True
+    LANG_AI_TUTOR_COACHING_ENABLED: bool = False
+    LANG_AI_TUTOR_COACHING_PERSIST: bool = True
+    LANG_AI_TUTOR_COACHING_LLM_ENABLED: bool = True
+    LANG_AI_TEACHER_ENABLED: bool = False
+    LANG_AI_TEACHER_PERSIST: bool = True
 
     # Speaking assessment evidence pipeline — config only, no runtime wired yet (see
     # backend/.env.example for placeholder values; real secrets belong only in an ignored local
     # .env or a deployment secret manager, never here and never committed).
-    SPEAKING_TRANSCRIPTION_PROVIDER: str = "openai"  # openai | whisper
+    SPEAKING_TRANSCRIPTION_PROVIDER: str = "openai"  # openai | faster_whisper | mock
     SPEAKING_TRANSCRIPTION_TIMEOUT_SECONDS: int = 120
     # Pronunciation evidence (wav2vec2 | mock)
     SPEAKING_PRONUNCIATION_PROVIDER: str = "wav2vec2"

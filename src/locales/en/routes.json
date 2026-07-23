@@ -70,5 +70,15 @@
   "parentLinkStudent": "Link student",
   "parentMessages": "Messages",
   "parentSettings": "Settings",
-  "adminSettings": "Admin settings"
+  "adminSettings": "Admin settings",
+  "studentEnglishJourney": "English Journey",
+  "studentEnglishJourneyStage": "Stage",
+  "studentEnglishJourneySession": "Today's session",
+  "studentEnglishJourneyComplete": "Stage complete",
+  "studentEnglishJourneyReview": "Review",
+  "studentEnglishJourneyAchievements": "Journey achievements",
+  "studentLanguagesGrammar": "Grammar",
+  "studentGrammarReview": "Grammar review",
+  "studentGrammarComplete": "Grammar complete",
+  "studentGrammarTopic": "Grammar lesson"
 }

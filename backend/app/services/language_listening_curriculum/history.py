@@ -30,9 +30,9 @@ async def load_curriculum_history(
         .order_by(LanguageContentItem.id.desc())
         .limit(limit)
     )
-    if student_id is not None:
+    if hasattr(LanguageContentItem, "student_id") and student_id is not None:
         q = q.where(LanguageContentItem.student_id == student_id)
-    else:
+    elif hasattr(LanguageContentItem, "student_id"):
         q = q.where(LanguageContentItem.student_id.is_(None))
 
     rows = await db.execute(q)

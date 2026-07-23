@@ -1,7 +1,7 @@
 <template>
-  <div class="speaking-live-shell">
+  <div class="speaking-live-shell speaking-runtime">
     <!-- Intro only in true pre-session states (never mid-session error). -->
-    <v-card v-if="showHero" class="glass-card pa-6 mb-4 speaking-live-hero" variant="flat">
+    <v-card v-if="showHero" class="glass-card pa-6 mb-4 speaking-live-hero" variant="flat" tabindex="-1" data-spk-focus="alex">
       <div class="d-flex align-start gap-4 flex-wrap">
         <v-avatar color="secondary" size="72" class="alex-avatar flex-shrink-0">
           <v-icon size="36" aria-hidden="true">mdi-account-voice</v-icon>
@@ -25,13 +25,17 @@
           <v-btn
             color="secondary"
             size="large"
-            :disabled="!canStart"
+            class="em-btn em-btn--secondary spk-pressable"
+            :disabled="!canPrimaryStart"
             :loading="false"
             :aria-label="t('student.languages.speaking.live.startSpeaking')"
             @click="onPrimaryAction"
           >
             {{ t('student.languages.speaking.live.startSpeaking') }}
           </v-btn>
+          <p v-if="requirePreparedSession && !journeyLiveSessionId" class="text-caption text-medium-emphasis mt-3 mb-0">
+            {{ t('student.languages.speakingJourney.alex.needSession') }}
+          </p>
         </div>
       </div>
     </v-card>
@@ -104,10 +108,16 @@
         {{ t('student.languages.speaking.live.personalizationLimited') }}
       </v-alert>
 
-      <v-alert v-if="errorMessage" type="warning" variant="tonal" class="mb-4">
-        {{ errorMessage }}
+      <v-alert v-if="displayError" type="warning" variant="tonal" class="mb-4" role="alert">
+        {{ displayError }}
         <template v-if="state === 'error'" #append>
-          <v-btn variant="text" size="small" :aria-label="t('student.languages.speaking.live.retry')" @click="onRetry">
+          <v-btn
+            variant="text"
+            size="small"
+            class="spk-pressable"
+            :aria-label="t('student.languages.speaking.live.retry')"
+            @click="onRetry"
+          >
             {{ t('student.languages.speaking.live.retry') }}
           </v-btn>
         </template>
@@ -173,8 +183,23 @@
     />
 
     <div v-if="state === 'ended'" class="d-flex gap-2 mt-4 flex-wrap">
-      <v-btn color="secondary" :aria-label="t('student.languages.speaking.live.startSpeaking')" @click="onStartFresh">
+      <v-btn
+        v-if="canPrimaryStart"
+        color="secondary"
+        class="em-btn em-btn--secondary spk-pressable"
+        :aria-label="t('student.languages.speaking.live.startSpeaking')"
+        @click="onStartFresh"
+      >
         {{ t('student.languages.speaking.live.startSpeaking') }}
+      </v-btn>
+      <v-btn
+        variant="tonal"
+        class="spk-pressable"
+        prepend-icon="mdi-arrow-left"
+        :aria-label="t('student.languages.speakingJourney.alex.backToLesson')"
+        @click="$emit('back-to-lesson')"
+      >
+        {{ t('student.languages.speakingJourney.alex.backToLesson') }}
       </v-btn>
     </div>
   </div>
@@ -189,9 +214,11 @@ import LanguageSpeakingSessionSummary from './LanguageSpeakingSessionSummary.vue
 const props = defineProps({
   initialTaskPrompt: { type: String, default: '' },
   journeyLiveSessionId: { type: String, default: '' },
+  /** When true, refuse to start live without a prepared journey live_session_id. */
+  requirePreparedSession: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['session-ended'])
+const emit = defineEmits(['session-ended', 'back-to-lesson'])
 
 const { t } = useI18n()
 const prefersReducedMotion = ref(false)
@@ -217,6 +244,37 @@ const {
 } = useLiveConversation()
 
 const showHero = computed(() => state.value === 'idle' || state.value === 'ended')
+
+const canPrimaryStart = computed(() => {
+  if (props.requirePreparedSession && !props.journeyLiveSessionId) return false
+  return canStart.value
+})
+
+/** Prefer student-safe i18n over raw reconnect / internal phrases. */
+const displayError = computed(() => {
+  const raw = String(errorMessage.value || '').trim()
+  if (!raw) return ''
+  const lower = raw.toLowerCase()
+  if (/connection lost|reconnect/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.reconnect')
+  }
+  if (/microphone|mic/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.mic')
+  }
+  if (/budget|time remaining|daily/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.budget')
+  }
+  if (/unavailable|not ready|context/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.unavailable')
+  }
+  if (/expired|lease/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.expired')
+  }
+  if (/traceback|sqlalchemy|websocket|localhost/i.test(lower)) {
+    return t('student.languages.speaking.live.errors.generic')
+  }
+  return raw
+})
 
 const visualState = computed(() => {
   if (processingTurn.value) return 'processing'
@@ -270,6 +328,7 @@ onUnmounted(() => {
 })
 
 async function onPrimaryAction() {
+  if (!canPrimaryStart.value) return
   await startLiveSession({
     taskPrompt: props.initialTaskPrompt || t('student.languages.speaking.live.defaultPrompt'),
     liveSessionId: props.journeyLiveSessionId || undefined,
@@ -277,6 +336,7 @@ async function onPrimaryAction() {
 }
 
 async function onStartFresh() {
+  if (!canPrimaryStart.value) return
   await startLiveSession({
     taskPrompt: props.initialTaskPrompt || t('student.languages.speaking.live.defaultPrompt'),
     liveSessionId: props.journeyLiveSessionId || undefined,

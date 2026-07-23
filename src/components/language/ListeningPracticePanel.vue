@@ -199,6 +199,7 @@ const missionMeta = computed(() => {
   return [
     { label: t('student.languages.coach.ux.mission.metaLevel'), value: lessonBundle.value.lesson_level || '—' },
     { label: t('student.languages.coach.ux.mission.metaOfficial'), value: lessonBundle.value.official_level || '—' },
+    { label: 'Grammar', value: lessonBundle.value.meta?.grammar_title || lessonBundle.value.meta?.grammar_id || '—' },
     { label: t('student.languages.coach.ux.mission.metaGoal'), value: lessonBundle.value.lesson_goal?.label || '—' },
     { label: t('student.languages.coach.ux.mission.metaSituation'), value: lessonBundle.value.situation || '—' },
   ].filter((row) => row.value && row.value !== '—')

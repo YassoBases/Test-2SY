@@ -39,7 +39,7 @@ from app.core.config import get_settings
 from app.models.language.analytics import LanguageAnalytics
 from app.models.language.enums import LanguageLevel, LanguageSkill
 from app.models.language.progression import LanguageProgression, LanguageProgressionEvent
-from app.services.language_level_utils import bottleneck_level, primary_focus_and_strength
+from app.services.language_level_utils import CEFR_RANK, bottleneck_level, primary_focus_and_strength
 
 OfficialCefrSource = Literal["progression", "analytics"]
 
@@ -113,6 +113,34 @@ def _analytics_overall_level(
         for key, attr in _SKILL_TO_ANALYTICS_ATTR.items()
     }
     return analytics.overall_level_internal or bottleneck_level(level_map) or default
+
+
+def _analytics_level_if_higher(
+    analytics: LanguageAnalytics | None,
+    skill_key: str,
+    current: LanguageLevel,
+) -> LanguageLevel | None:
+    """Return analytics level only when it safely corrects a stale lower progression row."""
+    if analytics is None:
+        return None
+    attr = _SKILL_TO_ANALYTICS_ATTR[skill_key]
+    analytics_level = getattr(analytics, attr)
+    if analytics_level is None:
+        return None
+    if CEFR_RANK.get(analytics_level, 0) > CEFR_RANK.get(current, 0):
+        return analytics_level
+    return None
+
+
+def _analytics_overall_if_higher(
+    analytics: LanguageAnalytics | None,
+    current: LanguageLevel,
+) -> LanguageLevel | None:
+    """Return analytics overall only when it safely corrects a stale lower progression row."""
+    analytics_level = _analytics_overall_level(analytics, default=current)
+    if CEFR_RANK.get(analytics_level, 0) > CEFR_RANK.get(current, 0):
+        return analytics_level
+    return None
 
 
 async def select_skill_level(
@@ -285,6 +313,10 @@ async def get_official_cefr(
     row = await db.get(LanguageProgression, {"student_id": student_id, "language_id": language_id})
     if row is not None:
         level = getattr(row, _SKILL_TO_PROGRESSION_ATTR[skill_key])
+        analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+        corrected = _analytics_level_if_higher(analytics, skill_key, level)
+        if corrected is not None:
+            return OfficialCefrRead(level=corrected, source="analytics", skill=skill_key)
         return OfficialCefrRead(level=level, source="progression", skill=skill_key)
 
     analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
@@ -304,6 +336,10 @@ async def get_official_overall_cefr(
     """Official overall CEFR — progression first, analytics bottleneck fallback."""
     row = await db.get(LanguageProgression, {"student_id": student_id, "language_id": language_id})
     if row is not None:
+        analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+        corrected = _analytics_overall_if_higher(analytics, row.official_overall_cefr)
+        if corrected is not None:
+            return OfficialCefrRead(level=corrected, source="analytics", skill="overall")
         return OfficialCefrRead(
             level=row.official_overall_cefr,
             source="progression",

@@ -824,6 +824,88 @@
         "loadPrompt": "Could not load exercise",
         "microphone": "Could not access microphone",
         "submit": "Could not submit speaking practice"
+      },
+      "live": {
+        "title": "Talk with Alex",
+        "subtitle": "Live English conversation that adapts to your speaking progress.",
+        "heroTitle": "Talk with Alex",
+        "heroLead": "Have a natural live English conversation. Alex listens, responds, and learns how to help you next time.",
+        "heroPoint1": "Speak naturally — like talking with a tutor.",
+        "heroPoint2": "Alex adapts to your speaking progress over time.",
+        "heroPoint3": "After each turn, your speaking is reviewed to personalize future practice.",
+        "startSpeaking": "Start speaking",
+        "returnToConversation": "Return to conversation",
+        "endConversation": "End conversation",
+        "retry": "Try again",
+        "alexLabel": "Alex",
+        "youLabel": "You",
+        "transcriptTitle": "Conversation transcript",
+        "processingHint": "Reviewing your speaking…",
+        "personalizationLimited": "Your conversation continued, but personalization could not be updated this time.",
+        "micExplain": "Microphone access lets Alex hear you during the live conversation.",
+        "timeRemaining": "Talk with Alex time left today: {seconds}s",
+        "dailyLimitReached": "You've used today's Talk with Alex time. More time will be available tomorrow.",
+        "alreadyActive": "You already have an active Talk with Alex conversation. Finish it in your other tab, or wait a moment and try again.",
+        "mute": "Mute microphone",
+        "unmute": "Unmute microphone",
+        "micMutedHint": "Microphone muted — tap Unmute when you are ready to speak.",
+        "listeningHint": "I'm listening — speak naturally when you are ready.",
+        "listeningLabel": "Listening…",
+        "speakingNow": "Speaking…",
+        "start": "Start live session",
+        "finishTurn": "Finish turn & evaluate",
+        "stop": "Stop session",
+        "assistantSpeaking": "Alex is speaking",
+        "evalReady": "Review complete",
+        "evalFailed": "Review could not be completed",
+        "defaultPrompt": "Tell me about your day.",
+        "states": {
+          "idle": "Ready when you are",
+          "requesting_microphone": "Checking microphone…",
+          "connecting": "Connecting to Alex…",
+          "alex_speaking": "Alex is speaking",
+          "student_speaking": "I'm listening",
+          "processing_turn": "Reviewing your speaking…",
+          "ready": "Ready when you are",
+          "reconnecting": "Reconnecting…",
+          "error": "Something went wrong",
+          "ending": "Ending conversation…",
+          "ended": "Conversation ended",
+          "connected": "Connected",
+          "listening": "I'm listening",
+          "user_speaking": "I'm listening",
+          "user_turn_complete": "Reviewing your speaking…",
+          "assistant_thinking": "Alex is thinking",
+          "assistant_speaking": "Alex is speaking",
+          "interrupted": "Interrupted",
+          "closing": "Closing",
+          "closed": "Closed",
+          "failed": "Failed"
+        },
+        "errors": {
+          "connect": "Could not connect to Alex. Please try again.",
+          "evaluate": "Could not review your speaking just now.",
+          "micDenied": "Microphone access is needed to talk with Alex.",
+          "micUnavailable": "Your microphone is unavailable right now.",
+          "generic": "Something went wrong with the conversation. Please try again.",
+          "reconnect": "Connection was interrupted. Tap retry to reconnect.",
+          "mic": "Allow microphone access to talk with Alex.",
+          "budget": "You have used today's Talk with Alex time.",
+          "unavailable": "Alex is not ready right now. Return to your lesson or try again.",
+          "expired": "This conversation session ended. Start again when you are ready."
+        },
+        "summary": {
+          "title": "Session summary",
+          "turnTitle": "Turn {n} summary",
+          "completeTitle": "Nice work today",
+          "completeBody": "You finished your conversation with Alex. Start another session anytime to keep practicing.",
+          "wentWell": "What went well",
+          "toImprove": "One thing to improve",
+          "observations": "Speaking observations",
+          "adaptsNext": "What Alex will adapt next time",
+          "statusOnTrack": "On track",
+          "statusNeedsWork": "Needs practice"
+        }
       }
     },
     "reading": {
@@ -1065,6 +1147,1239 @@
         "grammar": {
           "label": "Grammar",
           "description": "Structured grammar lessons"
+        }
+      }
+    },
+    "writingJourney": {
+      "title": "Writing journey",
+      "subtitle": "Generate missions, write, get coach feedback, and revise until you meet the success criteria",
+      "tabs": {
+        "journey": "Journey",
+        "practice": "Practice",
+        "promotion": "Promotion"
+      },
+      "hero": {
+        "eyebrow": "Your writing path",
+        "title": "Write with purpose",
+        "subtitle": "Each lesson is built for your goal and official level. The coach guides revision — scores stay on the server.",
+        "officialLevel": "Official level",
+        "goal": "Personal goal",
+        "stage": "Learning stage",
+        "readiness": "Promotion readiness",
+        "lessonsRemaining": "Est. lessons left",
+        "blockers": "Current blockers",
+        "promotionAvailable": "WPA available",
+        "nextMilestone": "Next milestone",
+        "lastLesson": "Last lesson"
+      },
+      "goals": {
+        "eyebrow": "Personalize",
+        "title": "Your writing goal",
+        "subtitle": "Goals shape topics, tone, and task types in your writing missions.",
+        "saved": "Saved",
+        "general_english": "General English",
+        "travel": "Travel",
+        "business": "Business English",
+        "ielts": "IELTS",
+        "academic": "Academic",
+        "job_interview": "Job interview",
+        "daily_communication": "Daily communication",
+        "creative_writing": "Creative writing"
+      },
+      "goalsDesc": {
+        "general_english": "Everyday writing confidence",
+        "travel": "Emails, complaints, and travel situations",
+        "business": "Professional emails and workplace writing",
+        "ielts": "Exam-style tasks and structured arguments",
+        "academic": "Essays and formal academic tone",
+        "job_interview": "Applications and professional introductions",
+        "daily_communication": "Messages and short practical texts",
+        "creative_writing": "Stories and expressive writing"
+      },
+      "howItWorks": {
+        "title": "How writing practice works",
+        "step1": "Generate a mission tailored to your goal and level.",
+        "step2": "Write your draft in the workspace.",
+        "step3": "Submit for evaluation — the coach returns a revision plan (not a raw score).",
+        "step4": "Revise and resubmit until success criteria are met, then complete."
+      },
+      "actions": {
+        "startPractice": "Start writing practice"
+      },
+      "practice": {
+        "generating": "Creating your writing mission…",
+        "introTitle": "Adaptive writing practice",
+        "introBody": "Generate a fresh mission aligned with your goal. Submit drafts for coach feedback and revise until you complete the lesson.",
+        "generate": "Generate lesson",
+        "missionTitle": "Today's mission",
+        "todaysGoal": "Today's goal",
+        "contextTitle": "Writing context",
+        "expectedOutput": "Expected output",
+        "promptTitle": "Your writing task",
+        "instructions": "Instructions",
+        "successCriteria": "Success criteria",
+        "editorLabel": "Your draft",
+        "counters": "Words: {words} (min {min}, max {max})",
+        "revision": "Revision {n}",
+        "submitDraft": "Submit draft",
+        "resubmit": "Submit revision",
+        "complete": "Complete lesson",
+        "metaLevel": "Level",
+        "metaGoal": "Goal",
+        "metaWords": "Word range"
+      },
+      "coach": {
+        "eyebrow": "Your next revision",
+        "title": "One thing to focus on",
+        "improved": "What improved",
+        "mainIssue": "Main learning issue",
+        "whyItMatters": "Why this matters",
+        "priority": "Priority fix",
+        "example": "Before → after",
+        "beforeLabel": "Before",
+        "afterLabel": "After",
+        "mission": "Revision mission",
+        "comparison": "Since your last draft",
+        "improvedLabel": "Improved",
+        "regressedLabel": "Needs attention",
+        "readyToComplete": "Ready to complete when you are satisfied"
+      },
+      "evaluation": {
+        "eyebrow": "Your evaluation",
+        "title": "How your draft looks",
+        "dimensions": "Writing dimensions",
+        "criteriaTitle": "Success criteria checklist",
+        "strengths": "Strengths",
+        "improve": "Improve",
+        "readyBanner": "Success criteria are met — you can complete the lesson when ready.",
+        "status": {
+          "on_track": "On track",
+          "needs_work": "Needs work"
+        },
+        "criteriaStatus": {
+          "met": "Done correctly",
+          "partially_met": "Almost there — revise the rest",
+          "attempted_inaccurately": "Attempted, but needs correction",
+          "not_attempted": "Not used yet"
+        }
+      },
+      "teacher": {
+        "eyebrow": "Teacher's read",
+        "title": "Your writing, explained",
+        "cefrChip": "Around {level}",
+        "cefrTitle": "Estimated level — why",
+        "dimensionsTitle": "What your teacher noticed",
+        "grammarTitle": "Grammar coaching",
+        "rule": "Rule",
+        "fix": "How to fix",
+        "example": "Example",
+        "vocabularyTitle": "Vocabulary",
+        "repeated": "Over-used",
+        "missing": "Try using",
+        "progressTitle": "Compared to your last draft",
+        "analysedBy": "Analysed by {info}",
+        "dim": {
+          "taskResponse": "Task response",
+          "topic": "Staying on topic",
+          "ideaDevelopment": "Developing ideas",
+          "organization": "Organization",
+          "coherence": "Flow & coherence",
+          "goalAlignment": "Fit for your goal",
+          "vocabulary": "Vocabulary"
+        }
+      },
+      "progress": {
+        "stage": "Current writing stage",
+        "towardNext": "Progress this lesson",
+        "officialCefr": "Official CEFR",
+        "improvedToday": "What improved today",
+        "focusNext": "What to focus on next"
+      },
+      "completion": {
+        "title": "Lesson complete",
+        "body": "You met the mission success criteria. Generate another mission when you are ready.",
+        "newLesson": "New writing mission"
+      },
+      "feedback": {
+        "didWell": "What you did well",
+        "mistakes": "What mistakes you made",
+        "why": "Why those mistakes happened",
+        "improveNext": "What to improve next",
+        "history": "Compared to your previous writing",
+        "progressChange": "How this lesson changed your progress",
+        "stageProximity": "How close you are to the next stage",
+        "estimated": "Estimated remaining lessons"
+      }
+    },
+    "speakingJourney": {
+      "page": {
+        "eyebrow": "Language learning",
+        "title": "Speaking journey",
+        "subtitle": "Follow today's lesson and story, then take your next-level assessment when ready"
+      },
+      "tabs": {
+        "journey": "Journey",
+        "lesson": "Today's lesson",
+        "discussion": "Voice discussion",
+        "bridge": "Scene practice",
+        "alex": "Live conversation",
+        "assessment": "Level assessment"
+      },
+      "liveBridge": {
+        "prepEyebrow": "Mission Brief",
+        "prepTitle": "Your scene",
+        "prepLead": "Eight seconds — that's all you need. Here's your role, who's with you, and what happens next.",
+        "roleLabel": "Your role",
+        "charactersLabel": "Who's there",
+        "settingLabel": "Where you are",
+        "decisionLabel": "The decision",
+        "speakingGoalLabel": "Your speaking goal",
+        "viewDetails": "View full brief",
+        "hideDetails": "Hide full brief",
+        "mustDoTitle": "Make sure you",
+        "stakesLabel": "Why it matters",
+        "vocabFocus": "Words to use",
+        "grammarFocus": "Grammar focus",
+        "startPractice": "Enter the Scene",
+        "skipScenePractice": "Skip Scene Practice",
+        "micGateTitle": "About your microphone",
+        "micGateBody": "Real mic voice for Scene Practice is on its way. For now you'll type your lines — clearly labeled, never a faked voice.",
+        "allowMic": "Got it",
+        "rehearsalEyebrow": "Scene Practice",
+        "rehearsalTitle": "Rehearsal Room",
+        "rehearsalLead": "Your scene partner plays the people in this case. Stay inside the story — coaching stays light.",
+        "notHume": "Scene Practice — live scene comes next",
+        "typedFallbackHint": "Type this turn (mic voice unavailable for Scene Practice).",
+        "listeningLabel": "Listening…",
+        "yourTurnLabel": "Your turn",
+        "connectingScene": "Entering the scene…",
+        "partnerSpeaking": "Scene partner speaking",
+        "recordingLabel": "Recording…",
+        "thinkingLabel": "Scene partner is thinking…",
+        "holdToSpeak": "Hold to speak",
+        "releaseToSend": "Release to send",
+        "mutedLabel": "Microphone muted",
+        "sceneVoiceActive": "Hold the mic, speak your line, then release.",
+        "muteMic": "Mute microphone",
+        "unmuteMic": "Unmute microphone",
+        "yourLine": "Type this turn",
+        "sendLine": "Send this turn",
+        "coachWhisper": "Coach's whisper",
+        "finishRehearsal": "I'm ready for the live scene",
+        "liveTitle": "Ready for the live scene",
+        "goLive": "Start live conversation",
+        "missionCompleteTitle": "Mission Complete",
+        "missionCompleteBody": "You successfully practiced this situation.",
+        "missionCompleteInsightFallback": "You stayed in character and kept the scene moving.",
+        "missionCompleteConfidence": "Same setting. Same people. You're ready for the live scene.",
+        "alexJoining": "Alex is now joining the same scene…",
+        "handoffEnding": "The rehearsal softens…",
+        "handoffAlexEntering": "Alex is stepping into the same scene…",
+        "continueToLive": "Continue",
+        "retryLiveScene": "Retry live scene",
+        "settingSceneLoading": "Stepping into the scene…",
+        "modeBrief": "Mission Brief",
+        "modeScenePractice": "Scene Practice",
+        "modeLive": "Live",
+        "continuityCaseLabel": "Educational Case",
+        "empty": "Build your scene from today's Educational Case.",
+        "buildScenario": "Build my scene"
+      },
+      "framing": {
+        "todaysSpeakingLesson": "Today's speaking lesson",
+        "todaysLesson": "Today's lesson",
+        "todaysStory": "Today's story",
+        "todaysLearningPackage": "Today's Learning Package"
+      },
+      "packageLesson": {
+        "region": "Prepared learning package lesson",
+        "eyebrow": "Learning package",
+        "loading": "Loading your prepared lesson…",
+        "emptyTitle": "No prepared lesson open",
+        "emptyBody": "Open your latest frozen Learning Package to study before guided discussion.",
+        "openLatest": "Open latest package",
+        "progressLabel": "{percent}% complete",
+        "sections": "Lesson sections",
+        "section": {
+          "introduction": "Introduction",
+          "reading": "Reading the story",
+          "vocabulary": "Vocabulary",
+          "teaching": "Teaching",
+          "mini_practice": "Speaking prep",
+          "completed": "Complete"
+        },
+        "introLead": "Today’s Educational Case comes from your frozen Learning Package. Read the situation, then discuss and continue it.",
+        "mission": "Mission",
+        "duration": "Lesson length",
+        "durationValue": "{band}",
+        "cefr": "Official level",
+        "scenario": "Situation",
+        "world": "World",
+        "conflict": "Conflict",
+        "objectives": "Objectives",
+        "readinessMessage": "Take your time. Everything you see comes from your prepared Educational Case — nothing is invented at runtime.",
+        "continue": "Continue",
+        "materialFallback": "Today's story",
+        "materialKind": {
+          "story": "Educational Case",
+          "dialogue": "Dialogue",
+          "email": "Email",
+          "advertisement": "Advertisement",
+          "restaurant_menu": "Menu",
+          "whatsapp": "Chat",
+          "news_article": "Article",
+          "blog": "Blog",
+          "airport_announcement": "Announcement",
+          "travel_brochure": "Brochure",
+          "instructions": "Instructions",
+          "conversation_transcript": "Conversation",
+          "custom": "Material"
+        },
+        "vocabTitle": "Vocabulary in context",
+        "vocabEmpty": "No vocabulary entries in this package.",
+        "gloss": "Meaning",
+        "usage": "Reuse",
+        "contextRef": "Seen in: {ref}",
+        "markViewed": "Mark as reviewed",
+        "viewed": "Reviewed",
+        "teachingTitle": "Teaching blocks",
+        "teachingEmpty": "No teaching blocks in this package.",
+        "miniTitle": "Mini speaking preparation",
+        "miniLead": "Prepare what you will say. No recording and no scoring in this step.",
+        "miniPrompt": "Speaking prompt",
+        "miniScaffold": "Support frame",
+        "miniNoRecord": "Recording and evaluation are not part of this preparation step.",
+        "miniMarkReady": "I am ready",
+        "miniPrepDone": "Preparation marked",
+        "finishLesson": "Finish lesson",
+        "completeTitle": "Lesson complete",
+        "completeBody": "You finished “{title}”.",
+        "readyForDiscussion": "You are ready for voice discussion.",
+        "startDiscussion": "Start voice discussion",
+        "discussionLater": "Voice discussion will open when your lesson is ready.",
+        "restart": "Restart lesson"
+      },
+      "discussion": {
+        "region": "Live voice discussion",
+        "eyebrow": "Live voice discussion",
+        "loading": "Loading discussion…",
+        "emptyTitle": "Start the conversation",
+        "emptyBody": "After your lesson, the tutor will ask about today's Educational Case by voice.",
+        "finishLessonFirst": "Finish today's lesson first, then the tutor will start the voice discussion.",
+        "goToLesson": "Go to today's lesson",
+        "start": "Start voice discussion",
+        "progress": "Question {current} of {total}",
+        "currentQuestion": "Current question",
+        "band": "Focus: {band}",
+        "thread": "Discussion thread",
+        "yourAnswer": "Your answer",
+        "placeholder": "Type your spoken idea in words…",
+        "send": "Send answer",
+        "nextQuestion": "Next question",
+        "correction": "Quick correction",
+        "completeTitle": "Educational Case Closed",
+        "readyForAlex": "Discussion complete. You are ready for live conversation with Alex.",
+        "alexLater": "The characters are waiting for you to become part of the story.",
+        "continueToPrep": "Enter the Scene",
+        "restart": "Restart discussion",
+        "caseClosedTitle": "Educational Case Closed",
+        "caseClosedLead": "You finished discussing today's case by voice.",
+        "caseClosedNow": "Now… the story is no longer something you read.",
+        "caseClosedBecome": "You are about to become part of it.",
+        "caseClosedQuestion": "What will YOU do?",
+        "characterWaitingTemplate": "{names} — waiting for you.",
+        "role": {
+          "student": "You",
+          "assistant": "Tutor",
+          "system": "Lesson"
+        },
+        "phase": {
+          "waiting_for_student": "Your turn",
+          "student_answering": "Answering",
+          "processing": "Thinking",
+          "assistant_reply": "Tutor reply",
+          "next_question": "Ready to continue",
+          "completed": "Complete"
+        },
+        "voiceHint": "Hold the microphone, answer out loud, then release.",
+        "holdToSpeak": "Hold to speak",
+        "releaseToSend": "Release to send",
+        "typedFallback": "Microphone unavailable — type your answer instead.",
+        "heard": "Heard: {text}",
+        "continueToAlex": "Talk with Alex",
+        "listenAgain": "Listen to the question",
+        "tutorSpeaking": "Tutor is speaking…",
+        "yourTurn": "Your turn to answer",
+        "audioPreparing": "Audio loading…",
+        "audioPreparingHint": "The spoken question will appear here when ready. You can still read the text above.",
+        "voiceMode": {
+          "idle": "Ready",
+          "priming": "Preparing mic…",
+          "listening": "Ready for you",
+          "recording": "Recording…",
+          "thinking": "Thinking…",
+          "partner_speaking": "Tutor speaking",
+          "fallback": "Typed mode"
+        }
+      },
+      "hero": {
+        "eyebrow": "Speaking path",
+        "emptyFocus": "Your speaking focus will appear here",
+        "level": "Official level",
+        "stage": "Learning stage",
+        "alexTime": "Live speaking time",
+        "alexUnknown": "—",
+        "alexSeconds": "{seconds}s left",
+        "alexMinutes": "{minutes}m {seconds}s left",
+        "readiness": "Assessment readiness",
+        "readinessUnknown": "Building",
+        "readinessUnlocked": "Unlocked",
+        "readinessBuilding": "Building"
+      },
+      "actions": {
+        "startSession": "Start today's lesson",
+        "practiceAlex": "Live speaking practice",
+        "talkAlex": "Live speaking",
+        "startTalkAlex": "Start live speaking",
+        "continue": "Continue",
+        "viewAssessment": "Take level assessment"
+      },
+      "activeSession": "Session in progress — {title}",
+      "todayMissions": "Today's missions",
+      "alex": {
+        "needSession": "Start today's speaking lesson before live conversation.",
+        "inLessonTitle": "Continue the same situation",
+        "inLessonBody": "You stay in: {lesson}. Live speaking continues the same Educational Case — same people and place.",
+        "backToLesson": "Back to lesson"
+      },
+      "runtime": {
+        "loading": "Loading your speaking journey…",
+        "retry": "Retry",
+        "continueLearning": "Continue learning",
+        "backToJourney": "Back to journey",
+        "returnedFromAlex": "Welcome back — your lesson reflection is ready below.",
+        "noPlanTitle": "No speaking lesson yet",
+        "noPlanBody": "Start today's lesson to open your personalized Learning Package.",
+        "emptyActivityTitle": "No current task",
+        "emptyActivityBody": "Your next activity will appear when the lesson advances.",
+        "missionCompleteTitle": "Mission complete",
+        "missionCompleteBody": "You finished: {completed}",
+        "missionNextBody": "Up next: {next}",
+        "readyForAlex": "Ready for live speaking",
+        "reflectTitle": "Reflect on this lesson",
+        "lessonRegion": "Today's speaking lesson",
+        "continuityLabel": "Learning path progress",
+        "continuity": {
+          "home": "Home",
+          "lesson": "Lesson",
+          "alex": "Live",
+          "reflection": "Reflection"
+        },
+        "errorTitles": {
+          "generic": "Something went wrong",
+          "message": "Something went wrong",
+          "alex_budget": "Live speaking time used up",
+          "mic": "Microphone needed",
+          "reconnect": "Connection interrupted",
+          "session_expired": "Session ended",
+          "alex_unavailable": "Live speaking unavailable"
+        },
+        "errors": {
+          "generic": "Please try again in a moment. Your progress is saved.",
+          "alex_budget": "You have used today's live speaking time. Keep learning in your lesson.",
+          "mic": "Allow microphone access for live speaking.",
+          "reconnect": "Connection was interrupted. Tap retry to reconnect.",
+          "session_expired": "This speaking session ended. Return to your lesson to continue.",
+          "alex_unavailable": "Live speaking is not ready right now. Continue your lesson or try again soon."
+        },
+        "stages": {
+          "observe": "Warm up & learn",
+          "practice": "Guided practice",
+          "speak": "Speaking task",
+          "reflect": "Reflection"
+        },
+        "stageLeads": {
+          "observe": "Understand today's target before you speak.",
+          "practice": "Prepare your responses step by step.",
+          "speak": "Use what you learned in a real speaking moment.",
+          "reflect": "Capture what improved and what to practice next."
+        }
+      },
+      "mission": {
+        "title": "Current mission",
+        "position": "Mission {position} of {total}",
+        "usesAlex": "Includes live speaking",
+        "emptyTitle": "No active mission yet",
+        "emptyBody": "Start today's lesson to receive your next speaking mission."
+      },
+      "task": {
+        "title": "Current task",
+        "goal": "Learning goal",
+        "scenario": "Scenario",
+        "prepState": "Preparation",
+        "prepLearning": "Keep learning — finish today's lesson first.",
+        "prepAlmost": "You are preparing for today's speaking moment.",
+        "prepReady": "You are ready. Start live speaking when you feel prepared.",
+        "recording": "Recording",
+        "controlled": "Guided response",
+        "emptyTitle": "No task yet",
+        "emptyBody": "Your speaking task instructions will appear when a mission is ready.",
+        "modes": {
+          "study": "Study",
+          "guided_response": "Guided response",
+          "recorded_speaking": "Recorded speaking",
+          "talk_with_alex": "Live speaking",
+          "review": "Review"
+        }
+      },
+      "attempt": {
+        "label": "Attempt",
+        "first": "Attempt {n}",
+        "retry": "Retry {n}",
+        "completedTasks": "{n} task attempts completed"
+      },
+      "support": {
+        "title": "Teaching support",
+        "hint": "Support chips come from your lesson plan. Detailed teaching content appears during the session."
+      },
+      "path": {
+        "title": "Today's learning path",
+        "taskBearing": "Includes a speaking task",
+        "next": "Up next"
+      },
+      "lesson": {
+        "eyebrow": "Today's lesson",
+        "mode": "Task mode",
+        "studyStep": "Study this step"
+      },
+      "progress": {
+        "title": "Lesson progress",
+        "current": "Now",
+        "completed": "{n} done",
+        "remaining": "{n} remaining",
+        "phaseGeneric": "Phase: {phase}",
+        "phases": {
+          "planned": "Planned",
+          "in_progress": "In progress",
+          "live_ready": "Ready for live speaking",
+          "completed": "Completed"
+        }
+      },
+      "timeline": {
+        "title": "Lesson timeline",
+        "railTitle": "Missions",
+        "now": "Now",
+        "done": "Done",
+        "upcoming": "Next"
+      },
+      "teaching": {
+        "title": "Learn before you speak",
+        "prev": "Previous",
+        "next": "Next card",
+        "empty": "No teaching blocks for this step yet.",
+        "groups": {
+          "concepts": "Key concepts",
+          "examples": "Examples",
+          "hints": "Hints & scaffolds",
+          "notes": "Notes & reminders"
+        },
+        "kinds": {
+          "explanation": "Teacher explanation",
+          "example": "Example",
+          "tip": "Tip",
+          "reminder": "Reminder",
+          "strategy": "Strategy",
+          "prompt": "Guided prompt",
+          "general": "Learning note"
+        }
+      },
+      "guided": {
+        "title": "Guided practice",
+        "lead": "Move from observe to ready — preparation only, no scoring here.",
+        "instructions": "Your practice instructions",
+        "nextStep": "Next preparation step",
+        "readyContinue": "I'm ready — continue",
+        "flow": {
+          "observe": "Observe",
+          "practice": "Practice",
+          "prepare": "Prepare",
+          "ready": "Ready to continue",
+          "observeHint": "Read the model language carefully.",
+          "practiceHint": "Say the phrases out loud for yourself.",
+          "prepareHint": "Plan what you will say in today's story.",
+          "readyHint": "When you feel prepared, continue the lesson."
+        },
+        "actions": {
+          "read": "Read",
+          "practice": "Practice",
+          "respond": "Respond",
+          "record": "Record",
+          "alex": "Live speaking"
+        }
+      },
+      "skills": {
+        "weak": "Skills to strengthen",
+        "improving": "Improving skills",
+        "retention": "Retention focus",
+        "transfer": "Transfer focus",
+        "emptyTitle": "Skill signals will appear here",
+        "emptyBody": "After you practice, your journey will show what is improving and what still needs work.",
+        "emptyImproving": "No improving-skill signal yet.",
+        "emptyRetention": "No retention signal yet.",
+        "emptyTransfer": "No transfer signal yet."
+      },
+      "todaySteps": "Today's session steps",
+      "reflection": {
+        "title": "Session reflection",
+        "titleComplete": "Lesson complete",
+        "titleRetry": "Focused retry recommended",
+        "improved": "What is improving",
+        "needsPractice": "What needs practice",
+        "transfer": "Transfer focus",
+        "nextLesson": "Next learning focus",
+        "retryHint": "Your plan recommends another try on today's focus",
+        "alexUsage": "Live speaking time remaining today",
+        "alexUnknown": "Live speaking usage will appear after your next live session.",
+        "alexRemaining": "{minutes}m {seconds}s remaining today",
+        "promoUnlocked": "Your next-level speaking assessment preview is unlocked when you are ready.",
+        "dismiss": "Dismiss"
+      },
+      "lessonBrief": {
+        "title": "Lesson brief"
+      },
+      "assessment": {
+        "eyebrow": "Next-level speaking assessment",
+        "title": "Promotion assessment",
+        "defaultMessage": "When you are ready, take the next-level speaking assessment.",
+        "source": "Current level",
+        "target": "Next level",
+        "duration": "Est. duration",
+        "durationValue": "~{minutes} min",
+        "state": "Status",
+        "unlocked": "Unlocked",
+        "locked": "Locked",
+        "lockedTitle": "Assessment not unlocked yet",
+        "lockedBody": "Keep practicing Advanced speaking until the next-level assessment unlocks.",
+        "whyLockedTitle": "Why this is locked",
+        "whyLockedBody": "You unlock this assessment when your speaking readiness and stability gates pass.",
+        "whyUnlockedTitle": "Why this is unlocked",
+        "whyUnlockedBody": "Your Advanced readiness and stability requirements are met. You can take the assessment when ready.",
+        "taskCount": "{n} tasks",
+        "taskOrder": "Task {n}",
+        "spontaneousProduction": "Spontaneous production",
+        "timing": "Prep {prep}s · speak up to {max}s",
+        "interactionGapNote": "Some interactive conversation skills are noted as coverage gaps — recorded tasks prove spoken production, not live turn-taking.",
+        "home": {
+          "start": "Start assessment",
+          "resume": "Resume assessment",
+          "viewResult": "View result",
+          "inProgressBody": "You have an assessment in progress. Resume to continue from your current task.",
+          "passedBody": "You passed the promotion assessment. Official level update is handled by the backend.",
+          "terminalBody": "Your latest assessment attempt has finished. Open the result for next steps.",
+          "states": {
+            "loading": "Loading",
+            "error": "Unavailable",
+            "locked": "Locked",
+            "eligible": "Eligible",
+            "available": "Assessment available",
+            "in_progress": "In progress",
+            "completed": "Completed",
+            "passed": "Passed",
+            "failed": "Failed",
+            "abandoned": "Abandoned",
+            "timeout": "Timed out",
+            "incomplete": "Incomplete"
+          }
+        },
+        "intro": {
+          "title": "Before you begin",
+          "lead": "This assessment checks whether you are ready for the next official speaking level.",
+          "tasks": "Tasks",
+          "instructions": "You will complete a fixed set of speaking tasks. Work calmly, follow each prompt, and submit when you are ready. There is no live tutor during this assessment.",
+          "preparation": "Use any prep time shown on a task, then speak clearly. You can review your recording before you submit.",
+          "begin": "Begin assessment",
+          "back": "Back"
+        },
+        "runtime": {
+          "title": "Assessment in progress",
+          "progressLabel": "Assessment task progress",
+          "progressChip": "Task {current} of {total}",
+          "remaining": "{n} tasks remaining",
+          "responseLabel": "Your response",
+          "transcriptLabel": "What you said",
+          "transcriptHint": "Type the words you spoke so the assessment can evaluate your response.",
+          "startRecording": "Start recording",
+          "stopRecording": "Stop recording",
+          "playback": "Recording playback",
+          "reRecord": "Record again",
+          "submitTask": "Submit task",
+          "waitingEval": "Submitting — waiting for evaluation…",
+          "evalComplete": "Evaluation complete for this task.",
+          "abandon": "Abandon assessment",
+          "reconnect": "Reconnect",
+          "micError": "Allow microphone access to record your answer."
+        },
+        "completing": {
+          "title": "Assessment complete",
+          "body": "Waiting for your official assessment result…"
+        },
+        "result": {
+          "passTitle": "You passed!",
+          "failTitle": "Keep practicing",
+          "abandonedTitle": "Assessment abandoned",
+          "timeoutTitle": "Assessment timed out",
+          "incompleteTitle": "Assessment incomplete",
+          "fallbackTitle": "Assessment result",
+          "fallbackMessage": "Your assessment result is ready.",
+          "passBody": "Promotion Assessment passed. Celebrate this milestone.",
+          "officialPending": "Confirm official level update when you are ready. This uses the backend promotion engine only.",
+          "confirmPromotion": "Confirm official level update",
+          "promotedSummary": "Official speaking level updated: {old} → {next}",
+          "promotedBody": "Your new-level speaking journey is ready.",
+          "blockedCompetency": "A required competency was not met on this attempt.",
+          "bridgeTitle": "Recommended focus",
+          "focusSkills": "Recommended skills",
+          "abandonedBody": "This attempt was stopped before all tasks were finished.",
+          "timeoutBody": "This attempt ran out of time before it could finish.",
+          "incompleteBody": "This attempt could not be completed.",
+          "retry": "Retry assessment",
+          "backHome": "Back to assessment home"
+        }
+      }
+    },
+    "listeningJourney": {
+      "title": "Listening journey",
+      "subtitle": "Your official level, practice, and promotion — in one place",
+      "tabs": {
+        "journey": "Journey",
+        "practice": "Practice",
+        "promotion": "Promotion"
+      },
+      "hero": {
+        "eyebrow": "Your listening path",
+        "officialCefr": "Official {level}",
+        "targetCefr": "Target {level}",
+        "stageLine": "{cefr} · {band}",
+        "readiness": "Promotion readiness",
+        "promotionConfidence": "Promotion confidence: {value}"
+      },
+      "bands": {
+        "NOT_READY": "Keep building foundations — complete more varied listening practice.",
+        "ALMOST_READY": "You are making progress. A few areas still need work before the gate opens.",
+        "READY": "Strong progress. Stabilize your skills before the promotion test unlocks.",
+        "PROMOTION_AVAILABLE": "You may take the official promotion test when you are ready."
+      },
+      "path": {
+        "title": "Your path to the next level",
+        "practice": "Practice",
+        "gate": "Transition gate",
+        "readiness": "Readiness",
+        "test": "Promotion test",
+        "promote": "Official promotion"
+      },
+      "gate": {
+        "eyebrow": "Why you are here",
+        "title": "Transition gate & readiness",
+        "unlocked": "Test unlocked",
+        "readiness": "Readiness score",
+        "confidence": "Promotion confidence",
+        "stability": "Readiness stability",
+        "blockersTitle": "What is still blocking you",
+        "readyMessage": "You meet the requirements to start the promotion test.",
+        "summaryReady": "Your listening journey is ready for the summative promotion test.",
+        "summaryBlocked": "The system is holding promotion until these learning requirements are met.",
+        "summaryBuilding": "Keep practising — readiness updates after each lesson."
+      },
+      "goals": {
+        "eyebrow": "Personalize",
+        "title": "Your listening goal",
+        "subtitle": "Goals shape situations, vocabulary, and dialog style in your clips — without changing your official CEFR.",
+        "saved": "Saved",
+        "hint": "Choose the goal that best matches why you are learning English.",
+        "general_english": "General English",
+        "daily_life": "Daily life",
+        "conversation": "Conversation",
+        "travel": "Travel",
+        "business": "Business English",
+        "job_interview": "Job interview",
+        "academic": "Academic",
+        "university": "University",
+        "ielts": "IELTS",
+        "toefl": "TOEFL"
+      },
+      "practice": {
+        "generating": "Creating a clip at your level…",
+        "introTitle": "Adaptive listening practice",
+        "introBody": "Each clip is chosen for your level, goal, and weak areas. Submit answers to update your journey.",
+        "start": "Start listening",
+        "resume": "Continue your lesson",
+        "resumeHint": "You have a lesson in progress — pick up where you left off.",
+        "levelChip": "Level {level}",
+        "answered": "{n} / {total} answered",
+        "nextClip": "Next clip",
+        "practiceMore": "Practice: {type}",
+        "weakInsight": "These question types are still limiting your readiness — the next clips will target them.",
+        "passInsight": "Strong work. This lesson improved your listening profile.",
+        "failInsight": "Review the explanations, then try another clip to rebuild consistency.",
+        "whatNextTitle": "What happens next",
+        "errors": {
+          "submit": "We couldn't save your answers. Please try again."
+        }
+      },
+      "acquisition": {
+        "preparing": {
+          "title": "Preparing your lesson…",
+          "body": "We're choosing the best listening clip for your level and learning goal."
+        },
+        "almostReady": {
+          "title": "Almost ready…",
+          "body": "Your next lesson is being prepared. This usually takes a moment."
+        },
+        "stillGenerating": {
+          "title": "Still generating…",
+          "body": "We're working on a fresh lesson matched to your progress."
+        },
+        "finding": {
+          "title": "Finding the best lesson…",
+          "body": "Looking for the right clip to help you improve today."
+        },
+        "unavailable": {
+          "title": "Unable to prepare a lesson right now",
+          "body": "Please try again in a few minutes. Your journey progress is saved."
+        },
+        "noContent": {
+          "title": "New lessons coming soon",
+          "body": "You've completed the available practice for now. Check back later for fresh clips."
+        },
+        "offline": {
+          "title": "Connection problem",
+          "body": "Check your internet connection and try again."
+        },
+        "tryAgain": "Try again",
+        "retryIn": "Try again in {seconds}s"
+      },
+      "history": {
+        "stability": "Stability {value}"
+      },
+      "result": {
+        "evidence": "Evidence",
+        "consistency": "Consistency",
+        "coverage": "Coverage",
+        "examConfidence": "Exam confidence"
+      },
+      "actions": {
+        "startPractice": "Start practice",
+        "openPromotion": "Open promotion"
+      },
+      "topicSelection": {
+        "title": "How your next clip is chosen",
+        "body": "Clips are pre-generated using curriculum objectives, your goal, confidence weak spots, challenge level, and situation variety. When you tap Start, you receive the next unseen clip from your personal pool."
+      }
+    },
+    "writingPromotion": {
+      "title": "Writing promotion",
+      "subtitle": "Build readiness through lessons, pass the WPA, and promote your official writing level",
+      "status": {
+        "eyebrow": "Your journey",
+        "title": "Promotion status",
+        "officialCefr": "Official CEFR",
+        "learningStage": "Learning stage",
+        "promotionReadiness": "Promotion readiness",
+        "targetCefr": "Target CEFR",
+        "estimatedRemaining": "Estimated lessons remaining: {value}",
+        "primaryBlocker": "Blockers",
+        "eligible": "WPA available",
+        "notEligible": "Keep building readiness",
+        "eligibleHint": "You meet readiness requirements. Start the Writing Promotion Assessment when ready.",
+        "sessionActive": "WPA in progress"
+      },
+      "session": {
+        "title": "Writing Promotion Assessment — target {level}",
+        "draftLabel": "Your response",
+        "resumeHint": "You have an active WPA session. Resume to finish your tasks."
+      },
+      "result": {
+        "passTitle": "WPA passed",
+        "failTitle": "WPA not passed yet",
+        "score": "Overall score: {score}%"
+      },
+      "success": {
+        "title": "Promoted to {level} writing"
+      },
+      "actions": {
+        "startTest": "Start WPA for {level}",
+        "resumeTest": "Resume WPA",
+        "submitTest": "Submit WPA",
+        "cancel": "Cancel",
+        "promote": "Confirm official promotion",
+        "backToStatus": "Back to status",
+        "continue": "Continue journey",
+        "keepPracticing": "Keep practicing"
+      }
+    },
+    "listeningPromotion": {
+      "title": "Listening promotion",
+      "subtitle": "Track your journey, pass the test, and promote your official listening level",
+      "status": {
+        "eyebrow": "Your journey",
+        "title": "Promotion status",
+        "officialCefr": "Official CEFR",
+        "learningStage": "Readiness band",
+        "stageScore": "Readiness score",
+        "stageBand": "Stage band",
+        "transitionGate": "Transition gate",
+        "promotionReadiness": "Promotion readiness",
+        "promotionConfidence": "Promotion confidence",
+        "targetCefr": "Target CEFR",
+        "progressLabel": "Readiness progress",
+        "estimatedRemaining": "Estimated remaining: {value}",
+        "primaryBlocker": "Primary blocker",
+        "recommendations": "Recommendations",
+        "eligible": "Promotion available",
+        "notEligible": "Keep building readiness",
+        "sessionActive": "Test in progress"
+      },
+      "history": {
+        "eyebrow": "History",
+        "title": "Promotion history",
+        "emptyTitle": "No promotion attempts yet",
+        "emptyBody": "Complete listening practice to build readiness, then start your first promotion test.",
+        "latestAttempt": "Latest attempt",
+        "latestReadiness": "Latest readiness",
+        "promotionConfidence": "Promotion confidence",
+        "score": "Score: {score}"
+      },
+      "session": {
+        "eyebrow": "Promotion test",
+        "title": "{from} → {to}",
+        "progress": "{current} / {total} answered",
+        "attempt": "Attempt {n}",
+        "question": "Question {n}",
+        "noTimer": "No timer",
+        "expired": "This session expired. Return to status and start again."
+      },
+      "result": {
+        "score": "Score: {score}",
+        "strengths": "Strengths",
+        "weaknesses": "Weaknesses"
+      },
+      "success": {
+        "title": "Official promotion complete",
+        "learningStage": "Learning stage",
+        "journey": "Journey",
+        "restarted": "Restarted at your new level",
+        "nextLesson": "Recommended next lesson"
+      },
+      "actions": {
+        "startTest": "Start promotion test — {level}",
+        "resumeTest": "Resume promotion test",
+        "keepPracticing": "Keep practising listening",
+        "submitTest": "Submit promotion test",
+        "promote": "Promote official level",
+        "backToStatus": "Back to status",
+        "continueListening": "Continue listening practice"
+      }
+    },
+    "coach": {
+      "eyebrow": "Your learning coach",
+      "stages": {
+        "practice": "Getting started",
+        "improve": "Building skills",
+        "master": "Mastering this level",
+        "promotion": "Ready for the promotion test"
+      },
+      "journey": {
+        "headline": "Official level {level} · {stage}",
+        "sentence": {
+          "practice": "Keep practising — each lesson builds your listening foundation.",
+          "improve": "You are making steady progress at this level.",
+          "master": "You handle most listening situations well — keep sharpening your skills.",
+          "promotion": "You are getting close to the promotion test.",
+          "testReady": "Your promotion test to {level} is ready when you are."
+        }
+      },
+      "path": {
+        "title": "Your listening journey",
+        "practice": "Practice",
+        "improve": "Improve",
+        "master": "Master",
+        "test": "Promotion test",
+        "newLevel": "New level"
+      },
+      "promotion": {
+        "eyebrow": "Promotion journey",
+        "blockedTitle": "Almost there",
+        "unlockedTitle": "Promotion test unlocked",
+        "unlockedBody": "You have built enough skill and consistency. Start the promotion test when you feel ready.",
+        "veryClose": "You are very close. A little more focused practice will unlock your promotion test.",
+        "almostUnlocked": "You are nearly ready. Finish the items below, then your promotion test will unlock.",
+        "unlocked": "You can start the promotion test.",
+        "completeTitle": "Complete:",
+        "nextStartTest": "Start your promotion test when you are ready.",
+        "nextPractice": "Keep practising — your coach will update this list after each lesson."
+      },
+      "promotionStatus": {
+        "eyebrow": "Promotion",
+        "title": "Listening at {level} → {target}",
+        "sessionActive": "You have a promotion test in progress. Resume when you are ready.",
+        "resumeHint": "Resume your promotion test to finish."
+      },
+      "blockers": {
+        "evidence": "Practice more different listening situations",
+        "learningStage": "Complete more lessons at your current level",
+        "stageScore": "Build steadier results across recent lessons",
+        "confidence": "Strengthen areas that still feel uncertain",
+        "objectiveMastery": "Master a few more listening skills",
+        "transitionGate": "Finish the skills needed at this stage",
+        "reviews": "Complete your review lessons",
+        "lessons": "Complete more listening lessons",
+        "challenge": "Practise until lessons feel steady at your level",
+        "consistency": "Listen regularly — short sessions help a lot",
+        "skillWeak": "Improve {skill}"
+      },
+      "prediction": {
+        "veryLikely": "Your recent practice looks strong — keep this rhythm.",
+        "likely": "You are on a good path toward the promotion test.",
+        "borderline": "Focus on the items below before expecting the test to unlock.",
+        "uncertain": "Build more consistent practice before planning promotion.",
+        "notReady": "Keep building lesson history — progress comes with regular practice."
+      },
+      "goals": {
+        "general": "This lesson builds everyday listening confidence.",
+        "dailyLife": "This lesson prepares you for real daily conversations.",
+        "conversation": "This lesson trains natural back-and-forth listening.",
+        "travel": "This lesson prepares you for real travel situations.",
+        "business": "This lesson prepares you for workplace meetings.",
+        "jobInterview": "This lesson trains clear, professional listening.",
+        "academic": "This lesson resembles academic talks and explanations.",
+        "university": "This lesson resembles university lectures.",
+        "ielts": "This lesson trains the listening style used in IELTS.",
+        "toefl": "This lesson trains the listening style used in TOEFL."
+      },
+      "lessonWhy": {
+        "eyebrow": "Before you listen",
+        "title": "Why this lesson?",
+        "matchesLevel": "It matches your official level ({level})",
+        "practiceLevel": "It practises listening at the {level} level",
+        "targetsVariety": "It gives you practice in different listening situations",
+        "includesReview": "It helps you review skills you have seen before",
+        "topic": "Today's topic: {topic}",
+        "skills": {
+          "mainIdea": "It improves how you catch the main idea",
+          "detail": "It trains catching important details",
+          "inference": "It improves inference — reading between the lines",
+          "vocabulary": "It builds vocabulary from context"
+        },
+        "targetsSkill": {
+          "mainIdea": "It strengthens your main-idea listening",
+          "detail": "It targets detail listening — an area to improve",
+          "inference": "It targets inference — an area to improve",
+          "vocabulary": "It builds vocabulary in real contexts"
+        }
+      },
+      "lessonResult": {
+        "eyebrow": "After your lesson",
+        "passedTitle": "Nice work today",
+        "retryTitle": "Good effort — let's try again",
+        "strongUnderstanding": "You understood the main ideas much better today.",
+        "goodProgress": "You made solid progress on this clip.",
+        "closerToGoal": "You moved closer to your promotion goal.",
+        "keepGoing": "Listen again, then try another clip to rebuild confidence.",
+        "improvedOverall": "Your overall listening journey moved forward.",
+        "smallStep": "You took a small but real step forward.",
+        "steadyLevel": "You are consistently solving lessons at your current level.",
+        "improvedSkill": {
+          "mainIdea": "You understood the main idea clearly.",
+          "detail": "You caught important details well.",
+          "inference": "You read between the lines successfully.",
+          "vocabulary": "You handled new words in context well."
+        },
+        "weakSkill": {
+          "mainIdea": "Keep practising how to catch the main idea",
+          "detail": "Details are still tricky — more practice will help",
+          "inference": "Improve inference with a few more lessons",
+          "vocabulary": "New words in context need a little more work"
+        },
+        "stillWorking": "Still working on:",
+        "celebrationPass": "Well done — this lesson counts toward your journey.",
+        "celebrationRetry": "Review the audio, then try again or move to the next clip.",
+        "next": {
+          "test": "You may be ready for the promotion test — check the Promotion tab.",
+          "retry": "Replay the audio, then retry or take the next clip.",
+          "continue": "Take the next clip to keep building momentum."
+        }
+      },
+      "history": {
+        "eyebrow": "Your story",
+        "title": "What changed recently",
+        "start": "Your learning story will grow as you complete more listening lessons.",
+        "readyForTest": "You are ready to try the promotion test.",
+        "strongProgress": "This week you became much better at handling harder listening.",
+        "buildingMomentum": "You are building steady momentum — keep going.",
+        "passedAttempt": "You passed your last promotion attempt — promote when you are ready.",
+        "retryEncouragement": "Your last attempt showed what to practise next — that is normal.",
+        "prediction": {
+          "veryLikely": "Your practice rhythm looks excellent lately.",
+          "likely": "You are moving in the right direction.",
+          "borderline": "A little more focused practice will make a big difference.",
+          "uncertain": "Regular short sessions will help your listening grow faster.",
+          "notReady": "You are at the start of this level — every lesson counts."
+        }
+      },
+      "promotionResult": {
+        "eyebrow": "Test results",
+        "passTitle": "You passed the promotion test",
+        "borderlineTitle": "You are close — not quite there yet",
+        "failTitle": "Keep practising — you will get there",
+        "pass": "Your listening showed you are ready for the next official level.",
+        "borderline": "You showed strength in some areas. Focus on the items below.",
+        "fail": "This attempt shows what to practise before trying again.",
+        "focusNext": "Focus next on:",
+        "nextPromote": "Promote your official level to unlock harder listening.",
+        "nextPractice": "Return to practice and work on the areas below."
+      },
+      "success": {
+        "title": "Congratulations — new level!",
+        "eyebrow": "What changes now",
+        "changesTitle": "At your new level you will hear:",
+        "stageReset": "You begin again at {stage} — that is normal and helps you master the new level.",
+        "nextPractice": "Start with a practice lesson at your new level.",
+        "nextLesson": "Try next: {lesson}"
+      },
+      "levelBenefits": {
+        "shortDialogs": "Short, clear everyday conversations",
+        "everydayWords": "Common words you hear every day",
+        "longerDialogs": "Longer dialogs with more detail",
+        "travelBasics": "Real travel and directions language",
+        "fasterSpeech": "Faster, more natural speech",
+        "workplaceMeetings": "Workplace and meeting conversations",
+        "naturalVocabulary": "More natural vocabulary and expressions",
+        "lectures": "Longer talks and presentations",
+        "complexDiscussions": "Complex discussions with nuance",
+        "nuancedMeaning": "Subtle meaning and attitude in speech",
+        "nativePace": "Listening at near-native speed",
+        "specializedTopics": "Specialized and academic topics"
+      },
+      "ux": {
+        "hero": {
+          "eyebrow": "Your path",
+          "title": "Listening Journey",
+          "officialLevel": "Official level",
+          "currentStep": "Current step",
+          "goal": "Goal",
+          "unlockLevel": "Unlock {level}"
+        },
+        "progress": {
+          "greatProgress": "You are making great progress.",
+          "gettingCloser": "You are getting closer to the promotion test.",
+          "almostThere": "You only need a little more practice.",
+          "readyForTest": "You are ready for the promotion test."
+        },
+        "steps": {
+          "practice": "Building your listening skills",
+          "improve": "Improving your listening skills",
+          "master": "Mastering this level",
+          "promotion": "Getting ready for the promotion test",
+          "readyForTest": "Ready for the promotion test"
+        },
+        "milestone": {
+          "moreLessons": "Practice {count} more lessons",
+          "almostUnlocked": "Almost there — keep going!",
+          "startTest": "Start your promotion test to {level}"
+        },
+        "timeline": {
+          "title": "Your journey",
+          "start": "Lesson 1",
+          "practice": "Lesson practice",
+          "improve": "Improve skills",
+          "ready": "Ready for promotion test",
+          "pass": "Pass promotion test",
+          "celebrate": "Congratulations! Official {level}"
+        },
+        "howItWorks": {
+          "title": "How your Listening Journey works",
+          "steps": {
+            "practice": {
+              "title": "Practice lessons",
+              "body": "Listen to real clips and answer questions at your level."
+            },
+            "improve": {
+              "title": "Improve your listening skills",
+              "body": "Each lesson strengthens the skills you need most."
+            },
+            "unlock": {
+              "title": "Unlock promotion test",
+              "body": "When you are ready, your promotion test becomes available."
+            },
+            "pass": {
+              "title": "Pass promotion test",
+              "body": "Show you can handle listening at the next level."
+            },
+            "promote": {
+              "title": "Officially reach the next CEFR level",
+              "body": "Celebrate your new official level and keep growing."
+            }
+          }
+        },
+        "goals": {
+          "title": "Your listening goal",
+          "subtitle": "Pick what you want your listening practice to prepare you for.",
+          "cards": {
+            "general_english": "Build confidence for everyday English listening.",
+            "daily_life": "Practice situations you hear in daily life.",
+            "conversation": "Train natural back-and-forth conversations.",
+            "travel": "Practice situations you'll use while travelling.",
+            "business": "Prepare for meetings and workplace listening.",
+            "job_interview": "Train clear, professional listening skills.",
+            "academic": "Get ready for academic talks and lectures.",
+            "university": "Practice university-style lectures and explanations.",
+            "ielts": "Train the listening style used in IELTS.",
+            "toefl": "Train the listening style used in TOEFL."
+          }
+        },
+        "history": {
+          "title": "Your story",
+          "latest": "Recently",
+          "recent": "This week",
+          "earlier": "Earlier",
+          "start": "Your journey",
+          "passedTest": "Promotion test passed — ready for official {level}",
+          "attemptedTest": "You tried the promotion test — keep practising",
+          "unlockedTest": "Unlocked the promotion test",
+          "nearTest": "Getting close to the promotion test",
+          "improvedSkills": "Improved your listening skills"
+        },
+        "mission": {
+          "title": "Today's mission",
+          "todayWePractice": "Today we will practice",
+          "whyTitle": "Why?",
+          "rewardLabel": "Reward",
+          "weakSkillBecause": "Because {skill} is an area to strengthen right now.",
+          "topicFocus": "Because today's topic — {topic} — matches what you need next.",
+          "defaultWhy": "Because regular practice is the fastest way to improve.",
+          "meta": {
+            "officialLevel": "Official level",
+            "lessonLevel": "Lesson level",
+            "skill": "Skill",
+            "situation": "Situation",
+            "estimatedTime": "Estimated time",
+            "goal": "Goal",
+            "difficulty": "Difficulty",
+            "levelNote": "Level note",
+            "minutes": "{count} min"
+          },
+          "rewardProgress": "Progress toward {level}",
+          "rewardTestReady": "Progress toward your promotion test"
+        },
+        "promotion": {
+          "beforeUnlockTitle": "Before you unlock your promotion test:",
+          "unlockedTitle": "Your promotion test is unlocked!"
+        },
+        "lessonResult": {
+          "greatWork": "Great work!",
+          "todayImproved": "Today you improved",
+          "needsPractice": "Needs more practice",
+          "nextLesson": "Next lesson"
         }
       }
     }
@@ -1353,6 +2668,421 @@
       "religious": "Religious activity",
       "music": "Music",
       "languages": "Languages"
+    }
+  },
+  "englishJourney": {
+    "shell": {
+      "journey": "Journey",
+      "practice": "Practice",
+      "review": "Review",
+      "achievements": "Achievements",
+      "profile": "Profile"
+    },
+    "hero": {
+      "kicker": "AI Teacher",
+      "greeting": "Hello {name}",
+      "headline": "Your English journey today",
+      "headlineWithStage": "Today: {stage}",
+      "lead": "A clear stage path — start your AI Teacher session and move forward one step at a time.",
+      "cta": "Start today's session",
+      "ctaDisabled": "AI Teacher is unavailable right now",
+      "streak": "{days}-day streak",
+      "goal": "Today's goal",
+      "eta": "About {minutes} min",
+      "currentStage": "Your current stage"
+    },
+    "timeline": {
+      "title": "Journey path",
+      "subtitle": "CEFR levels and grammar stages — locked stages stay locked until the engine unlocks them.",
+      "stagesInLevel": "Stages in {cefr}"
+    },
+    "sessionEntry": {
+      "eyebrow": "Session entry",
+      "title": "Today's session with AI Teacher",
+      "titleWithStage": "Today's session: {stage}",
+      "cta": "Enter session now",
+      "viewStage": "Stage details"
+    },
+    "progress": {
+      "level": "Level {cefr}",
+      "stageOf": "Stage {index} of {total}",
+      "overall": "{done} of {total} completed"
+    },
+    "status": {
+      "completed": "Completed",
+      "current": "Current",
+      "unlocked": "Unlocked",
+      "locked": "Locked",
+      "done": "Done",
+      "levelCurrent": "In progress",
+      "levelLocked": "Locked"
+    },
+    "stage": {
+      "minutes": "{n} min",
+      "duration": "Duration",
+      "skills": "Skills",
+      "startSession": "Start session",
+      "reviewStage": "Review stage",
+      "lockedHint": "Complete earlier stages to unlock this one",
+      "structure": "Session structure",
+      "mastery": "Mastery"
+    },
+    "session": {
+      "title": "Today's session",
+      "complete": "Finish session",
+      "empty": "No active session. Start from your journey.",
+      "backHome": "Back to journey"
+    },
+    "complete": {
+      "title": "Well done! Stage complete",
+      "next": "Next stage",
+      "encouragement": "Keep going — you are progressing",
+      "backJourney": "Back to journey"
+    },
+    "review": {
+      "title": "Review",
+      "empty": "Excellent. Keep moving forward.",
+      "emptyHint": "Completed stages will appear here for review."
+    },
+    "achievements": {
+      "title": "Journey achievements",
+      "completedStages": "Completed stages",
+      "streak": "Learning streak",
+      "confidence": "Confidence",
+      "levelProgress": "Level progress",
+      "empty": "Start your first session to unlock achievements."
+    },
+    "sidebar": {
+      "title": "AI Teacher",
+      "mission": "Mission",
+      "energy": "Energy",
+      "confidence": "Confidence",
+      "nextMilestone": "Next milestone",
+      "collapsed": "Teacher"
+    },
+    "empty": {
+      "disabledTitle": "English Journey is preparing",
+      "disabledBody": "AI Teacher prepares today's session.",
+      "teacherOff": "AI Teacher is off for now. You can still explore the timeline."
+    },
+    "errors": {
+      "load": "Could not load the journey. Please try again.",
+      "session": "Could not start the session. Please try again."
+    }
+  },
+  "grammarV2": {
+    "shell": {
+      "navLabel": "Grammar",
+      "home": "Home",
+      "review": "Review"
+    },
+    "common": {
+      "minutes": "{n} min"
+    },
+    "hero": {
+      "kicker": "Grammar Engine",
+      "title": "Grammar",
+      "currentGrammar": "Current grammar",
+      "currentCefr": "Current CEFR",
+      "currentStage": "Current stage",
+      "overallProgress": "Overall progress",
+      "eta": "Estimated lesson time",
+      "startLesson": "Start current lesson",
+      "reviewCompleted": "Review completed topics"
+    },
+    "progress": {
+      "title": "Progress",
+      "completed": "Completed topics",
+      "cefr": "Current CEFR",
+      "stage": "Current stage",
+      "remaining": "Remaining",
+      "percent": "Completion %"
+    },
+    "roadmap": {
+      "title": "Grammar roadmap",
+      "subtitle": "Full curriculum by CEFR — status comes from the engine only.",
+      "completedOf": "Completed {done} / {total}"
+    },
+    "card": {
+      "mastery": "Mastery {n}%"
+    },
+    "status": {
+      "completed": "Completed",
+      "current": "Current",
+      "unlocked": "Unlocked",
+      "locked": "Locked",
+      "levelDone": "Done",
+      "levelCurrent": "In progress",
+      "levelLocked": "Locked"
+    },
+    "sidebar": {
+      "title": "Engine summary",
+      "collapsed": "Summary",
+      "currentGrammar": "Current grammar",
+      "currentCefr": "CEFR",
+      "confidence": "Confidence",
+      "mastery": "Mastery",
+      "nextGrammar": "Next grammar",
+      "eta": "Lesson time",
+      "recommendation": "Today's recommendation"
+    },
+    "lesson": {
+      "back": "Back",
+      "finish": "Finish lesson",
+      "goal": "Goal",
+      "explanation": "Grammar explanation",
+      "warmup": "Warm-up",
+      "mainActivity": "Main activity",
+      "followUp": "Follow-up questions",
+      "hints": "Hints",
+      "mistakes": "Common mistakes",
+      "patterns": "Expected patterns",
+      "reflection": "Reflection"
+    },
+    "review": {
+      "title": "Grammar review",
+      "empty": "No completed topics yet.",
+      "emptyHint": "Finish a lesson and your topics will appear here.",
+      "backHome": "Back to Grammar"
+    },
+    "complete": {
+      "title": "Grammar completed",
+      "mastery": "Mastery",
+      "confidence": "Confidence",
+      "skillsImproved": "Skills reinforced",
+      "next": "Next grammar",
+      "continue": "Continue"
+    },
+    "empty": {
+      "disabled": "Grammar is not available right now.",
+      "noRoadmap": "Grammar roadmap not ready",
+      "noRoadmapHint": "When the engine is enabled, all topics appear here."
+    },
+    "errors": {
+      "load": "Could not load the grammar roadmap.",
+      "lesson": "Could not load the lesson.",
+      "complete": "Could not finish the lesson."
+    }
+  },
+  "grammarSession": {
+    "leaveConfirm": "Leave this grammar session? Your place in the session is saved on this device.",
+    "header": {
+      "kicker": "AI Grammar Session",
+      "remaining": "~{n} min left",
+      "exit": "Exit"
+    },
+    "timeline": {
+      "label": "Session stages"
+    },
+    "progress": {
+      "step": "Step {current} of {total}",
+      "elapsed": "{time}",
+      "session": "Session progress {n} percent"
+    },
+    "controls": {
+      "back": "Back",
+      "continue": "Continue",
+      "toComplete": "Continue to complete",
+      "finish": "Finish lesson"
+    },
+    "teacher": {
+      "aria": "AI teacher"
+    },
+    "stages": {
+      "welcome": "Welcome",
+      "mission": "Mission",
+      "learn": "Teaching",
+      "practice": "Practice",
+      "speaking": "Speaking",
+      "writing": "Writing",
+      "reflection": "Reflection",
+      "complete": "Complete"
+    },
+    "welcome": {
+      "title": "Welcome to your session",
+      "subtitle": "Your AI teacher will guide you step by step — one stage at a time.",
+      "hello": "Let's begin together.",
+      "todayTopic": "Today's grammar",
+      "whyMatters": "Why this matters"
+    },
+    "mission": {
+      "title": "Today's Mission",
+      "subtitle": "Know what you will achieve before you start learning.",
+      "todayMission": "Mission",
+      "fallbackGoal": "Master today's grammar with clear examples and practice.",
+      "successCriteria": "Success criteria",
+      "outcome": "Expected outcome",
+      "outcomeBody": "By the end of this session you will use today's grammar with more confidence."
+    },
+    "learn": {
+      "title": "Teaching",
+      "subtitle": "Learn the idea in clear steps — not a long document.",
+      "concept": "Concept",
+      "warmup": "Warm-up",
+      "empty": "Teaching content will appear here when the lesson package is ready."
+    },
+    "practice": {
+      "title": "Practice",
+      "subtitle": "Try today's grammar. Participation comes first.",
+      "empty": "Practice prompts will appear here when the lesson package is ready."
+    },
+    "speaking": {
+      "title": "Speaking",
+      "subtitle": "Voice practice is ready for a future coach — continue for now.",
+      "readyTitle": "Speaking coach coming next",
+      "readyBody": "This stage is part of your session path. Voice coaching will live here without changing the runtime.",
+      "hint": "Microphone and listening states are prepared in the session architecture."
+    },
+    "writing": {
+      "title": "Writing",
+      "subtitle": "Writing coach will plug into this stage later.",
+      "readyTitle": "Writing coach coming next",
+      "readyBody": "This stage keeps your session structure complete. Writing feedback will appear here in a later phase.",
+      "hint": "Continue to reflection when you are ready."
+    },
+    "reflection": {
+      "title": "Reflection",
+      "subtitle": "Pause and notice what you learned today.",
+      "summaryTitle": "Session note",
+      "summaryBody": "You moved through the session stage by stage. Finish when you are ready to complete the lesson."
+    },
+    "complete": {
+      "title": "Session complete",
+      "subtitle": "Great work. Finish to save progress with the Grammar engine.",
+      "topic": "Grammar covered",
+      "nextTitle": "Ready to finish",
+      "nextBody": "Tap Finish lesson to complete this activity with the server-attested session."
+    }
+  },
+  "grammarTeacher": {
+    "panel": {
+      "aria": "AI teacher",
+      "role": "Your English teacher",
+      "focus": "Focus",
+      "idle": "I’m here with you — take your time."
+    },
+    "presence": {
+      "withYou": "With you",
+      "speaking": "Speaking",
+      "listening": "Listening",
+      "thinking": "Thinking"
+    },
+    "mood": {
+      "encouraging": "Encouraging you",
+      "curious": "Curious with you",
+      "proud": "Proud of your progress",
+      "calm": "Calm and clear"
+    },
+    "voice": {
+      "speaking": "Speak",
+      "listening": "Listen",
+      "thinking": "Think"
+    },
+    "ask": {
+      "cta": "Ask Teacher",
+      "title": "Ask your teacher",
+      "hint": "Ask about today’s grammar. Your teacher stays inside this lesson.",
+      "placeholder": "Why do we use this form here?",
+      "send": "Ask",
+      "cancel": "Cancel",
+      "close": "Close"
+    },
+    "cards": {
+      "concept": "Concept",
+      "explanation": "Teacher explanation",
+      "example": "Small example",
+      "pattern": "Pattern",
+      "checkpoint": "Mini checkpoint",
+      "step": "Card {current} / {total}",
+      "next": "Next idea",
+      "doneHint": "You’ve seen every teaching card — continue when ready."
+    },
+    "welcome": {
+      "title": "Your teacher is ready",
+      "subtitle": "A guided greeting — not a document.",
+      "fallback": "Welcome! Today we’ll learn {topic} together.",
+      "whySelected": "Why this was selected",
+      "whySelectedBody": "This is your current grammar focus: {topic}. Your learning path chose it for today.",
+      "achieve": "What you will achieve"
+    },
+    "mission": {
+      "title": "Today’s mission",
+      "subtitle": "Let’s talk about what we’re aiming for.",
+      "lead": "Today we're going to learn… {goal}",
+      "leadFallback": "Today we're going to learn how to use {topic} with confidence.",
+      "whereUsed": "Where you’ll use it",
+      "whereUsedBody": "In everyday English — introductions, descriptions, and clear sentences with others.",
+      "whyUseful": "Why it helps",
+      "whyUsefulBody": "Once this feels natural, the next grammar steps become much easier."
+    },
+    "learn": {
+      "title": "Let’s learn together",
+      "subtitle": "One small card at a time. Ask me whenever you want."
+    }
+  },
+  "grammarV4": {
+    "back": "Back",
+    "minutes": "{n} min",
+    "playAudio": "Play audio",
+    "retry": "Try again",
+    "explain": {
+      "title": "Grammar explanation",
+      "english": "🇬🇧 English explanation",
+      "arabic": "🇸🇾 Arabic explanation",
+      "arabicPending": "Arabic explanation is loading…",
+      "what": "What is it?",
+      "why": "Why do we use it?",
+      "when": "When do we use it?",
+      "structure": "Structure",
+      "rules": "Rules",
+      "mistakes": "Common mistakes"
+    },
+    "examples": {
+      "title": "Examples",
+      "more": "Generate more examples",
+      "moreIn": "More — {cat}",
+      "easy": "Easy examples",
+      "daily": "Daily life",
+      "school": "School",
+      "university": "University",
+      "work": "Work",
+      "travel": "Travel",
+      "mistakes": "Common mistakes"
+    },
+    "ask": {
+      "title": "Ask about this grammar",
+      "subtitle": "Only questions about “{topic}”. Not a general chatbot.",
+      "empty": "Ask about the rule, examples, or mistakes in this lesson.",
+      "placeholder": "Explain this rule again…",
+      "send": "Send"
+    },
+    "practice": {
+      "title": "Practice",
+      "subtitle": "Starts easy, then gets harder. At least 15 questions.",
+      "progress": "Question {current} of {total}",
+      "typeAnswer": "Type your answer",
+      "check": "Check",
+      "correct": "Correct",
+      "incorrect": "Not quite",
+      "answer": "Correct answer",
+      "next": "Next question",
+      "trySimilar": "Try a similar question",
+      "reset": "Reset",
+      "done": "Practice complete — see your summary below."
+    },
+    "summary": {
+      "title": "Summary",
+      "learned": "What you learned",
+      "mistakes": "Mistakes you made",
+      "score": "{correct} correct · {mistakes} to review",
+      "noMistakes": "No practice mistakes — excellent.",
+      "suggestions": "Suggestions",
+      "suggestGreat": "You’re ready to move on. Keep using today’s patterns in real sentences.",
+      "suggestReview": "Review the corrections above, then try one more set of examples.",
+      "suggestMore": "Spend a few more minutes on the examples and ask the tutor about your mistakes.",
+      "next": "Ready for the next lesson",
+      "nextBody": "Finish to save this lesson with the Grammar engine.",
+      "finish": "Finish lesson"
     }
   }
 }

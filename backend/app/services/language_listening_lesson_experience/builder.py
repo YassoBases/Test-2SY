@@ -244,6 +244,9 @@ async def build_lesson_experience_bundle(
             facts_schema_version=FACTS_SCHEMA_VERSION,
             reservation_id=str(reservation.id) if reservation else None,
             pinned_until=pinned_until,
+            activity_session_id=body.get("activity_session_id"),
+            grammar_id=body.get("grammar_id"),
+            grammar_title=body.get("grammar_title"),
         ),
     )
 

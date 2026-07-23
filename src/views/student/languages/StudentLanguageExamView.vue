@@ -33,6 +33,31 @@
       <v-btn color="secondary" variant="flat" size="large" :loading="busy" :disabled="rateLimitBlocked" prepend-icon="mdi-play" class="mt-3" @click="start">
         Start the exam
       </v-btn>
+      <div class="skip-placement-box mt-4 mx-auto">
+        <div class="text-caption text-medium-emphasis mb-2">تخطي الاختبار والبدء من مستوى</div>
+        <v-chip-group v-model="skipBaselineLevel" mandatory selected-class="skip-level-chip--selected" class="justify-center">
+          <v-chip
+            v-for="level in SKIP_LEVEL_OPTIONS"
+            :key="level"
+            :value="level"
+            size="small"
+            variant="tonal"
+            class="skip-level-chip"
+          >
+            {{ level }}
+          </v-chip>
+        </v-chip-group>
+        <v-btn
+          color="secondary"
+          variant="text"
+          :loading="busy"
+          :disabled="rateLimitBlocked"
+          prepend-icon="mdi-debug-step-over"
+          @click="skipPlacement"
+        >
+          تخطي الاختبار والبدء من {{ skipBaselineLevel }}
+        </v-btn>
+      </div>
       <v-btn
         v-if="evaluationFailed && sessionId"
         color="warning"
@@ -470,6 +495,7 @@
 
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
@@ -478,6 +504,7 @@ import { useVoiceRecorder } from '../../../composables/useVoiceRecorder.js'
 import { useLiveTranscriptionPreview } from '../../../composables/useLiveTranscriptionPreview.js'
 import {
   initiateExam,
+  skipPlacementExam,
   fetchExamState,
   submitSpeakingTurn,
   createSpeakingLiveTranscriptionSession,
@@ -491,6 +518,8 @@ import { getErrorMessage } from '../../../api/client.js'
 import { mediaUrl } from '../../../utils/media.js'
 import { ROUTES } from '../../../constants/app.js'
 
+const router = useRouter()
+
 const SECTION_META = {
   speaking: { label: 'Speaking', icon: 'mdi-microphone', hint: 'Talk to the AI' },
   listening: { label: 'Listening', icon: 'mdi-headphones', hint: 'Listen & answer' },
@@ -503,6 +532,7 @@ const SECTION_META = {
 // "grammar_vocab" is dropped from the active exam (product decision) but SECTION_META/isMcqPhase/
 // skillRows below keep it so any already-persisted session or historical report still renders.
 const INTRO_SKILLS = ['speaking', 'listening', 'reading', 'writing']
+const SKIP_LEVEL_OPTIONS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
 const CONSISTENCY_LABEL = {
   consistent: 'Spoken and written performance matched — high-confidence result',
   speaking_stronger: 'You performed noticeably stronger speaking than in writing',
@@ -514,6 +544,7 @@ const view = ref('intro') // intro | exam | evaluating | report | loading
 const loadError = ref('')
 const busy = ref(false)
 const rateLimitBlocked = ref(false)
+const skipBaselineLevel = ref('B1')
 
 const sessionId = ref(null)
 const state = ref(null)
@@ -867,6 +898,20 @@ async function start() {
     applyState(data)
   } catch (e) {
     handleRequestError(e, 'Could not start the exam')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function skipPlacement() {
+  if (busy.value || rateLimitBlocked.value) return
+  busy.value = true
+  loadError.value = ''
+  try {
+    await skipPlacementExam(skipBaselineLevel.value)
+    router.push(ROUTES.STUDENT_LANGUAGES)
+  } catch (e) {
+    handleRequestError(e, 'Could not skip the placement exam')
   } finally {
     busy.value = false
   }
@@ -1239,6 +1284,12 @@ onUnmounted(() => {
 .page-container { max-width: 820px; margin: 0 auto; }
 .exam-intro { border: 1px solid rgba(var(--v-theme-secondary), 0.25); }
 .skill-pill { border: 1px solid rgba(255, 255, 255, 0.08); }
+.skip-placement-box { max-width: 420px; }
+.skip-level-chip { font-weight: 800; letter-spacing: 0; }
+.skip-level-chip--selected {
+  background: rgb(var(--v-theme-secondary)) !important;
+  color: rgb(var(--v-theme-on-secondary)) !important;
+}
 .section-tab-chip:not(.v-chip--disabled) { cursor: pointer; }
 .examiner-q { line-height: 1.5; }
 .exam-chat { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }

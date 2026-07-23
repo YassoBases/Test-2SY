@@ -20,6 +20,13 @@ export async function fetchPlacementHistory() {
   return data
 }
 
+export async function skipPlacementExam(baselineLevel = 'B1') {
+  const { data } = await api.post('/student/languages/placement/skip', {
+    baseline_level: baselineLevel,
+  })
+  return data
+}
+
 export async function fetchLanguageHub() {
   const { data } = await api.get('/student/languages/hub')
   return data
@@ -64,6 +71,21 @@ export async function fetchNextListening() {
   return data
 }
 
+export async function fetchListeningNextSession(attempt = 1) {
+  const { data } = await api.get('/student/languages/listening/next', { params: { attempt } })
+  return data
+}
+
+export async function pollListeningAcquisition(attempt = 1) {
+  const { data } = await api.get('/student/languages/listening/acquisition', { params: { attempt } })
+  return data
+}
+
+export async function fetchListeningJourney() {
+  const { data } = await api.get('/student/languages/listening/journey')
+  return data
+}
+
 export async function fetchListeningLessons() {
   const { data } = await api.get('/student/languages/listening')
   return data
@@ -76,6 +98,29 @@ export async function fetchListeningLesson(contentId) {
 
 export async function submitListeningLesson(contentId, answers) {
   const { data } = await api.post(`/student/languages/listening/${contentId}/submit`, { answers })
+  return data
+}
+
+export async function fetchListeningPromotionStatus() {
+  const { data } = await api.get('/student/languages/listening/promotion-test/status')
+  return data
+}
+
+export async function startListeningPromotionTest() {
+  const { data } = await api.post('/student/languages/listening/promotion-test/start')
+  return data
+}
+
+export async function submitListeningPromotionTest({ sessionId, answers }) {
+  const { data } = await api.post('/student/languages/listening/promotion-test/submit', {
+    session_id: sessionId,
+    answers,
+  })
+  return data
+}
+
+export async function applyListeningOfficialPromotion() {
+  const { data } = await api.post('/student/languages/listening/promote')
   return data
 }
 
@@ -150,6 +195,16 @@ export async function fetchWritingPrompts() {
   return data
 }
 
+export async function fetchWritingJourney() {
+  const { data } = await api.get('/student/languages/writing/journey')
+  return data
+}
+
+export async function generateWritingLesson({ goal = null } = {}) {
+  const { data } = await api.post('/student/languages/writing/generate', { goal })
+  return data
+}
+
 export async function fetchWritingPrompt(promptId) {
   const { data } = await api.get(`/student/languages/writing/${promptId}`)
   return data
@@ -159,6 +214,34 @@ export async function submitWritingPrompt(promptId, responseText) {
   const { data } = await api.post(`/student/languages/writing/${promptId}/submit`, {
     response_text: responseText,
   })
+  return data
+}
+
+export async function submitWritingDraft(lessonId, payload = {}) {
+  const { data } = await api.post(`/student/languages/writing/${lessonId}/draft`, payload)
+  return data
+}
+
+export async function fetchWritingPromotionStatus() {
+  const { data } = await api.get('/student/languages/writing/promotion-test/status')
+  return data
+}
+
+export async function startWritingPromotionTest() {
+  const { data } = await api.post('/student/languages/writing/promotion-test/start')
+  return data
+}
+
+export async function submitWritingPromotionTest({ sessionId, submissions }) {
+  const { data } = await api.post('/student/languages/writing/promotion-test/submit', {
+    session_id: sessionId,
+    submissions,
+  })
+  return data
+}
+
+export async function applyWritingOfficialPromotion() {
+  const { data } = await api.post('/student/languages/writing/promote')
   return data
 }
 

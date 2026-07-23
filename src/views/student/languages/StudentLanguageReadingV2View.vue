@@ -276,6 +276,9 @@
 
         <v-card class="glass-card pa-6 mb-4 reading-v2-text" variant="flat">
           <div class="text-caption text-medium-emphasis mb-1">{{ safeActivity.topic }}</div>
+          <v-chip v-if="grammarFocusLabel" class="mb-3" color="secondary" variant="tonal" size="small">
+            Grammar: {{ grammarFocusLabel }}
+          </v-chip>
           <h2 class="text-h5 font-weight-bold mb-4">{{ safeActivity.title }}</h2>
           <p class="reading-passage">{{ safeActivity.passage }}</p>
         </v-card>
@@ -649,6 +652,9 @@ const currentBlockingReasonTexts = computed(() =>
 )
 const safeActivity = computed(() => stripSecrets(attempt.value?.activity || {}))
 const questions = computed(() => (safeActivity.value?.questions || []).map(stripSecrets))
+const grammarFocusLabel = computed(() =>
+  safeActivity.value?.grammar_title || safeActivity.value?.grammar_id || '',
+)
 const answeredCount = computed(() => questions.value.filter((question) => hasAnswer(question)).length)
 const canSubmit = computed(() => questions.value.length > 0 && questions.value.every((question) => hasAnswer(question)))
 

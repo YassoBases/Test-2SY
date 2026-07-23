@@ -63,6 +63,10 @@ class LanguageSubscribeRequest(BaseModel):
     method: str = "card"
 
 
+class LanguagePlacementSkipRequest(BaseModel):
+    baseline_level: str = Field(default="B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+
+
 class LanguageSubscribeOut(BaseModel):
     ok: bool = True
     reference: str

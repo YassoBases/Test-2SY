@@ -18,6 +18,8 @@ class SpeakingKnowledgeMutationStatus(StrEnum):
     skipped_all = "skipped_all"
     mutation_failed = "mutation_failed"
     s7_unavailable = "s7_unavailable"
+    # S19: SPA evidence is quarantined — never default-applied into S2 mastery.
+    quarantined_promotion_assessment = "quarantined_promotion_assessment"
 
 
 @dataclass(frozen=True, slots=True)

@@ -91,6 +91,15 @@ class AlexTutoringContext:
     elicit_behaviors: tuple[str, ...]
     retry_focus: str
     conversation_constraints: tuple[str, ...]
+    case_title: str = ""
+    case_setting: str = ""
+    case_characters: tuple[str, ...] = ()
+    case_conflict: str = ""
+    case_continuation_hook: str = ""
+    case_category: str = ""
+    case_archetype: str = ""
+    case_stakeholders: tuple[str, ...] = ()
+    case_decision_point: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -101,6 +110,15 @@ class AlexTutoringContext:
             "elicit_behaviors": list(self.elicit_behaviors),
             "retry_focus": self.retry_focus,
             "conversation_constraints": list(self.conversation_constraints),
+            "case_title": self.case_title,
+            "case_setting": self.case_setting,
+            "case_characters": list(self.case_characters),
+            "case_conflict": self.case_conflict,
+            "case_continuation_hook": self.case_continuation_hook,
+            "case_category": self.case_category,
+            "case_archetype": self.case_archetype,
+            "case_stakeholders": list(self.case_stakeholders),
+            "case_decision_point": self.case_decision_point,
         }
 
 

@@ -30,8 +30,6 @@ def _candidate_chains(goal: WritingGoal) -> tuple[WritingKnowledgeChain, ...]:
         if chain and chain.chain_id not in seen:
             chains.append(chain)
             seen.add(chain.chain_id)
-    if chains:
-        return tuple(chains)
     for topic_key in profile.preferred_topic_ids:
         for chain in list_chains():
             if chain.topic_id.value == topic_key and chain.chain_id not in seen:
@@ -135,10 +133,39 @@ def select_writing_curriculum_node(
     weak = frozenset(weak_skills)
     chains = _candidate_chains(goal)
 
+    def _level_entry_node(chain: WritingKnowledgeChain) -> WritingKnowledgeChainNode | None:
+        has_current_level_progress = any(
+            node.node_id in completed_node_ids and node.official_cefr == official_cefr
+            for node in chain.nodes
+        )
+        if has_current_level_progress:
+            return None
+        for node in chain.nodes:
+            if node.official_cefr == official_cefr and node.node_id not in completed_node_ids:
+                return node
+        return None
+
     def _collect(remediation: bool) -> list[tuple[WritingKnowledgeChain, WritingKnowledgeChainNode, CurriculumSelectionScore, str]]:
         picks: list[tuple[WritingKnowledgeChain, WritingKnowledgeChainNode, CurriculumSelectionScore, str]] = []
         cefr_for_rules = official_cefr
         for chain in chains:
+            level_entry = None if remediation else _level_entry_node(chain)
+            if level_entry is not None:
+                score = _score_node(
+                    node=level_entry,
+                    chain=chain,
+                    goal=goal,
+                    official_cefr=official_cefr,
+                    completed_node_ids=completed_node_ids,
+                    recent_node_ids=recent,
+                    weak_skills=weak,
+                    recommended_next_id=level_entry.node_id,
+                    remediation=False,
+                )
+                picks.append((chain, level_entry, score, f"Level-entry selection for {goal.value}"))
+                if picks and picks[-1][0].chain_id == chain.chain_id:
+                    continue
+
             rec = recommend_next_node(
                 chain=chain,
                 completed_node_ids=completed_node_ids,

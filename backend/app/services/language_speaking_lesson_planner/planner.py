@@ -311,6 +311,39 @@ def _alex_context(node_label: str, reason: TargetSelectionReason, goal: str) -> 
     )
 
 
+def continue_alex_from_story_spine(
+    alex: AlexTutoringContext,
+    *,
+    title: str = "",
+    setting: str = "",
+    characters: list[str] | tuple[str, ...] | None = None,
+    conflict: str = "",
+    continuation_hook: str = "",
+    case_category: str = "",
+    case_archetype: str = "",
+    stakeholders: list[str] | tuple[str, ...] | None = None,
+    decision_point: str = "",
+) -> AlexTutoringContext:
+    """Bind the live speaking context to the authored educational case."""
+
+    chars = tuple(str(c).strip() for c in (characters or ()) if str(c).strip())
+    stakes = tuple(str(s).strip() for s in (stakeholders or ()) if str(s).strip())
+    hook = (continuation_hook or alex.case_continuation_hook or "").strip()
+    return dataclasses.replace(
+        alex,
+        case_title=(title or alex.case_title).strip(),
+        case_setting=(setting or alex.case_setting).strip(),
+        case_characters=chars or alex.case_characters,
+        case_conflict=(conflict or alex.case_conflict).strip(),
+        case_continuation_hook=hook,
+        case_category=(case_category or alex.case_category).strip(),
+        case_archetype=(case_archetype or alex.case_archetype).strip(),
+        case_stakeholders=stakes or alex.case_stakeholders,
+        case_decision_point=(decision_point or alex.case_decision_point).strip(),
+        communicative_scenario=hook or alex.communicative_scenario,
+    )
+
+
 def assemble_speaking_lesson_blueprint(
     recommendation: DiagnosticRecommendation,
     *,

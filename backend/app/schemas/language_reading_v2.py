@@ -48,6 +48,9 @@ class GenerationBlueprint(BaseModel):
     under_sampled_subskills: list[str] = Field(default_factory=list)
     weak_subskills: list[str] = Field(default_factory=list)
     subskill_targeting_reason: str | None = None
+    grammar_id: str | None = None
+    grammar_title: str | None = None
+    grammar_prompt_block: str | None = None
 
     @model_validator(mode="after")
     def _sync_question_count(self) -> "GenerationBlueprint":
@@ -82,6 +85,8 @@ class GeneratedReadingActivity(BaseModel):
     passage: str
     word_count: int = Field(ge=1)
     grammar_tags: list[str] = Field(default_factory=list)
+    grammar_id: str | None = None
+    grammar_title: str | None = None
     vocab_tags: list[str] = Field(default_factory=list)
     skill_tags: list[str] = Field(default_factory=list)
     difficulty_score: float = Field(ge=0.0, le=100.0)

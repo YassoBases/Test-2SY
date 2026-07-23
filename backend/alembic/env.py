@@ -56,6 +56,21 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Alembic defaults version_num to VARCHAR(32), but this repository has
+        # historical revision IDs longer than 32 characters. Ensure the
+        # bookkeeping table can store them before Alembic updates it.
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS alembic_version (
+                version_num VARCHAR(128) NOT NULL,
+                CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+            )
+            """
+        )
+        connection.exec_driver_sql(
+            "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
+        )
+        connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

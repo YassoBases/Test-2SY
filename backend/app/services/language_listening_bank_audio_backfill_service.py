@@ -64,6 +64,7 @@ from app.services.language_supertonic_service import (
     language_tts_audio_extension,
     synthesize_language_speech,
 )
+from app.services.language_listening_tts.voice_config import default_voice
 from app.services.tts_service import prepare_synthesis_text
 
 logger = logging.getLogger(__name__)
@@ -269,7 +270,7 @@ async def run_backfill(
     scoped = bool(stable_key_prefix or source)
 
     settings = get_settings()
-    voice = (settings.LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
+    voice = default_voice()
     upload_dir = Path(settings.UPLOAD_DIR)
     summary = BackfillSummary(apply=apply)
 

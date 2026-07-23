@@ -6,8 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.language_writing_bundles import WritingJourneyBundleOut
 from app.services.language_learner_memory_service import get_memory
-from app.services.language_learning_facts.journey_assembler import resolve_personal_goal_from_memory
-from app.services.language_learning_goal.types import LearningGoal
 from app.services.language_level_utils import CEFR_RANK, RANK_CEFR
 from app.services.language_progression_service import ensure_progression_row
 from app.services.language_promotion_readiness.types import ReadinessStatus
@@ -34,14 +32,10 @@ from app.services.language_writing_progression.storage import (
     merge_completed_nodes,
     writing_state_from_payload,
 )
-from app.services.language_writing_runtime.student_context import official_writing_cefr_for_student
-
-
-def _writing_goal_from_learning(learning_goal: LearningGoal) -> WritingGoal:
-    try:
-        return WritingGoal(learning_goal.value)
-    except ValueError:
-        return WritingGoal.general_english
+from app.services.language_writing_runtime.student_context import (
+    official_writing_cefr_for_student,
+    writing_goal_from_preferences,
+)
 
 
 def _target_cefr(official: str) -> str:
@@ -62,11 +56,7 @@ async def build_writing_journey_bundle(
 ) -> WritingJourneyBundleOut:
     official = await official_writing_cefr_for_student(db, student_id=student_id, language_id=language_id)
     memory = await get_memory(db, student_id=student_id, language_id=language_id)
-    personal = resolve_personal_goal_from_memory(
-        learning_goals=memory.get("learning_goals") if memory else None,
-        future_goal=memory.get("future_goal") if memory else None,
-    )
-    writing_goal = _writing_goal_from_learning(personal)
+    writing_goal = writing_goal_from_preferences(memory)
     wprofile = writing_profile_for_goal(writing_goal)
 
     row = await ensure_progression_row(db, student_id=student_id, language_id=language_id)

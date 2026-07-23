@@ -10,7 +10,7 @@ MaleGender = "male"
 
 def default_voice() -> str:
     settings = get_settings()
-    return (settings.LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
+    return (settings.LANGUAGE_SUPERTONIC_VOICE_FEMALE or settings.LANGUAGE_SUPERTONIC_VOICE or "F1").strip() or "F1"
 
 
 def female_voice() -> str:

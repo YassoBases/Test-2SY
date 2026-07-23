@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -23,8 +24,12 @@ from app.services.language_content_service import (
     pass_threshold_for_item,
 )
 from app.services.language_engagement_service import record_activity, upsert_vocabulary_from_lesson
+from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+from app.services.language_grammar_skill_context import complete_current_skill_activity_async
 from app.services.language_learner_events import record_lesson_questions
 from app.services.language_placement_scoring_service import normalize_choice_answer, score_mcq
+
+logger = logging.getLogger(__name__)
 
 
 def _reading_question_results(body: dict | None, answers: dict[str, dict]) -> list[dict]:
@@ -195,6 +200,22 @@ async def submit_reading(
         db, student_id=student_id, language_id=language.id, skill=LanguageSkill.reading,
         level=item.level, question_results=question_results, source="reading",
     )
+    if passed:
+        try:
+            await complete_current_skill_activity_async(
+                db,
+                student_id=student_id,
+                language_id=language.id,
+                skill=GrammarEvidenceSourceSkill.reading,
+                score=score_percent,
+                activity_id=f"reading:{item.id}:{progress.attempt_count}",
+                activity_type="reading",
+                lesson_id=str(item.id),
+                context=f"reading:{item.id}",
+                observation_id=f"ev_reading_{item.id}_{progress.attempt_count}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("grammar reading evidence completion failed: %s", exc)
     return {
         "content_item_id": item.id,
         "score_percent": score_percent,
@@ -258,6 +279,22 @@ async def submit_listening(
         db, student_id=student_id, language_id=language.id, skill=LanguageSkill.listening,
         level=item.level, question_results=question_results, source="listening",
     )
+    if passed:
+        try:
+            await complete_current_skill_activity_async(
+                db,
+                student_id=student_id,
+                language_id=language.id,
+                skill=GrammarEvidenceSourceSkill.listening,
+                score=score_percent,
+                activity_id=f"listening:{item.id}:{progress.attempt_count}",
+                activity_type="listening",
+                lesson_id=str(item.id),
+                context=f"listening:{item.id}",
+                observation_id=f"ev_listening_{item.id}_{progress.attempt_count}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("grammar listening evidence completion failed: %s", exc)
     # Adaptive: nudge the listening level so future lessons track performance (generic CEFR nudge).
     from app.models.language.analytics import LanguageAnalytics
     from app.services.language_reading_service import nudge_reading_level

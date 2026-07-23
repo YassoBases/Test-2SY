@@ -7,6 +7,7 @@ import {
   startSpeakingJourneySession,
 } from '../api/speakingJourney.js'
 import { getErrorMessage } from '../api/client.js'
+import { studentSafeJourneyError, classifySpeakingError } from '../utils/speakingRuntimeMeta.js'
 
 /**
  * Projection-only Speaking journey state — no educational decision logic.
@@ -82,16 +83,43 @@ export function useSpeakingJourney() {
   const canContinueActivity = computed(
     () => Boolean(hasActiveSession.value && currentActivityId.value && !liveExecutionReady.value),
   )
+  const hasPlan = computed(() => Boolean(readModel.value?.has_plan))
+  const hasBlueprint = computed(() => Boolean(readModel.value?.has_blueprint))
+  const improvingSkillsAvailable = computed(() =>
+    Boolean(readModel.value?.improving_skills_available),
+  )
+  const retentionSignalPresent = computed(() =>
+    Boolean(readModel.value?.retention_signal_present),
+  )
+  const transferSignalPresent = computed(() =>
+    Boolean(readModel.value?.transfer_signal_present),
+  )
+  const todaySessionPhase = computed(() => journey.value?.today_session_phase || '')
+  const nextRecommendation = computed(() => journey.value?.next_recommendation || '')
+  const returningFromAlex = ref(false)
+  const errorKind = ref('')
+
+  function setSafeError(err, fallback) {
+    const raw = getErrorMessage(err, fallback)
+    errorKind.value = classifySpeakingError(raw)
+    error.value = studentSafeJourneyError(raw, fallback)
+  }
+
+  function clearError() {
+    error.value = ''
+    errorKind.value = ''
+  }
 
   async function loadJourney({ force = false } = {}) {
     if (!force && journey.value && !error.value) return journey.value
     loading.value = true
     error.value = ''
+    errorKind.value = ''
     try {
       journey.value = await fetchSpeakingJourney()
       return journey.value
     } catch (err) {
-      error.value = getErrorMessage(err, 'Unable to load speaking journey')
+      setSafeError(err, 'Unable to load speaking journey')
       throw err
     } finally {
       loading.value = false
@@ -101,7 +129,8 @@ export function useSpeakingJourney() {
   async function startSession() {
     starting.value = true
     sessionOutcome.value = null
-    error.value = ''
+    returningFromAlex.value = false
+    clearError()
     try {
       const started = await startSpeakingJourneySession()
       lastStarted.value = started
@@ -111,29 +140,38 @@ export function useSpeakingJourney() {
       await loadJourney({ force: true })
       return started
     } catch (err) {
-      error.value = getErrorMessage(err, 'Unable to start speaking session')
+      setSafeError(err, 'Unable to start speaking session')
       throw err
     } finally {
       starting.value = false
     }
   }
 
+  function isFinalizeOutcome(raw) {
+    return Boolean(raw && typeof raw === 'object' && raw.outcome_kind != null && raw.outcome_kind !== '')
+  }
+
   async function continueActivity() {
     const activityId = currentActivityId.value
     if (!activityId) return null
     advancing.value = true
-    error.value = ''
+    clearError()
     try {
       const raw = await completeSpeakingJourneyActivity(activityId)
-      lastStarted.value = {
-        ...(lastStarted.value || {}),
-        current_activity: raw.current_activity || null,
-        phase: raw.phase,
+      // Last activity auto-finalizes via existing finalize_speaking_session — same outcome shape.
+      if (isFinalizeOutcome(raw)) {
+        sessionOutcome.value = raw
+      } else {
+        lastStarted.value = {
+          ...(lastStarted.value || {}),
+          current_activity: raw.current_activity || null,
+          phase: raw.phase,
+        }
       }
       await loadJourney({ force: true })
       return raw
     } catch (err) {
-      error.value = getErrorMessage(err, 'Unable to continue speaking session')
+      setSafeError(err, 'Unable to continue speaking session')
       throw err
     } finally {
       advancing.value = false
@@ -143,7 +181,8 @@ export function useSpeakingJourney() {
   async function prepareForLiveAlex() {
     preparingLive.value = true
     sessionOutcome.value = null
-    error.value = ''
+    returningFromAlex.value = false
+    clearError()
     try {
       const prepared = await prepareSpeakingJourneyForLive()
       lastStarted.value = prepared
@@ -153,7 +192,7 @@ export function useSpeakingJourney() {
       await loadJourney({ force: true })
       return prepared
     } catch (err) {
-      error.value = getErrorMessage(err, 'Unable to prepare Talk with Alex')
+      setSafeError(err, 'Unable to prepare Talk with Alex')
       throw err
     } finally {
       preparingLive.value = false
@@ -166,23 +205,34 @@ export function useSpeakingJourney() {
   }
 
   async function onLiveSessionEnded() {
+    returningFromAlex.value = true
     try {
       if (hasActiveSession.value || journeyLiveSessionId.value) {
         sessionOutcome.value = await finalizeSpeakingJourneySession()
       }
       await loadJourney({ force: true })
     } catch (err) {
-      error.value = getErrorMessage(err, 'Unable to finalize speaking session')
+      setSafeError(err, 'Unable to finalize speaking session')
       await loadJourney({ force: true })
     } finally {
       clearLiveHandoff()
     }
   }
 
+  function clearReturningFromAlex() {
+    returningFromAlex.value = false
+  }
+
+  function clearSessionOutcome() {
+    sessionOutcome.value = null
+    returningFromAlex.value = false
+  }
+
   return {
     journey,
     loading,
     error,
+    errorKind,
     starting,
     advancing,
     preparingLive,
@@ -226,11 +276,22 @@ export function useSpeakingJourney() {
     activitiesRemaining,
     liveExecutionReady,
     canContinueActivity,
+    hasPlan,
+    hasBlueprint,
+    improvingSkillsAvailable,
+    retentionSignalPresent,
+    transferSignalPresent,
+    todaySessionPhase,
+    nextRecommendation,
+    returningFromAlex,
     loadJourney,
     startSession,
     continueActivity,
     prepareForLiveAlex,
     clearLiveHandoff,
     onLiveSessionEnded,
+    clearReturningFromAlex,
+    clearSessionOutcome,
+    clearError,
   }
 }

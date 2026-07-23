@@ -33,5 +33,6 @@ def bundle_to_legacy_payload(bundle: LessonExperienceBundleOut) -> dict:
             "level_mismatch": bool(bundle.level_note),
             "level_mismatch_reason": bundle.level_note,
         },
+        "meta": bundle.meta.model_dump(),
         "bundle": bundle.model_dump(mode="json"),
     }

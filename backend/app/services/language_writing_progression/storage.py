@@ -17,6 +17,10 @@ WRITING_PROGRESSION_KEY = "writing"
 RECENT_NODE_WINDOW = 8
 
 
+def _content_item_has_student_owner() -> bool:
+    return hasattr(LanguageContentItem, "student_id")
+
+
 def empty_writing_state() -> dict[str, Any]:
     return {
         "completed_node_ids": [],
@@ -71,18 +75,24 @@ async def load_completed_nodes_from_lessons(
     language_id: int,
 ) -> frozenset[str]:
     """Derive completed chain nodes from persisted writing lessons."""
+    clauses = [
+        LanguageContentItem.language_id == language_id,
+        LanguageContentItem.skill == LanguageSkill.writing,
+        LanguageContentItem.content_type == "writing_prompt",
+    ]
+    if _content_item_has_student_owner():
+        clauses.append(LanguageContentItem.student_id == student_id)
     result = await db.execute(
-        select(LanguageContentItem.body_json).where(
-            LanguageContentItem.student_id == student_id,
-            LanguageContentItem.language_id == language_id,
-            LanguageContentItem.skill == LanguageSkill.writing,
-            LanguageContentItem.content_type == "writing_prompt",
-        )
+        select(LanguageContentItem.body_json).where(*clauses)
     )
     nodes: set[str] = set()
     for (body_json,) in result.all():
         if not isinstance(body_json, dict):
             continue
+        if not _content_item_has_student_owner():
+            owner = body_json.get("owner_student_id")
+            if owner is not None and str(owner) != str(student_id):
+                continue
         completion = body_json.get(WRITING_COMPLETION_KEY) or {}
         if isinstance(completion, dict) and completion.get("completed"):
             curriculum = body_json.get(WRITING_CURRICULUM_KEY) or {}

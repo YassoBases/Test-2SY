@@ -37,6 +37,11 @@ from app.schemas.language_reading_v2 import (
     ValidationResult,
 )
 from app.services.ai_service import generate_llm_json
+from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+from app.services.language_grammar_skill_context import (
+    build_skill_grammar_context,
+    complete_current_skill_activity_async,
+)
 
 CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
 INTERNAL_STAGES = ["Beginner", "Intermediate", "Advanced"]
@@ -73,6 +78,8 @@ SAFE_ACTIVITY_FIELDS = {
     "passage",
     "word_count",
     "grammar_tags",
+    "grammar_id",
+    "grammar_title",
     "vocab_tags",
     "skill_tags",
     "difficulty_score",
@@ -857,6 +864,29 @@ async def build_generation_blueprint(
         internal_stage=stage,
     )
     target_subskills, target_reason = _target_subskills_from_evidence(evidence)
+    grammar_ctx = await build_skill_grammar_context(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        source_skill=GrammarEvidenceSourceSkill.reading,
+    )
+    target_grammar_tags = _GRAMMAR_BY_LEVEL[cefr]
+    grammar_id = None
+    grammar_title = None
+    grammar_prompt_block = None
+    if grammar_ctx is not None:
+        grammar_id = grammar_ctx.grammar_id
+        grammar_title = grammar_ctx.display_name
+        grammar_prompt_block = grammar_ctx.prompt_block()
+        target_grammar_tags = list(
+            dict.fromkeys(
+                [
+                    grammar_ctx.grammar_id,
+                    grammar_ctx.display_name,
+                    *list(grammar_ctx.grammar_targets),
+                ]
+            )
+        )
 
     return GenerationBlueprint(
         cefr_level=cefr,
@@ -868,7 +898,7 @@ async def build_generation_blueprint(
         vocabulary_difficulty=_vocabulary_difficulty_for(cefr, stage),
         target_vocab_tags=_VOCAB_BY_LEVEL[cefr],
         required_vocab_items=[],
-        target_grammar_tags=_GRAMMAR_BY_LEVEL[cefr],
+        target_grammar_tags=target_grammar_tags,
         banned_above_level_grammar=[
             tag
             for level in CEFR_LEVELS[CEFR_LEVELS.index(cefr) + 1 :]
@@ -894,6 +924,9 @@ async def build_generation_blueprint(
         under_sampled_subskills=[item["name"] for item in evidence.get("under_sampled_subskills") or []],
         weak_subskills=[item["name"] for item in evidence.get("weak_subskills") or []],
         subskill_targeting_reason=target_reason,
+        grammar_id=grammar_id,
+        grammar_title=grammar_title,
+        grammar_prompt_block=grammar_prompt_block,
         **recent_context,
     )
 
@@ -1350,6 +1383,8 @@ def generate_reading_activity_from_blueprint(blueprint: GenerationBlueprint) -> 
         passage=passage,
         word_count=len(_word_tokens(passage)),
         grammar_tags=blueprint.target_grammar_tags[:3],
+        grammar_id=blueprint.grammar_id,
+        grammar_title=blueprint.grammar_title,
         vocab_tags=blueprint.target_vocab_tags[:3],
         skill_tags=blueprint.reading_subskills,
         difficulty_score=blueprint.difficulty_score,
@@ -1594,6 +1629,21 @@ def validate_generated_activity(activity: dict[str, Any] | GeneratedReadingActiv
     _validate_level_readability(parsed.passage, blueprint, issues)
     if not parsed.grammar_tags:
         issues.append(ValidationIssue(code="missing_grammar_tags", message="Activity must include grammar tags"))
+    if blueprint.grammar_id:
+        if parsed.grammar_id != blueprint.grammar_id:
+            issues.append(
+                ValidationIssue(
+                    code="grammar_id_mismatch",
+                    message="Activity grammar_id does not match the current Grammar target",
+                )
+            )
+        if blueprint.grammar_id not in parsed.grammar_tags:
+            issues.append(
+                ValidationIssue(
+                    code="grammar_id_not_tagged",
+                    message="Activity grammar tags must include the current Grammar target",
+                )
+            )
     if not parsed.vocab_tags:
         issues.append(ValidationIssue(code="missing_vocab_tags", message="Activity must include vocabulary tags"))
     if not set(blueprint.target_grammar_tags).intersection(parsed.grammar_tags):
@@ -1706,6 +1756,8 @@ def reading_v2_generation_prompt(blueprint: GenerationBlueprint, *, validation_e
         "word_count": "integer",
         "cefr_level": blueprint.cefr_level,
         "internal_stage": blueprint.internal_stage,
+        "grammar_id": blueprint.grammar_id or "null",
+        "grammar_title": blueprint.grammar_title or "null",
         "grammar_tags": ["string"],
         "vocab_tags": ["string"],
         "skill_tags": ["string"],
@@ -1809,6 +1861,7 @@ Must include these control fields from the blueprint:
 - recent_titles / recent_topics / recent_topic_tags / recent_passage_summaries / recent_character_names / recent_question_stems
 - preferred_topic_rotation
 - target_subskills / under_sampled_subskills / weak_subskills / subskill_targeting_reason
+- grammar_id / grammar_title / grammar_prompt_block when present
 
 Hard requirements:
 - Passage must be between {blueprint.word_count_min} and {blueprint.word_count_max} words.
@@ -1828,6 +1881,8 @@ Hard requirements:
 - Do not generate another school/study/library/new-words routine if recent attempts already used that pattern.
 - If recent activities are about daily English study, choose a different simple situation such as a family meal, classroom object, simple shopping trip, pet care, weekend morning, park visit, school bag, birthday card, simple house routine, or bus ride.
 - Include at least one target grammar tag and one target vocabulary tag.
+- If grammar_id is present, return the exact same grammar_id and grammar_title, include grammar_id in grammar_tags, and make the passage/questions naturally practice that grammar target.
+- If grammar_prompt_block is present, follow it as authoritative; do not replace it with a different grammar topic.
 - Include topic_tags and diversity_metadata.topic_tags.
 - Include diversity_metadata.character_names and diversity_metadata.passage_summary.
 - Include diversity_metadata.anti_repetition_notes explaining how this activity differs from recent attempts.
@@ -2469,6 +2524,22 @@ async def submit_reading_v2_attempt(
     evidence_update = await record_attempt_evidence(db, attempt=attempt, question_results=question_results)
     state_row = await get_or_create_student_state(db, student_id=student_id, language_id=language_id)
     passed = bool(evidence_update.get("passed", score_percent >= PRACTICE_PASS_THRESHOLD))
+    if passed:
+        try:
+            await complete_current_skill_activity_async(
+                db,
+                student_id=student_id,
+                language_id=language_id,
+                skill=GrammarEvidenceSourceSkill.reading,
+                score=score_percent,
+                activity_id=f"reading-v2:{attempt.id}",
+                activity_type="reading",
+                lesson_id=str(attempt.id),
+                context=f"reading-v2:{attempt.cefr_level}:{attempt.internal_stage}",
+                observation_id=f"ev_reading_v2_{attempt.id}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("grammar reading-v2 evidence completion failed: %s", exc)
     return ReadingV2SubmitAttemptOut(
         attempt_id=attempt.id,
         score_percent=score_percent,

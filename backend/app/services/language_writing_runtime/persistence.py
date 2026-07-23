@@ -43,6 +43,7 @@ def build_audit_persistence(
 
 def build_body_json(
     *,
+    student_id: int | None = None,
     blueprint: WritingLessonBlueprint,
     canonical: WritingCanonicalGeneratedLesson,
     audit: WritingGenerationAuditRecord,
@@ -62,7 +63,7 @@ def build_body_json(
     }
     if selection_metadata:
         curriculum.update(selection_metadata)
-    return {
+    payload: dict[str, object] = {
         "prompt": canonical.writing_prompt,
         "mission_title": canonical.mission_title,
         "writing_context": canonical.writing_context,
@@ -90,6 +91,9 @@ def build_body_json(
         ),
         "canonical_lesson": canonical.to_dict(),
     }
+    if student_id is not None:
+        payload["owner_student_id"] = student_id
+    return payload
 
 
 async def persist_generated_writing_lesson(
@@ -105,14 +109,14 @@ async def persist_generated_writing_lesson(
     selection_metadata: dict[str, object] | None = None,
 ) -> LanguageContentItem:
     """Store generated lesson for student — audit metadata under writing_generation."""
-    item = LanguageContentItem(
+    item_kwargs = dict(
         language_id=language_id,
-        student_id=student_id,
         skill=LanguageSkill.writing,
         level=_level_from_cefr(blueprint.official_cefr),
         content_type=CONTENT_TYPE,
         title=canonical.mission_title[:500],
         body_json=build_body_json(
+            student_id=student_id,
             blueprint=blueprint,
             canonical=canonical,
             audit=audit,
@@ -122,6 +126,9 @@ async def persist_generated_writing_lesson(
         ),
         is_published=True,
     )
+    if hasattr(LanguageContentItem, "student_id"):
+        item_kwargs["student_id"] = student_id
+    item = LanguageContentItem(**item_kwargs)
     db.add(item)
     await db.flush()
     await db.refresh(item)

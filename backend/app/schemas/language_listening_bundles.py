@@ -80,6 +80,9 @@ class LessonExperienceMetaOut(BaseModel):
     facts_schema_version: str = "1.0"
     reservation_id: str | None = None
     pinned_until: Literal["completed", "skipped", "expired"] | None = None
+    activity_session_id: str | None = None
+    grammar_id: str | None = None
+    grammar_title: str | None = None
 
 
 class LessonExperienceBundleOut(BaseModel):

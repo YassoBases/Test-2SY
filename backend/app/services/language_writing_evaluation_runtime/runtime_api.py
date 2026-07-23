@@ -137,6 +137,9 @@ async def submit_writing_draft_for_evaluation(
 
 
     body = dict(item.body_json or {})
+    owner = body.get("owner_student_id")
+    if owner is not None and str(owner) != str(student_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Writing lesson not found")
 
     if WRITING_BLUEPRINT_KEY not in body:
 

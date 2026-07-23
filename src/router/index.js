@@ -304,6 +304,67 @@ const routes = [
         meta: { title: 'Subscriptions' },
       },
       {
+        path: 'english-journey',
+        name: 'student-english-journey',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyHomeView.vue')),
+        meta: {
+          title: 'English Journey',
+          titleKey: 'routes.studentEnglishJourney',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/stage/:grammarId',
+        name: 'student-english-journey-stage',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyStageView.vue')),
+        meta: {
+          title: 'Stage',
+          titleKey: 'routes.studentEnglishJourneyStage',
+          languageModule: true,
+        },
+        props: true,
+      },
+      {
+        path: 'english-journey/session',
+        name: 'student-english-journey-session',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneySessionView.vue')),
+        meta: {
+          title: 'Session',
+          titleKey: 'routes.studentEnglishJourneySession',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/complete',
+        name: 'student-english-journey-complete',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyCompleteView.vue')),
+        meta: {
+          title: 'Stage complete',
+          titleKey: 'routes.studentEnglishJourneyComplete',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/review',
+        name: 'student-english-journey-review',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyReviewView.vue')),
+        meta: {
+          title: 'Review',
+          titleKey: 'routes.studentEnglishJourneyReview',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'english-journey/achievements',
+        name: 'student-english-journey-achievements',
+        component: lazyRoute(() => import('../views/student/english-journey/EnglishJourneyAchievementsView.vue')),
+        meta: {
+          title: 'Achievements',
+          titleKey: 'routes.studentEnglishJourneyAchievements',
+          languageModule: true,
+        },
+      },
+      {
         path: 'languages',
         name: 'student-languages',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguagesHubView.vue')),
@@ -384,6 +445,55 @@ const routes = [
         name: 'student-languages-speaking',
         component: lazyRoute(() => import('../views/student/languages/StudentLanguageSpeakingView.vue')),
         meta: { title: 'Speaking', languageModule: true },
+      },
+      {
+        path: 'grammar',
+        name: 'student-grammar',
+        component: lazyRoute(() => import('../views/student/grammar/StudentGrammarView.vue')),
+        meta: {
+          title: 'Grammar',
+          titleKey: 'routes.studentLanguagesGrammar',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'grammar/review',
+        name: 'student-grammar-review',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarReviewView.vue')),
+        meta: {
+          title: 'Grammar Review',
+          titleKey: 'routes.studentGrammarReview',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'grammar/complete',
+        name: 'student-grammar-complete',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarCompleteView.vue')),
+        meta: {
+          title: 'Grammar Complete',
+          titleKey: 'routes.studentGrammarComplete',
+          languageModule: true,
+        },
+      },
+      {
+        path: 'grammar/lesson-preview',
+        name: 'student-grammar-lesson-preview',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarLessonPreviewView.vue')),
+        meta: {
+          title: 'Grammar Lesson Preview',
+        },
+      },
+      {
+        path: 'grammar/topic/:grammarId',
+        name: 'student-grammar-topic',
+        component: lazyRoute(() => import('../views/student/grammar/GrammarTopicView.vue')),
+        meta: {
+          title: 'Grammar Lesson',
+          titleKey: 'routes.studentGrammarTopic',
+          languageModule: true,
+        },
+        props: true,
       },
       {
         path: 'languages/certificates',

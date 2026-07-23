@@ -231,6 +231,7 @@ const validationMessage = computed(() => {
 })
 
 const canSubmitDraft = computed(() => Boolean(lesson.value && draftText.value.trim()))
+const staleLessonError = 'انتهت صلاحية درس الكتابة. أنشئ درساً جديداً وحاول مرة ثانية.'
 
 async function startLesson() {
   try {
@@ -246,6 +247,12 @@ async function onSubmitDraft() {
   try {
     await submitDraft({ completeIfReady: false })
   } catch (err) {
+    if (err?.response?.status === 404) {
+      resetLesson()
+      resetRevision()
+      emit('error', new Error(staleLessonError))
+      return
+    }
     emit('error', err)
   }
 }
@@ -258,6 +265,12 @@ async function onComplete() {
       emit('completed', { lesson: lesson.value, turn: result, progress: result.lesson_progress })
     }
   } catch (err) {
+    if (err?.response?.status === 404) {
+      resetLesson()
+      resetRevision()
+      emit('error', new Error(staleLessonError))
+      return
+    }
     emit('error', err)
   }
 }

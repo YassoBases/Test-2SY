@@ -35,6 +35,14 @@ from app.models.language.reading_v2 import (
     LanguageReadingV2StageProgress,
     LanguageReadingV2StudentState,
 )
+from app.models.language.grammar_canonical_lesson import (
+    GrammarCanonicalLesson,
+    GrammarCanonicalLessonRevision,
+    GrammarCanonicalLessonRevisionUnitAttempt,
+    GrammarLessonChatMessage,
+    GrammarLessonChatSession,
+)
+from app.models.language.grammar_integrity import GrammarActivitySession, GrammarEvidenceLedger
 from app.models.language.progress import (
     LanguageCurriculumProgress,
     LanguageListeningProgress,
@@ -61,6 +69,13 @@ __all__ = [
     "LanguageReadingV2Attempt",
     "LanguageReadingV2StageProgress",
     "LanguageReadingV2StudentState",
+    "GrammarCanonicalLesson",
+    "GrammarCanonicalLessonRevision",
+    "GrammarCanonicalLessonRevisionUnitAttempt",
+    "GrammarLessonChatMessage",
+    "GrammarLessonChatSession",
+    "GrammarActivitySession",
+    "GrammarEvidenceLedger",
     "LanguagePlacementAttempt",
     "LanguagePlacementResponse",
     "LanguageAssessment",

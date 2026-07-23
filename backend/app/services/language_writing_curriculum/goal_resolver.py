@@ -21,8 +21,8 @@ _GOAL_ALIASES: dict[str, WritingGoal] = {
     "creative": WritingGoal.creative_writing,
     "creative_writing": WritingGoal.creative_writing,
     "daily": WritingGoal.daily_communication,
-    "daily_communication": WritingGoal.daily_communication,
     "daily_life": WritingGoal.daily_communication,
+    "daily_communication": WritingGoal.daily_communication,
     "communication": WritingGoal.daily_communication,
 }
 

@@ -70,5 +70,15 @@
   "parentLinkStudent": "ربط طالب",
   "parentMessages": "الرسائل",
   "parentSettings": "الإعدادات",
-  "adminSettings": "إعدادات المسؤول"
+  "adminSettings": "إعدادات المسؤول",
+  "studentEnglishJourney": "رحلة الإنجليزية",
+  "studentEnglishJourneyStage": "مرحلة",
+  "studentEnglishJourneySession": "جلسة اليوم",
+  "studentEnglishJourneyComplete": "اكتملت المرحلة",
+  "studentEnglishJourneyReview": "مراجعة",
+  "studentEnglishJourneyAchievements": "إنجازات الرحلة",
+  "studentLanguagesGrammar": "القواعد",
+  "studentGrammarReview": "مراجعة القواعد",
+  "studentGrammarComplete": "اكتملت القواعد",
+  "studentGrammarTopic": "درس القواعد"
 }

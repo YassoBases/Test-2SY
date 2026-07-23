@@ -11,7 +11,7 @@ from app.services.language_writing_generation.repair_types import (
     RepairActionCode,
     RepairResult,
 )
-from app.services.language_writing_generation.validator_types import ValidationResult
+from app.services.language_writing_generation.validator_types import ValidationIssueCode, ValidationResult
 from app.services.language_writing_lesson_planner.types import WritingLessonBlueprint
 
 
@@ -47,6 +47,7 @@ def repair_lesson_draft(
     """Apply structural repairs — copy missing fields from blueprint/mission only."""
     mission = build_mission_from_blueprint(blueprint)
     actions: list[RepairAction] = []
+    issue_codes = {issue.code for issue in validation.issues} if validation else set()
 
     checklist = draft.checklist
     if not checklist:
@@ -108,7 +109,7 @@ def repair_lesson_draft(
         actions.append(expected_action)
 
     grammar_display = draft.grammar_display
-    if not grammar_display:
+    if not grammar_display or ValidationIssueCode.grammar_metadata_mismatch in issue_codes:
         grammar_display = blueprint.grammar_targets.primary.replace("_", " ")
         actions.append(
             RepairAction(
@@ -119,7 +120,7 @@ def repair_lesson_draft(
         )
 
     vocabulary_display = draft.vocabulary_display
-    if not vocabulary_display:
+    if not vocabulary_display or ValidationIssueCode.vocabulary_metadata_mismatch in issue_codes:
         vocabulary_display = ", ".join(blueprint.vocabulary_targets.primary[:6])
         actions.append(
             RepairAction(

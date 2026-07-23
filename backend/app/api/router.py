@@ -12,8 +12,23 @@ from app.api import (
     gamification,
     language_certificate,
     language_exam,
+    language_grammar_student,
     language_lessons,
+    language_learning_journey,
+    language_official_promotion,
+    language_promotion_test,
+    language_speaking_discussion,
+    language_speaking_educational_package,
+    language_speaking_journey,
+    language_speaking_lesson_runtime,
+    language_speaking_live,
+    language_speaking_live_bridge,
+    language_speaking_official_promotion,
+    language_speaking_promotion_test,
+    language_speaking_runtime_integration,
     language_student,
+    language_writing_official_promotion,
+    language_writing_promotion_test,
     lesson_publish,
     notifications,
     onboarding,
@@ -54,6 +69,21 @@ api_router.include_router(teacher_students.router)
 api_router.include_router(student.router)
 api_router.include_router(planner.router)
 api_router.include_router(student_courses.router)
+api_router.include_router(language_promotion_test.router)
+api_router.include_router(language_official_promotion.router)
+api_router.include_router(language_grammar_student.router)
+api_router.include_router(language_learning_journey.router)
+api_router.include_router(language_speaking_official_promotion.router)
+api_router.include_router(language_speaking_educational_package.router)
+api_router.include_router(language_speaking_journey.router)
+api_router.include_router(language_speaking_lesson_runtime.router)
+api_router.include_router(language_speaking_discussion.router)
+api_router.include_router(language_speaking_live.router)
+api_router.include_router(language_speaking_live_bridge.router)
+api_router.include_router(language_speaking_promotion_test.router)
+api_router.include_router(language_speaking_runtime_integration.router)
+api_router.include_router(language_writing_promotion_test.router)
+api_router.include_router(language_writing_official_promotion.router)
 api_router.include_router(language_student.router)
 api_router.include_router(language_exam.router)
 api_router.include_router(language_lessons.router)
