@@ -1,6 +1,12 @@
+from types import SimpleNamespace
+
 from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageLevel, LanguageSkill
-from app.services.language_listening_service import _is_current_personalized_listening_item
+from app.services.language_learner_context_service import LanguageLearnerContext, StudentIdentity
+from app.services.language_listening_service import (
+    _is_current_personalized_listening_item,
+    _listening_personalization_block,
+)
 from app.services.language_lesson_generation_service import _to_body
 
 
@@ -96,3 +102,32 @@ def test_listening_runtime_rejects_stale_non_grammar_reserved_lessons() -> None:
         student_id=123,
         grammar_id="gram_be_present",
     ) is True
+
+
+def test_listening_personalization_block_preserves_level_context_and_diversity() -> None:
+    learner = LanguageLearnerContext(
+        student_identity=StudentIdentity(student_id=123),
+        current_cefr_level="B1",
+        effective_level="B1",
+        interests=["technology", "community events"],
+        future_goal="general English",
+    )
+    grammar_ctx = SimpleNamespace(
+        grammar_id="gram_present_perfect",
+        recommended_contexts=("recent experiences", "life updates"),
+    )
+
+    block, topics = _listening_personalization_block(
+        learner=learner,
+        grammar_ctx=grammar_ctx,
+        level="B1",
+        student_id=123,
+        profile_hash="abc123",
+        recent_titles=["Gate Change Announcement"],
+    )
+
+    assert "CEFR B1" in block
+    assert "variation_seed" in block
+    assert "Gate Change Announcement" in block
+    assert "recent experiences" in block
+    assert topics

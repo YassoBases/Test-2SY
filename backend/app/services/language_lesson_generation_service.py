@@ -137,6 +137,9 @@ def _build_prompt(skill: str, level: str, count: int, themes: str, topics: str =
             "- sentence_completion: a sentence about what was said with ONE blank '_____' + 4 options.\n"
             "Include at least 1 of {true_false_notgiven, sentence_completion}. For each question add a short "
             "English explanation, and evidence_quote = an EXACT substring from the transcript ('' for Not Given). "
+            "Use the adaptive context to choose the student's level, purpose, and scenario. Avoid repeating stock "
+            "airport gate announcements, hotel bookings, or travel delays unless the adaptive context explicitly "
+            "makes that the best fit. "
             'Return ONLY JSON: {"items":[{"title": str, "audio_transcript": str, '
             '"instructions": short English listening instruction, '
             '"questions":[{"stem": str, "choices":[2-4 strings], "correct_index": int, '
@@ -251,15 +254,17 @@ def _to_body(skill: str, level: str, raw: dict) -> dict | None:
     return {"title": title, "body": body}
 
 
-async def _existing_titles(db: AsyncSession, *, language_id: int, skill: str, level: str) -> set[str]:
-    rows = await db.execute(
-        select(LanguageContentItem.title).where(
-            LanguageContentItem.language_id == language_id,
-            LanguageContentItem.skill == LanguageSkill(skill),
-            LanguageContentItem.level == LanguageLevel(level),
-            LanguageContentItem.content_type == CONTENT_TYPE[skill],
-        )
+async def _existing_titles(
+    db: AsyncSession, *, language_id: int, skill: str, level: str, student_id: int | None = None
+) -> set[str]:
+    _ = student_id
+    query = select(LanguageContentItem.title).where(
+        LanguageContentItem.language_id == language_id,
+        LanguageContentItem.skill == LanguageSkill(skill),
+        LanguageContentItem.level == LanguageLevel(level),
+        LanguageContentItem.content_type == CONTENT_TYPE[skill],
     )
+    rows = await db.execute(query)
     return {str(t).strip() for (t,) in rows.all() if t}
 
 
@@ -296,7 +301,9 @@ async def generate_and_store(
     themes = ", ".join(
         f"{o.get('grammar') or ''} / {o.get('vocab') or ''}".strip(" /") for o in objectives[:5]
     )
-    existing = await _existing_titles(db, language_id=language_id, skill=skill, level=level)
+    existing = await _existing_titles(
+        db, language_id=language_id, skill=skill, level=level, student_id=student_id
+    )
     inserted = 0
     remaining = count
     while remaining > 0:

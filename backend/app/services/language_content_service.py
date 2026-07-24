@@ -124,6 +124,9 @@ async def get_content_item(
         return None
     if skill is not None and item.skill != skill:
         return None
+    owner_id = getattr(item, "student_id", None)
+    if owner_id is not None and int(owner_id) != int(student_id):
+        return None
     # NOTE: no level gate here. Adaptive reading serves cross-level content by id, so a direct
     # fetch/submit must work for any valid published item the student was given.
     return item
@@ -283,6 +286,9 @@ async def get_reading_lesson(
         or not item.is_published
     ):
         return None, None  # type: ignore[return-value]
+    owner_id = getattr(item, "student_id", None)
+    if owner_id is not None and int(owner_id) != int(student_id):
+        return None, None  # type: ignore[return-value]
     prog = await db.execute(
         select(LanguageReadingProgress).where(
             LanguageReadingProgress.student_id == student_id,
@@ -309,6 +315,9 @@ async def get_listening_lesson(
         or item.content_type != "lesson"
         or not item.is_published
     ):
+        return None, None, None, False  # type: ignore[return-value]
+    owner_id = getattr(item, "student_id", None)
+    if owner_id is not None and int(owner_id) != int(student_id):
         return None, None, None, False  # type: ignore[return-value]
     prog = await db.execute(
         select(LanguageListeningProgress).where(

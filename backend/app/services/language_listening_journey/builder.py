@@ -22,7 +22,12 @@ from app.services.language_learning_facts.journey_assembler import (
 from app.services.language_learning_narrative.journey_builder import build_journey_narrative
 from app.services.language_listening_journey import BUILDER_VERSION
 from app.services.language_listening_reservation import listening_session_reservation_service
-from app.services.language_listening_service import _official_listening_cefr, _target_listening_cefr
+from app.services.language_listening_service import (
+    _current_listening_grammar_id,
+    _is_current_personalized_listening_item,
+    _official_listening_cefr,
+    _target_listening_cefr,
+)
 from app.services.language_learner_memory_service import get_memory
 from app.services.language_promotion_readiness import evaluate_listening_promotion_readiness
 from app.services.language_promotion_stability import evaluate_listening_promotion_stability
@@ -88,8 +93,20 @@ async def build_listening_journey_bundle(
     )
     active_lifecycle = None
     if active_id is not None:
+        from app.models.language.content import LanguageContentItem
         from app.services.language_listening_reservation.storage import load_reservation_by_content
 
+        active_item = await db.get(LanguageContentItem, active_id)
+        grammar_id = await _current_listening_grammar_id(db, student_id=student_id, language_id=lid)
+        if not _is_current_personalized_listening_item(
+            active_item, student_id=student_id, grammar_id=grammar_id
+        ):
+            await listening_session_reservation_service.skip_reservation(
+                db, student_id=student_id, language_id=lid, content_item_id=active_id
+            )
+            active_id = None
+
+    if active_id is not None:
         reservation = await load_reservation_by_content(
             db, student_id=student_id, language_id=lid, content_item_id=active_id
         )

@@ -8,6 +8,7 @@ empty), then schedules background prefill to TARGET. Supertonic TTS is unchanged
 from __future__ import annotations
 
 import logging
+import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -409,6 +410,98 @@ async def _load_listening_pool_context(
     )
 
 
+async def _recent_student_listening_titles(
+    db: AsyncSession,
+    *,
+    student_id: int,
+    language_id: int,
+    level: str,
+    limit: int = 6,
+) -> list[str]:
+    if not _content_item_has_student_owner():
+        return []
+    rows = (
+        await db.execute(
+            select(LanguageContentItem.title)
+            .where(
+                LanguageContentItem.student_id == student_id,
+                LanguageContentItem.language_id == language_id,
+                LanguageContentItem.skill == LanguageSkill.listening,
+                LanguageContentItem.content_type == "lesson",
+                LanguageContentItem.level == LanguageLevel(level),
+            )
+            .order_by(LanguageContentItem.id.desc())
+            .limit(limit)
+        )
+    ).all()
+    return [str(title).strip() for (title,) in rows if str(title or "").strip()]
+
+
+def _pick_listening_topic_lane(
+    *,
+    learner: LanguageLearnerContext | None,
+    grammar_ctx,
+    seed: str,
+) -> str:
+    lanes: list[str] = []
+    if learner is not None:
+        lanes.extend(str(v).strip() for v in learner.interests[:4] if str(v).strip())
+        if learner.future_goal:
+            lanes.append(str(learner.future_goal).strip())
+    lanes.extend(str(v).strip() for v in getattr(grammar_ctx, "recommended_contexts", ()) if str(v).strip())
+    if not lanes:
+        lanes = [
+            "home routine",
+            "family conversation",
+            "neighborhood errand",
+            "class activity",
+            "shop or cafe interaction",
+            "health appointment",
+            "community event",
+            "simple work task",
+        ]
+    idx = int(seed[:4], 16) % len(lanes)
+    return lanes[idx]
+
+
+def _listening_personalization_block(
+    *,
+    learner: LanguageLearnerContext | None,
+    grammar_ctx,
+    level: str,
+    student_id: int,
+    profile_hash: str,
+    recent_titles: list[str],
+) -> tuple[str, str]:
+    seed_source = "|".join(
+        [
+            str(student_id),
+            str(level),
+            str(getattr(grammar_ctx, "grammar_id", "")),
+            str(profile_hash or ""),
+            "|".join(recent_titles[:4]),
+        ]
+    )
+    seed = hashlib.sha256(seed_source.encode("utf-8")).hexdigest()[:12]
+    lane = _pick_listening_topic_lane(learner=learner, grammar_ctx=grammar_ctx, seed=seed)
+    context_options = ", ".join(getattr(grammar_ctx, "recommended_contexts", ())[:4])
+    avoid = "; ".join(recent_titles[:5])
+    lines = [
+        "LISTENING PERSONALIZATION (authoritative):",
+        f"- actual lesson level: CEFR {level}",
+        f"- scenario lane: {lane}",
+        f"- variation_seed: {seed}",
+        "- preserve the learner's adaptive/progression context above; do not flatten everyone into the same lesson.",
+        "- create a fresh title, situation, names, details, and transcript; do not reuse stock wording.",
+    ]
+    if context_options:
+        lines.append(f"- grammar-suitable context options: {context_options}")
+    if avoid:
+        lines.append(f"- avoid recent titles for this learner: {avoid}")
+    topics = ", ".join(part for part in [lane, context_options] if part)
+    return "\n".join(lines), topics
+
+
 async def _has_audio_cache(db: AsyncSession, content_item_id: int) -> bool:
     row = (
         await db.execute(
@@ -450,6 +543,7 @@ async def _generate_pool_lessons(
     count: int,
     learner_context: str,
     metadata: dict[str, str],
+    learner: LanguageLearnerContext | None = None,
 ) -> int:
     if count <= 0 or not can_generate():
         return 0
@@ -488,7 +582,21 @@ async def _generate_pool_lessons(
     )
     if grammar_ctx is None:
         return 0
-    adaptive = merge_prompt_context(learner_context, grammar_ctx)
+    recent_titles = await _recent_student_listening_titles(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        level=level,
+    )
+    personalization, topics = _listening_personalization_block(
+        learner=learner,
+        grammar_ctx=grammar_ctx,
+        level=level,
+        student_id=student_id,
+        profile_hash=str(metadata.get("generation_profile_hash") or ""),
+        recent_titles=recent_titles,
+    )
+    adaptive = f"{merge_prompt_context(learner_context, grammar_ctx)}\n\n{personalization}"
     extras: dict = dict(metadata or {})
     extras.update(grammar_ctx.as_stamp_dict())
     try:
@@ -498,6 +606,7 @@ async def _generate_pool_lessons(
             skill="listening",
             level=level,
             count=count,
+            topics=topics,
             adaptive_context=adaptive,
             student_id=student_id,
             source=_PERSONALIZED_SOURCE,
@@ -558,6 +667,7 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
             count=1,
             learner_context=learner_context,
             metadata=metadata,
+            learner=ctx,
         )
         if made:
             consecutive_failures = 0
@@ -672,6 +782,7 @@ async def _resolve_listening_item(
     learner_context: str,
     metadata: dict[str, str],
     grammar_id: str | None = None,
+    learner: LanguageLearnerContext | None = None,
 ) -> LanguageContentItem | None:
     async def _select() -> LanguageContentItem | None:
         active = await _active_unseen_count(
@@ -686,6 +797,7 @@ async def _resolve_listening_item(
                 count=SYNC_FIRST_LESSON_COUNT,
                 learner_context=learner_context,
                 metadata=metadata,
+                learner=learner,
             )
         return await _unseen_personalized(
             db, student_id=student_id, language_id=language_id, level=level, grammar_id=grammar_id
@@ -765,6 +877,7 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
         learner_context=learner_context,
         metadata=metadata,
         grammar_id=grammar_id,
+        learner=ctx,
     )
     if item is None:
         return None, False
