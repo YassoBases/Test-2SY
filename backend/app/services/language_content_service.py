@@ -11,6 +11,7 @@ from app.models.language.analytics import LanguageAnalytics
 from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageLevel, LanguageSkill
 from app.models.language.progress import LanguageListeningProgress, LanguageReadingProgress
+from app.models.language.tts_cache import LanguageLessonAudioCache
 from app.models.media import MediaObject
 from app.services.language_subscription_service import get_default_language
 
@@ -339,6 +340,20 @@ async def resolve_listening_audio(db: AsyncSession, item: LanguageContentItem) -
     url = body.get("audio_url")
     if isinstance(url, str) and url.strip():
         return url.strip(), True
+    cached = (
+        await db.execute(
+            select(LanguageLessonAudioCache.public_url)
+            .where(
+                LanguageLessonAudioCache.content_item_id == item.id,
+                LanguageLessonAudioCache.voice_source.in_(("supertonic", "openai")),
+                LanguageLessonAudioCache.public_url.is_not(None),
+            )
+            .order_by(LanguageLessonAudioCache.generated_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if isinstance(cached, str) and cached.strip():
+        return cached.strip(), True
     return None, False
 
 

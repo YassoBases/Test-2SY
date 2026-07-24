@@ -18,7 +18,7 @@ from app.schemas.language_listening_bundles import (
     LessonPlaybackOut,
     LessonType,
 )
-from app.services.language_content_service import lesson_body_for_student
+from app.services.language_content_service import lesson_body_for_student, resolve_listening_audio
 from app.services.language_learning_facts.assembler import assemble_lesson_facts, assemble_progression_facts
 from app.services.language_learning_facts.types import PostLessonFacts
 from app.services.language_learning_goal import GOAL_KEY
@@ -29,7 +29,7 @@ from app.services.language_listening_explainability.facts import build_explainab
 from app.services.language_listening_explainability.signals import extract_signals
 from app.services.language_listening_lesson_experience import BUILDER_VERSION, FACTS_SCHEMA_VERSION
 from app.services.language_listening_lesson_experience.legacy_adapter import bundle_to_legacy_payload
-from app.services.language_listening_service import _ensure_audio, _official_listening_cefr, _target_listening_cefr
+from app.services.language_listening_service import _official_listening_cefr, _target_listening_cefr
 from app.services.language_listening_curriculum.memory import CURRICULUM_KEY
 
 
@@ -162,7 +162,7 @@ async def build_lesson_experience_bundle(
 ) -> LessonExperienceBundleOut:
     """Assemble canonical lesson bundle — lesson scope only."""
     body = lesson_body_for_student(item)
-    audio_url, audio_available = await _ensure_audio(db, item)
+    audio_url, audio_available = await resolve_listening_audio(db, item)
     official = official_cefr or await _official_listening_cefr(
         db, student_id=student_id, language_id=language_id
     )

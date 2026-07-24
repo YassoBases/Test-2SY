@@ -947,4 +947,5 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
             lesson["meta"]["grammar_title"] = grammar_ctx.display_name
     except Exception as exc:  # noqa: BLE001
         logger.warning("listening activity session issue failed: %s", exc)
-    return lesson, _needs_background_prefill(active_after)
+    needs_audio_prefill = not bool(playback.get("audio_available"))
+    return lesson, _needs_background_prefill(active_after) or needs_audio_prefill

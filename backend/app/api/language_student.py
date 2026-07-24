@@ -552,6 +552,7 @@ async def listening_next(
     response, schedule_prefill = await acquire_next_listening(
         db, student_id=student.id, attempt=max(1, attempt)
     )
+    await db.commit()
     if schedule_prefill:
         background_tasks.add_task(background_prefill_listening_pool, student_id=student.id)
     return response
@@ -570,6 +571,7 @@ async def listening_acquisition_status(
     response, schedule_prefill = await acquire_next_listening(
         db, student_id=student.id, attempt=max(1, attempt)
     )
+    await db.commit()
     if schedule_prefill:
         background_tasks.add_task(background_prefill_listening_pool, student_id=student.id)
     return response
