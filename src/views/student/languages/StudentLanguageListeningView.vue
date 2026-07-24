@@ -46,6 +46,15 @@
 
           <ListeningJourneyHero :journey="journey" />
 
+          <SkillStagePathMap
+            skill-label="Listening"
+            skill-key="listening"
+            :current-cefr="officialCefr"
+            :current-stage="learningStage"
+            current-reason="Complete more listening practice attempts."
+            class="mb-4"
+          />
+
           <ListeningJourneyPath :timeline-steps="timelineSteps" />
 
           <ListeningHowItWorks />
@@ -210,6 +219,8 @@ import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.
 
 import ListeningJourneyHero from '../../../components/language/ListeningJourneyHero.vue'
 
+import SkillStagePathMap from '../../../components/language/SkillStagePathMap.vue'
+
 import ListeningJourneyPath from '../../../components/language/ListeningJourneyPath.vue'
 
 import ListeningHowItWorks from '../../../components/language/ListeningHowItWorks.vue'
@@ -277,6 +288,10 @@ const {
   mcqQuestions,
 
   expiresAtMs,
+
+  officialCefr,
+
+  learningStage,
 
   activeGoalId,
 

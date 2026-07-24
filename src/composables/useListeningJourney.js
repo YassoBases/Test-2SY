@@ -23,6 +23,8 @@ export function useListeningJourney() {
   const officialCefr = computed(() => journey.value?.official_level || '—')
   const targetCefr = computed(() => journey.value?.journey_target?.level || '—')
   const targetLabel = computed(() => journey.value?.journey_target?.label || '—')
+  const learningStage = computed(() => journey.value?.learning_stage ?? 1)
+  const learningStageLabel = computed(() => journey.value?.learning_stage_label || '')
   const readinessBand = computed(() => journey.value?.promotion?.readiness_band || 'NOT_READY')
   const canStartTest = computed(() => Boolean(journey.value?.promotion?.can_start_test))
   const blockerItems = computed(() => journey.value?.promotion?.primary_blockers || [])
@@ -92,6 +94,8 @@ export function useListeningJourney() {
     officialCefr,
     targetCefr,
     targetLabel,
+    learningStage,
+    learningStageLabel,
     readinessBand,
     canStartTest,
     activeGoalId,

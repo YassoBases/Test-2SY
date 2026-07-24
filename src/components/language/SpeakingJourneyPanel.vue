@@ -146,6 +146,15 @@
         </div>
       </v-card>
 
+      <SkillStagePathMap
+        skill-label="Speaking"
+        skill-key="speaking"
+        :current-cefr="officialCefr"
+        :current-stage="internalStage"
+        current-reason="Complete more speaking practice attempts."
+        class="mb-4"
+      />
+
       <SpeakingMissionTimeline
         :learning-path="learningPath"
         :today-missions="todayMissions"
@@ -233,6 +242,7 @@ import SpeakingReflection from './SpeakingReflection.vue'
 import SpeakingSkillsPanel from './SpeakingSkillsPanel.vue'
 import SpeakingContinuityStrip from './SpeakingContinuityStrip.vue'
 import SpeakingEmptyPanel from './SpeakingEmptyPanel.vue'
+import SkillStagePathMap from './SkillStagePathMap.vue'
 
 const props = defineProps({
   focusLabel: { type: String, default: '' },

@@ -175,6 +175,8 @@ class ListeningJourneyBundleOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     official_level: str
+    learning_stage: int = 1
+    learning_stage_label: str = ""
     journey_target: JourneyTargetOut
     personal_goal: PersonalGoalOut
     narrative: JourneyNarrativeOut = Field(default_factory=JourneyNarrativeOut)

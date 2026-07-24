@@ -19,6 +19,8 @@ from app.services.language_learning_facts.journey_assembler import (
     assemble_journey_facts,
     resolve_personal_goal_from_memory,
 )
+from app.services.language_learning_stage.storage import load_listening_stage
+from app.services.language_learning_stage.types import stage_label
 from app.services.language_learning_narrative.journey_builder import build_journey_narrative
 from app.services.language_listening_journey import BUILDER_VERSION
 from app.services.language_listening_reservation import listening_session_reservation_service
@@ -73,6 +75,7 @@ async def build_listening_journey_bundle(
 
     official = await _official_listening_cefr(db, student_id=student_id, language_id=lid)
     target = await _target_listening_cefr(db, student_id=student_id, language_id=lid)
+    learning_stage = await load_listening_stage(db, student_id=student_id, language_id=lid)
     readiness = await evaluate_listening_promotion_readiness(
         db, student_id=student_id, language_id=lid, official_cefr=official
     )
@@ -147,6 +150,8 @@ async def build_listening_journey_bundle(
 
     return ListeningJourneyBundleOut(
         official_level=facts.official_level,
+        learning_stage=learning_stage,
+        learning_stage_label=stage_label(official_cefr=facts.official_level, stage=learning_stage),
         journey_target=JourneyTargetOut(
             level=facts.journey_target.level,
             label=facts.journey_target.label,

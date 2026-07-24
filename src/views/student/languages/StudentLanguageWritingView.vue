@@ -34,6 +34,14 @@
             :progress-summary="progressSummary"
             :next-milestone="nextMilestone"
           />
+          <SkillStagePathMap
+            skill-label="Writing"
+            skill-key="writing"
+            :current-cefr="officialCefr"
+            :current-stage="learningStage"
+            current-reason="Complete more writing practice attempts."
+            class="mb-4"
+          />
           <WritingGoalPanel
             :active-goal-id="activeGoalId"
             :saving="savingGoal"
@@ -113,6 +121,7 @@ import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import WritingJourneyHero from '../../../components/language/WritingJourneyHero.vue'
+import SkillStagePathMap from '../../../components/language/SkillStagePathMap.vue'
 import WritingGoalPanel from '../../../components/language/WritingGoalPanel.vue'
 import WritingPracticePanel from '../../../components/language/WritingPracticePanel.vue'
 import WritingPromotionPanel from '../../../components/language/WritingPromotionPanel.vue'
