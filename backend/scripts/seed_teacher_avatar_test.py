@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.core.config import get_settings
 from app.core.test_users import default_test_email
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -19,6 +20,14 @@ IMAGE_PATH = "/uploads/teachers/test/avatar_test.jpg"
 
 
 async def main() -> None:
+    # Refuse to run against what looks like a production database (DEBUG=false).
+    # This script writes directly to the DB with no dry-run mode, so a misconfigured
+    # environment must fail loudly rather than seed test data into production.
+    if not get_settings().DEBUG:
+        raise RuntimeError(
+            "Refusing to seed test avatar: DEBUG is not enabled. This looks like a "
+            "production database. Set DEBUG=true in .env if this is really a dev/test DB."
+        )
     test_email = default_test_email("auth_teacher")
     conn = await asyncpg.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"),

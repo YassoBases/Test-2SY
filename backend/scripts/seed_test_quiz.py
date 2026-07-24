@@ -2,11 +2,20 @@
 import asyncio, json, sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from app.core.config import get_settings
 from app.db.session import get_async_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 async def seed():
+    # Refuse to run against what looks like a production database (DEBUG=false).
+    # This script writes directly to the DB with no dry-run mode, so a misconfigured
+    # environment must fail loudly rather than seed test content into production.
+    if not get_settings().DEBUG:
+        raise RuntimeError(
+            "Refusing to seed test quiz data: DEBUG is not enabled. This looks like a "
+            "production database. Set DEBUG=true in .env if this is really a dev/test DB."
+        )
     engine = get_async_engine()
     async with AsyncSession(engine) as db:
         r = await db.execute(text("SELECT id FROM users WHERE email='teacher@eduspark.sy'"))
