@@ -489,16 +489,27 @@ export async function submitSpeakingTurn(
 }
 
 export async function answerExamMcq(
-  sessionId, choiceIndex, requestId, stateRevision, questionToken, answerText, choiceIndices, answerTexts, section,
+  sessionId,
+  choiceIndex,
+  requestId,
+  stateRevision,
+  questionToken,
+  answerText,
+  choiceIndices,
+  answerTexts,
+  section,
+  subquestionAnswers,
 ) {
   const body = {
     request_id: requestId,
     state_revision: stateRevision,
     question_token: questionToken,
   }
-  // Exactly one of choice_index/answer_text/choice_indices/answer_texts, matching the backend's
-  // McqAnswerIn contract. choiceIndices/answerTexts (Listening bundles) take priority when set.
-  if (choiceIndices != null) {
+  // Exactly one answer shape, matching the backend's McqAnswerIn contract.
+  // Mixed placement bundles can contain both MCQ choice indices and short text.
+  if (subquestionAnswers != null) {
+    body.subquestion_answers = subquestionAnswers
+  } else if (choiceIndices != null) {
     body.choice_indices = choiceIndices
   } else if (answerTexts != null) {
     body.answer_texts = answerTexts

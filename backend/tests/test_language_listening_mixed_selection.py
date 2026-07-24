@@ -221,15 +221,16 @@ async def test_dual_slot_pool_holds_both_variants_when_both_active(
     assert dual_pool["A2"]["gap_fill"]["bank_item_id"] == gap_fill_id
 
 
-# 10. _new_adaptive_section's default (dual_slot=False) path is unaffected -- reading/
-# grammar_vocab still get a flat, single-item-per-level pool, tokenized exactly as before.
+# 10. _new_adaptive_section's default (dual_slot=False) path is unaffected for flat MCQ skills:
+# grammar_vocab still gets a flat, single-item-per-level pool, while reading now intentionally
+# uses curated four-question bundles.
 async def test_new_adaptive_section_default_path_is_flat_and_unaffected(
     postgres_session_factory, mixed_selection_language
 ):
     async with postgres_session_factory() as db:
         mcq = LanguagePlacementQuestionBankItem(
             language_id=mixed_selection_language,
-            skill="reading",
+            skill="grammar_vocab",
             level=LanguageLevel.A2,
             question_type="mcq",
             prompt_text="Which answer is correct?",
@@ -245,7 +246,7 @@ async def test_new_adaptive_section_default_path_is_flat_and_unaffected(
 
     async with postgres_session_factory() as db:
         r_pool = await language_exam._question_bank_pool(
-            db, language_id=mixed_selection_language, skill="reading", levels=["A2"]
+            db, language_id=mixed_selection_language, skill="grammar_vocab", levels=["A2"]
         )
     section = language_exam._new_adaptive_section(r_pool, "A2")
     item = section["pool"]["A2"]

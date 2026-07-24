@@ -35,6 +35,8 @@ def _make_item(
         audio_meta["storage_key"] = storage_key
     if audio_url is not None:
         audio_meta["public_url"] = audio_url
+    if audio_text is not None:
+        audio_meta["voice"] = language_exam._listening_tts_voice_for_text(audio_text)
     return {
         "bank_item_id": bank_item_id,
         "audio_url": audio_url,
@@ -79,7 +81,7 @@ async def test_runtime_synthesis_not_called_for_valid_cache(monkeypatch):
         item = _make_item(bank_item_id=2, audio_url=url, storage_key=storage_key)
         calls: list = []
 
-        async def fake_synth(text):
+        async def fake_synth(text, *, voice=None):
             calls.append(text)
             return "/uploads/language_exam_audio/should_not_be_called.wav"
 
@@ -172,8 +174,9 @@ async def test_missing_cache_with_successful_synthesis_returns_generated_audio(m
     item = _make_item(bank_item_id=9, audio_url=url, storage_key=storage_key, audio_text="Generate me fresh.")
     generated_url = "/uploads/language_exam_audio/generated-attempt.wav"
 
-    async def fake_synth(text):
+    async def fake_synth(text, *, voice=None):
         assert text == "Generate me fresh."
+        assert voice == language_exam._listening_tts_voice_for_text("Generate me fresh.")
         return generated_url
 
     monkeypatch.setattr(language_exam, "synthesize_exam_audio", fake_synth)
@@ -190,7 +193,7 @@ async def test_missing_cache_with_failed_synthesis_degrades_safely(monkeypatch):
     url = f"/uploads/{storage_key}"
     item = _make_item(bank_item_id=10, audio_url=url, storage_key=storage_key)
 
-    async def failing_synth(text):
+    async def failing_synth(text, *, voice=None):
         return None  # e.g. ENABLE_TTS=False, or any synthesis failure
 
     monkeypatch.setattr(language_exam, "synthesize_exam_audio", failing_synth)

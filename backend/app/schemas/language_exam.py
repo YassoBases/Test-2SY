@@ -192,8 +192,11 @@ class MultiSkillReportSchema(BaseModel):
     weakest_skill: str = ""
     recommendations: list[str] = Field(default_factory=list)
     weeks_to_next_level: int = 0
-    # Writing IELTS sub-scores: {task_achievement, coherence, lexical, grammar} (0-10).
-    writing_breakdown: dict[str, float] = Field(default_factory=dict)
+    # Writing diagnostics: six weighted criteria plus per-task scores/details.
+    writing_breakdown: dict = Field(default_factory=dict)
+    # Reading diagnostics by subskill plus text-complexity evidence. Additive only; final
+    # reading_level/reading_score_percent remain the authoritative placement result.
+    reading_breakdown: dict = Field(default_factory=dict)
     # Transcript-based sub-scores: {fluency, lexical, grammar}; pronunciation is unassessed.
     speaking_breakdown: dict[str, float] = Field(default_factory=dict)
     # Per-turn spoken detail (shown in the report, not during the exam).
@@ -205,6 +208,9 @@ class MultiSkillReportSchema(BaseModel):
     cross_phase_consistency: str = "consistent"
     # Components that were deliberately not scored because no authoritative signal exists.
     unassessed_components: list[str] = Field(default_factory=list)
+    # True when the final report used conservative deterministic scoring because a rubric scorer
+    # was temporarily unavailable. Detailed language corrections should be suppressed in this case.
+    scorer_fallback_used: bool = False
 
     # Additive MVP evidence/auditability layer (see language_speaking_assessment_core_service.py).
     # Labels and evidence only -- never changes any of the scoring fields above.
@@ -242,18 +248,40 @@ class SpeakingGradeSchema(BaseModel):
 
 
 class WritingGradeSchema(BaseModel):
-    """Structured IELTS-style grade of the writing answer (4 criteria, each 0-10)."""
+    """Structured writing grade.
+
+    The six primary fields are scored 0-10 and combined by the placement weights:
+    task_fulfillment 20%, communicative_achievement 15%, organization 20%, grammar 20%,
+    vocabulary 20%, spelling_punctuation 5%. The legacy IELTS-style names remain accepted for
+    older tests/callers and are mirrored by the backend where useful.
+    """
 
     level: CEFRLevel
     task_achievement: float = Field(ge=0.0, le=10.0, default=0.0)
     coherence: float = Field(ge=0.0, le=10.0, default=0.0)
     lexical: float = Field(ge=0.0, le=10.0, default=0.0)
     grammar: float = Field(ge=0.0, le=10.0, default=0.0)
+    task_fulfillment: float = Field(ge=0.0, le=10.0, default=0.0)
+    communicative_achievement: float = Field(ge=0.0, le=10.0, default=0.0)
+    organization: float = Field(ge=0.0, le=10.0, default=0.0)
+    vocabulary: float = Field(ge=0.0, le=10.0, default=0.0)
+    spelling_punctuation: float = Field(ge=0.0, le=10.0, default=0.0)
     score: float = Field(ge=0.0, le=10.0)  # weighted overall (the 4 criteria, equal weight)
     feedback: str = ""
     detected_errors: list[GrammarErrorDetail] = Field(default_factory=list)
 
-    @field_validator("task_achievement", "coherence", "lexical", "grammar", "score")
+    @field_validator(
+        "task_achievement",
+        "coherence",
+        "lexical",
+        "grammar",
+        "task_fulfillment",
+        "communicative_achievement",
+        "organization",
+        "vocabulary",
+        "spelling_punctuation",
+        "score",
+    )
     @classmethod
     def _round_score(cls, v: float) -> float:
         return round(max(0.0, min(10.0, float(v))), 1)
@@ -272,6 +300,11 @@ class McqAnswerIn(BaseModel):
     # singular fields above -- exactly one of the four answer fields may be present.
     choice_indices: list[int] | None = Field(default=None)
     answer_texts: list[str] | None = Field(default=None)
+    # Reading mixed bundles: one entry per subquestion, where MCQ answers are integer indices,
+    # gap-fill/short-answer prompts are strings, and matching prompts are lists of indices.
+    # Kept separate from Listening's choice_indices/answer_texts
+    # so older all-MCQ bundles remain backward-compatible.
+    subquestion_answers: list[int | str | list[int]] | None = Field(default=None)
     # Free section navigation: which MCQ section this answers (listening/reading/grammar_vocab).
     # Optional and defaults to the session's current cursor section for backward compatibility --
     # only needed when the student jumped to a section other than the cursor's.
@@ -294,19 +327,37 @@ class McqAnswerIn(BaseModel):
                 raise ValueError("answer_texts cannot be empty")
             if any(not t.strip() for t in self.answer_texts):
                 raise ValueError("answer_texts entries cannot be blank or whitespace-only")
+        if self.subquestion_answers is not None:
+            if not self.subquestion_answers:
+                raise ValueError("subquestion_answers cannot be empty")
+            for answer in self.subquestion_answers:
+                if isinstance(answer, int):
+                    if answer < 0:
+                        raise ValueError("subquestion_answers integer entries must be non-negative")
+                elif isinstance(answer, str):
+                    if not answer.strip():
+                        raise ValueError("subquestion_answers string entries cannot be blank or whitespace-only")
+                elif isinstance(answer, list):
+                    if not answer:
+                        raise ValueError("subquestion_answers list entries cannot be empty")
+                    if any((not isinstance(i, int)) or isinstance(i, bool) or i < 0 for i in answer):
+                        raise ValueError("subquestion_answers list entries must contain non-negative integers")
+                else:
+                    raise ValueError("subquestion_answers entries must be integers, strings, or integer lists")
         present = [
             self.choice_index is not None,
             self.answer_text is not None,
             self.choice_indices is not None,
             self.answer_texts is not None,
+            self.subquestion_answers is not None,
         ]
         if sum(present) > 1:
             raise ValueError(
-                "only one of choice_index/answer_text/choice_indices/answer_texts may be provided"
+                "only one of choice_index/answer_text/choice_indices/answer_texts/subquestion_answers may be provided"
             )
         if sum(present) == 0:
             raise ValueError(
-                "one of choice_index/answer_text/choice_indices/answer_texts is required"
+                "one of choice_index/answer_text/choice_indices/answer_texts/subquestion_answers is required"
             )
         return self
 
@@ -352,10 +403,20 @@ class LiveTranscriptionSessionOut(BaseModel):
 
 
 class ListeningSubquestionOut(BaseModel):
-    """One MCQ subquestion within a Listening bundle. No correct_index -- never expose the answer."""
+    """One display-safe subquestion within a comprehension bundle.
+
+    MCQ answers expose options; Reading gap-fill/short-answer prompts expose response_type/max_words;
+    matching prompts expose the visible left/right choices. correct_index/accepted_answers/
+    correct_indices remain server-side.
+    """
 
     question: str
-    options: list[str]
+    options: list[str] = Field(default_factory=list)
+    response_type: str = "mcq"
+    max_words: int | None = None
+    word_bank: list[str] | None = None
+    matching_items: list[str] | None = None
+    match_options: list[str] | None = None
 
 
 class McqPromptOut(BaseModel):
@@ -387,6 +448,11 @@ class McqPromptOut(BaseModel):
 class WritingPromptOut(BaseModel):
     prompt: str
     min_words: int = 40
+    max_words: int | None = None
+    task_type: str = ""
+    student_instructions: str = ""
+    task_index: int = 1
+    task_total: int = 1
     prompt_token: str
 
 
@@ -423,6 +489,11 @@ class ExamStateOut(BaseModel):
     # of viewing order -- lets the frontend render per-tab completion indicators independent of
     # which section is currently being viewed.
     completed_sections: list[str] = Field(default_factory=list)
+    exam_duration_seconds: int = 3600
+    exam_started_at: datetime | None = None
+    exam_expires_at: datetime | None = None
+    time_remaining_seconds: int = 3600
+    time_expired: bool = False
     speaking: SpeakingPromptOut | None = None
     mcq: McqPromptOut | None = None
     writing: WritingPromptOut | None = None

@@ -288,6 +288,11 @@ async def main() -> int:
     parser.add_argument("--language-code", default="en")
     parser.add_argument("--apply", action="store_true", help="Write changes. Default is dry-run.")
     parser.add_argument("--limit-per-skill-level", type=int, default=4)
+    parser.add_argument(
+        "--include-writing",
+        action="store_true",
+        help="Also seed legacy writing prompts from language content. Disabled by default; Writing uses its own curated bank.",
+    )
     args = parser.parse_args()
 
     async with AsyncSessionLocal() as db:
@@ -301,7 +306,10 @@ async def main() -> int:
             return 1
 
         seeds: list[BankSeed] = []
-        for skill in (LanguageSkill.reading, LanguageSkill.listening, LanguageSkill.writing, LanguageSkill.speaking):
+        skills = [LanguageSkill.reading, LanguageSkill.listening, LanguageSkill.speaking]
+        if args.include_writing:
+            skills.append(LanguageSkill.writing)
+        for skill in skills:
             for level in LEVELS:
                 rows = (
                     await db.execute(

@@ -7,24 +7,38 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
+from app.schemas.language_exam import CEFRLevel
 from app.api.language_exam import (
     MCQ_SECTIONS,
     MIN_MCQ_EVIDENCE_ITEMS,
+    PLACEMENT_EXAM_DURATION_SECONDS,
+    READING_MIN_EVIDENCE_ITEMS,
     _already_used_bank_item_ids,
     _already_used_speaking_bank_item_ids,
     _boundary_situation,
+    _ensure_exam_timer,
     _ensure_state_protocol,
+    _exam_remaining_seconds,
+    _expire_exam_if_needed,
+    _is_valid_mcq_pool_item,
     _mcq_continuation_level,
     _new_exam_token,
+    _apply_writing_route_cap,
+    _normalise_writing_prompt_payload,
     _record_request,
     _request_receipt,
     _require_current_state,
+    _reading_diagnostic_breakdown,
+    _reading_weighted_result,
     _speaking_bank_question_text,
     _state_revision,
+    _writing_route_from_score,
+    _writing_task1_payload,
     canonical_payload_hash,
     evaluation_lease_expired,
     exam_evidence_statuses,
 )
+from app.models.language.exam import LanguageExamSession
 
 
 def test_prompt_tokens_are_opaque_and_not_reused():
@@ -34,6 +48,46 @@ def test_prompt_tokens_are_opaque_and_not_reused():
     assert len(first) >= 24
     assert first != second
     assert not first.isdecimal()
+
+
+def test_exam_timer_initializes_to_one_hour():
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    state = {}
+
+    assert _ensure_exam_timer(state, now=now) is True
+
+    assert state["exam_duration_seconds"] == PLACEMENT_EXAM_DURATION_SECONDS
+    assert state["exam_started_at"] == now.isoformat()
+    assert state["exam_expires_at"] == (
+        now + timedelta(seconds=PLACEMENT_EXAM_DURATION_SECONDS)
+    ).isoformat()
+    assert _exam_remaining_seconds(state, now=now) == PLACEMENT_EXAM_DURATION_SECONDS
+
+
+def test_expired_exam_marks_session_failed_without_completion():
+    now = datetime(2026, 1, 1, 13, 0, tzinfo=timezone.utc)
+    state = {
+        "state_revision": 3,
+        "exam_duration_seconds": PLACEMENT_EXAM_DURATION_SECONDS,
+        "exam_started_at": (now - timedelta(seconds=PLACEMENT_EXAM_DURATION_SECONDS + 1)).isoformat(),
+        "exam_expires_at": (now - timedelta(seconds=1)).isoformat(),
+    }
+    session = LanguageExamSession(
+        id="expired-placement-session",
+        student_id=1,
+        language_id=1,
+        exam_state=state,
+        status="in_progress",
+    )
+
+    assert _expire_exam_if_needed(session, state, now=now) is True
+
+    assert session.status == "failed"
+    assert session.is_completed is False
+    assert state["exam_time_expired"] is True
+    assert state["evaluation"]["error_code"] == "time_expired"
+    assert state["evaluation"]["evaluation_status"] == "time_expired"
+    assert state["state_revision"] == 4
 
 
 def test_existing_state_is_upgraded_without_touching_answers():
@@ -230,6 +284,190 @@ def test_mcq_continuation_level_stops_safely_when_pool_exhausted():
         current="B1",
     )
     assert level is None
+
+
+def test_reading_continuation_uses_five_item_evidence_floor():
+    assert READING_MIN_EVIDENCE_ITEMS == 5
+    level = _mcq_continuation_level(
+        pool_levels={"A1", "A2", "B1", "B2", "C1", "C2"},
+        asked_levels={"A2", "B1", "B2"},
+        asked_count=3,
+        current="B2",
+        min_evidence_items=READING_MIN_EVIDENCE_ITEMS,
+    )
+    assert level == "C1"
+
+
+def test_reading_continuation_stops_after_five_items():
+    level = _mcq_continuation_level(
+        pool_levels={"A1", "A2", "B1", "B2", "C1", "C2"},
+        asked_levels={"A1", "A2", "B1", "B2", "C1"},
+        asked_count=5,
+        current="C1",
+        min_evidence_items=READING_MIN_EVIDENCE_ITEMS,
+    )
+    assert level is None
+
+
+def test_reading_weighted_result_places_boundary_pattern_at_lower_stable_level():
+    level, pct = _reading_weighted_result([
+        {"level": "A2", "correct": True},
+        {"level": "B1", "correct": True},
+        {"level": "B2", "correct": False},
+    ])
+    assert level.value == "B1"
+    assert pct == 66.7
+
+
+def test_reading_weighted_result_resists_single_lucky_high_answer():
+    level, pct = _reading_weighted_result([
+        {"level": "A1", "correct": False},
+        {"level": "A2", "correct": False},
+        {"level": "B2", "correct": True},
+    ])
+    assert level.value == "A2"
+    assert pct == 33.3
+
+
+def test_reading_weighted_result_rewards_sustained_high_performance():
+    level, pct = _reading_weighted_result([
+        {"level": "A2", "correct": True},
+        {"level": "B1", "correct": True},
+        {"level": "B2", "correct": True},
+        {"level": "C1", "correct": True},
+        {"level": "C2", "correct": False},
+    ])
+    assert level.value == "C1"
+    assert pct == 80.0
+
+
+def test_reading_mcq_bundle_accepts_four_subquestions_only():
+    item = {
+        "subquestions": [
+            {"question": f"Q{i}?", "options": ["A", "B", "C", "D"], "correct_index": 0}
+            for i in range(4)
+        ]
+    }
+    legacy_single_item = {"options": ["A", "B", "C", "D"], "correct_index": 0}
+    assert _is_valid_mcq_pool_item(item, skill="reading") is True
+    assert _is_valid_mcq_pool_item(legacy_single_item, skill="reading") is False
+    assert _is_valid_mcq_pool_item({**item, "subquestions": item["subquestions"][:3]}, skill="reading") is False
+    assert _is_valid_mcq_pool_item({**item, "subquestions": item["subquestions"][:3]}, skill="listening") is True
+
+
+def test_reading_bundle_accepts_mixed_short_answer_subquestions():
+    item = {
+        "subquestions": [
+            {"question": "Q1?", "options": ["A", "B", "C", "D"], "correct_index": 0},
+            {"question": "Q2?", "options": ["A", "B", "C", "D"], "correct_index": 1},
+            {"question": "Q3?", "response_type": "short_answer", "accepted_answers": ["because it saves time"], "max_words": 8},
+            {"question": "Q4?", "response_type": "short_answer", "accepted_answers": ["a cautious tone"], "max_words": 8},
+        ]
+    }
+    assert _is_valid_mcq_pool_item(item, skill="reading") is True
+
+
+def test_reading_bundle_accepts_gap_fill_and_matching_subquestions():
+    item = {
+        "subquestions": [
+            {"question": "Q1?", "options": ["A", "B", "C", "D"], "correct_index": 0},
+            {"question": "Q2?", "response_type": "gap_fill", "accepted_answers": ["apples"], "max_words": 3},
+            {
+                "question": "Match each prompt.",
+                "response_type": "matching",
+                "matching_items": ["Place", "Reason"],
+                "match_options": ["the market", "fresh fruit", "a school", "a bus"],
+                "correct_indices": [0, 1],
+            },
+            {"question": "Q4?", "response_type": "short_answer", "accepted_answers": ["she likes them"], "max_words": 6},
+        ]
+    }
+    assert _is_valid_mcq_pool_item(item, skill="reading") is True
+
+
+def test_reading_diagnostic_breakdown_counts_bundle_subskills():
+    breakdown = _reading_diagnostic_breakdown([
+        {
+            "level": "B1",
+            "correct": True,
+            "sub_correct": [True, False, True, True],
+            "subskills": ["main_idea", "inference", "specific_detail", "vocabulary_in_context"],
+            "word_count": 140,
+        }
+    ])
+
+    assert breakdown["items_answered"] == 1
+    assert breakdown["questions_answered"] == 4
+    assert breakdown["average_passage_word_count"] == 140
+    assert breakdown["by_subskill"]["main_idea"]["score_percent"] == 100.0
+    assert breakdown["by_subskill"]["inference"]["score_percent"] == 0.0
+
+
+def test_exam_evidence_statuses_accepts_mixed_reading_bundle_answers():
+    state = {
+        "sections": ["reading"],
+        "reading": {
+            "ready": True,
+            "pool": {"A2": {"question": "Read and answer."}},
+            "asked": [
+                {
+                    "level": "A2",
+                    "correct": True,
+                    "subquestion_answers": [0, 1, "two parts", "pleased"],
+                }
+            ],
+            "done": True,
+            "evidence_status": "completed",
+        },
+    }
+
+    assert exam_evidence_statuses(state)["reading"] == "completed"
+
+
+def test_writing_prompt_payload_preserves_target_range_and_task_type():
+    payload = _normalise_writing_prompt_payload(
+        {
+            "prompt": "Write a short message (30-50 words) to a classmate.",
+            "min_words": 30,
+            "max_words": 50,
+            "task_type": "short_message",
+            "student_instructions": "Write in English. Stay on topic.",
+            "rubric_focus": ["task_response"],
+            "expected_language_features": ["present simple"],
+            "bank_item_id": 12,
+            "source": "writing_mvp_v1_draft",
+        }
+    )
+
+    assert payload == {
+        "prompt": "Write a short message (30-50 words) to a classmate.",
+        "min_words": 30,
+        "max_words": 50,
+        "task_type": "short_message",
+        "student_instructions": "Write in English. Stay on topic.",
+        "rubric_focus": ["task_response"],
+        "expected_language_features": ["present simple"],
+        "bank_item_id": 12,
+        "source": "writing_mvp_v1_draft",
+    }
+
+
+def test_adaptive_writing_task1_anchor_has_visible_word_range():
+    payload = _writing_task1_payload()
+
+    assert payload["min_words"] == 50
+    assert payload["max_words"] == 80
+    assert "50-80 words" in payload["prompt"]
+    assert payload["task_type"] == "task1_anchor_email"
+
+
+def test_adaptive_writing_routes_and_caps_levels():
+    assert _writing_route_from_score(4.4) == "A1_A2"
+    assert _writing_route_from_score(4.5) == "B1_B2"
+    assert _writing_route_from_score(7.5) == "C1_C2"
+    assert _apply_writing_route_cap(CEFRLevel.C1, "A1_A2") == CEFRLevel.B1
+    assert _apply_writing_route_cap(CEFRLevel.C2, "B1_B2") == CEFRLevel.B2
+    assert _apply_writing_route_cap(CEFRLevel.C2, "C1_C2") == CEFRLevel.C2
 
 
 def test_min_mcq_evidence_guard_is_scoped_to_mcq_sections_only():

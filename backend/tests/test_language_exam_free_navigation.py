@@ -358,12 +358,93 @@ async def test_speaking_turn_accepts_explicit_section_while_cursor_is_elsewhere(
         _clear_exam_overrides(asgi_app, dependencies)
 
     assert response.status_code == 200
+    assert response.json()["phase"] == "speaking"
     async with postgres_session_factory() as db:
         session = await db.get(LanguageExamSession, session_id)
         assert len(session.exam_state["speaking"]["results"]) == 1
         assert session.exam_state["speaking"]["results"][0]["transcription"] == "A real transcript."
         # The cursor's own section (reading) is untouched by a speaking jump-ahead.
         assert session.exam_state["reading"]["done"] is False
+
+
+@pytest.mark.integration
+@pytest.mark.postgresql
+async def test_submit_writing_idempotent_task_transition_returns_writing_section(
+    api_client, asgi_app, postgres_session_factory
+):
+    state = _multi_section_state()
+    state["writing"].update(
+        {
+            "mode": "adaptive_two_task",
+            "task_index": 2,
+            "task_total": 2,
+            "prompt": "Describe a memorable day. Write 60-90 words.",
+            "prompt_token": "writing-prompt-token-nav-0002",
+            "min_words": 60,
+            "max_words": 90,
+            "tasks": [
+                {
+                    "prompt": "Task 1",
+                    "response": " ".join(f"first{i}" for i in range(50)),
+                    "min_words": 50,
+                    "max_words": 80,
+                },
+                {
+                    "prompt": "Describe a memorable day. Write 60-90 words.",
+                    "min_words": 60,
+                    "max_words": 90,
+                },
+            ],
+            "done": False,
+            "evidence_status": "missing_student_response",
+        }
+    )
+    text = " ".join(f"second{i}" for i in range(60))
+    request_id = "nav-writing-idempotent-0001"
+    token = "writing-prompt-token-nav-0002"
+    student_id, _language_id, session_id = await _seed_session(postgres_session_factory, state)
+    payload_hash = language_exam.canonical_payload_hash(
+        kind="writing_answer",
+        payload={
+            "session_id": session_id,
+            "state_revision": 1,
+            "prompt_token": token,
+            "text_sha256": language_exam.hashlib.sha256(
+                language_exam._normalise_writing_text(text).encode("utf-8")
+            ).hexdigest(),
+        },
+    )
+    async with postgres_session_factory() as db:
+        session = await db.get(LanguageExamSession, session_id)
+        exam_state = copy.deepcopy(session.exam_state)
+        language_exam._record_request(
+            exam_state,
+            kind="writing_answer",
+            request_id=request_id,
+            payload_hash=payload_hash,
+            request_revision=1,
+            token=token,
+            result_reference="writing:revision:2",
+        )
+        session.exam_state = exam_state
+        await db.commit()
+
+    dependencies = _install_exam_overrides(asgi_app, postgres_session_factory, student_id=student_id)
+    try:
+        response = await api_client.post(
+            f"/api/student/languages/exam/{session_id}/writing",
+            json={
+                "text": text,
+                "request_id": request_id,
+                "state_revision": 1,
+                "prompt_token": token,
+            },
+        )
+    finally:
+        _clear_exam_overrides(asgi_app, dependencies)
+
+    assert response.status_code == 200
+    assert response.json()["phase"] == "writing"
 
 
 def _out_of_order_mcq_finalize_state() -> dict:

@@ -11,12 +11,10 @@ import { ref } from 'vue'
  * silent -- a missing/broken live preview must never block recording, submission, grading, or
  * section progression.
  *
- * start() is meant to be called twice per question: once to *prewarm* as soon as the question
- * renders (giving the WebRTC/Realtime handshake a head start while the student is still reading),
- * and again when the student taps the mic. The second call is cheap -- if the first call already
- * succeeded (active) or definitively failed (unavailable) it resolves immediately; if the first
- * call is still in flight, it returns that SAME in-flight promise so a caller can wait on the one
- * real attempt instead of racing a redundant, conflicting second one.
+ * start() must be called only after the student taps the recording button. Starting it earlier
+ * opens the browser microphone and can capture room audio before the learner intentionally records.
+ * Repeated calls are cheap: if a connection is active/unavailable they resolve immediately, and if
+ * a connection is still in flight they return the same promise.
  */
 export function useLiveTranscriptionPreview() {
   const transcript = ref('')

@@ -80,4 +80,3 @@ def test_naive_historical_dates_are_normalized_to_utc(monkeypatch):
     result = policy.effective_next_allowed_retake_at(profile)
 
     assert result == datetime(2026, 2, 6, 6, 0, tzinfo=timezone.utc)
-

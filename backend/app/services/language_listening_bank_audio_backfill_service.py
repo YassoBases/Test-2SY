@@ -46,6 +46,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import tempfile
 import wave
 from dataclasses import dataclass, field
@@ -64,7 +65,6 @@ from app.services.language_supertonic_service import (
     language_tts_audio_extension,
     synthesize_language_speech,
 )
-from app.services.language_listening_tts.voice_config import default_voice
 from app.services.tts_service import prepare_synthesis_text
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,17 @@ ENGINE_NAME = "supertonic"
 # security gate's own duration/size sanity floor without importing that (differently-scoped,
 # ffmpeg-normalizing) module.
 MIN_VALID_AUDIO_BYTES = 512
+_FEMALE_LISTENING_CUES_RE = re.compile(
+    r"\b(mrs\.?|ms\.?|miss|layla|leila|laila|nadia|maria|anna|sara|sarah|fatima|"
+    r"my husband)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _listening_tts_voice_for_text(text: str | None, default_voice: str) -> str:
+    if _FEMALE_LISTENING_CUES_RE.search(str(text or "")):
+        return "F1"
+    return default_voice
 
 
 @dataclass
@@ -270,7 +281,7 @@ async def run_backfill(
     scoped = bool(stable_key_prefix or source)
 
     settings = get_settings()
-    voice = default_voice()
+    default_voice = (settings.LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
     upload_dir = Path(settings.UPLOAD_DIR)
     summary = BackfillSummary(apply=apply)
 
@@ -330,6 +341,7 @@ async def run_backfill(
             )
             continue
 
+        voice = _listening_tts_voice_for_text(transcript, default_voice)
         transcript_hash = compute_transcript_hash(transcript)
         storage_key = expected_storage_key(
             bank_item_id=row.id, transcript_hash=transcript_hash, engine=ENGINE_NAME, voice=voice

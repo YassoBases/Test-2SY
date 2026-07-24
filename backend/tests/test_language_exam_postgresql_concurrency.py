@@ -44,6 +44,45 @@ from app.services.language_transcription_service import ConversationTranscriptio
 
 
 pytestmark = [pytest.mark.postgresql, pytest.mark.concurrency]
+_READING_MVP_SOURCE = "reading_mvp_v1_draft"
+
+
+def _reading_bank_bundle_body() -> dict:
+    return {
+        "review_status": "mvp_approved_pending_full_review",
+        "human_reviewed": False,
+        "placement_metrics": {"subskill": "mixed_comprehension", "word_count": 42},
+        "subquestions": [
+            {
+                "question": "What is the main idea?",
+                "options": ["Correct answer", "Wrong answer", "Another wrong answer", "Not given"],
+                "correct_index": 0,
+                "response_type": "mcq",
+                "subskill": "main_idea",
+            },
+            {
+                "question": "Which detail is mentioned?",
+                "options": ["Correct answer", "Wrong answer", "Another wrong answer", "Not given"],
+                "correct_index": 0,
+                "response_type": "mcq",
+                "subskill": "specific_detail",
+            },
+            {
+                "question": "What can be inferred?",
+                "options": ["Correct answer", "Wrong answer", "Another wrong answer", "Not given"],
+                "correct_index": 0,
+                "response_type": "mcq",
+                "subskill": "inference",
+            },
+            {
+                "question": "What is the purpose of the text?",
+                "options": ["Correct answer", "Wrong answer", "Another wrong answer", "Not given"],
+                "correct_index": 0,
+                "response_type": "mcq",
+                "subskill": "purpose",
+            },
+        ],
+    }
 
 
 @pytest_asyncio.fixture
@@ -408,11 +447,12 @@ async def test_question_bank_pool_excludes_already_used_bank_item_ids(
             skill="reading",
             level=LanguageLevel.A2,
             question_type="mcq",
-            prompt_text="Which answer is correct?",
+            prompt_text="What is the main idea?",
             passage="A short passage.",
-            options_json=["correct", "wrong"],
+            options_json=["Correct answer", "Wrong answer", "Another wrong answer", "Not given"],
             correct_index=0,
-            source="seed",
+            body_json=_reading_bank_bundle_body(),
+            source=_READING_MVP_SOURCE,
             is_verified=True,
             is_active=True,
         )
@@ -960,6 +1000,13 @@ async def _insert_boundary_bank_item(
 
     Listening items additionally need a usable audio_url or _boundary_confirmation_item's own
     validity check (mirroring _question_bank_pool's) discards them for missing audio evidence."""
+    is_reading = skill == "reading"
+    body_json = _reading_bank_bundle_body() if is_reading else None
+    options = (
+        ["Correct answer", "Wrong answer", "Another wrong answer", "Not given"]
+        if is_reading
+        else ["boundary correct", "boundary wrong"]
+    )
     async with postgres_session_factory() as db:
         item = LanguagePlacementQuestionBankItem(
             language_id=language_id,
@@ -968,10 +1015,12 @@ async def _insert_boundary_bank_item(
             boundary_low_level=LanguageLevel(low),
             boundary_high_level=LanguageLevel(high),
             question_type="mcq",
-            prompt_text="Boundary confirmation question?",
+            prompt_text="What is the main idea?" if is_reading else "Boundary confirmation question?",
+            passage="A boundary reading passage with one clear main idea." if is_reading else None,
             options_json=["boundary correct", "boundary wrong"],
             correct_index=0,
-            source="seed",
+            body_json=body_json,
+            source=_READING_MVP_SOURCE if is_reading else "seed",
             is_verified=True,
             is_active=True,
             audio_meta_json=(
@@ -980,6 +1029,7 @@ async def _insert_boundary_bank_item(
                 else None
             ),
         )
+        item.options_json = options
         db.add(item)
         await db.commit()
         return item.id
@@ -1000,6 +1050,13 @@ def _boundary_prone_state(section: str) -> dict:
             "bank_item_id": bank_item_id,
         }
 
+    pre_asked = []
+    if section == "reading":
+        pre_asked = [
+            {"level": "A1", "chosen_index": 0, "correct": True, "bank_item_id": 801},
+            {"level": "C1", "chosen_index": 1, "correct": False, "bank_item_id": 805},
+        ]
+
     return {
         "version": 3,
         "state_revision": 7,
@@ -1014,7 +1071,7 @@ def _boundary_prone_state(section: str) -> dict:
                 "B2": _item("B2", 904),
             },
             "current_level": "A2",
-            "asked": [],
+            "asked": pre_asked,
             "max_steps": 5,
             "ready": True,
             "done": False,
@@ -1080,21 +1137,31 @@ async def test_boundary_confirmation_asks_one_extra_question_when_a_matching_ite
     assert sec["done"] is False
     assert sec["boundary_asked"] is True
     assert sec["evidence_status"] == "missing_student_response"
-    assert len(sec["asked"]) == 3
+    assert len(sec["asked"]) == (5 if section == "reading" else 3)
     boundary_level_key = sec["current_level"]
     assert sec["pool"][boundary_level_key]["bank_item_id"] == boundary_item_id
 
     # Answer the boundary-confirmation question itself (incorrect here; a separate test proves the
     # cap holds when it's answered correctly too) -- the section must finish right after.
+    answer_body = (
+        McqAnswerIn(
+            choice_indices=[1, 1, 1, 1],
+            request_id=f"boundary-{section}-confirm",
+            state_revision=stored.exam_state["state_revision"],
+            question_token=sec["pool"][boundary_level_key]["question_token"],
+        )
+        if section == "reading"
+        else McqAnswerIn(
+            choice_index=1,
+            request_id=f"boundary-{section}-confirm",
+            state_revision=stored.exam_state["state_revision"],
+            question_token=sec["pool"][boundary_level_key]["question_token"],
+        )
+    )
     async with postgres_session_factory() as db:
         await language_exam.answer_mcq(
             record.session_id,
-            McqAnswerIn(
-                choice_index=1,
-                request_id=f"boundary-{section}-confirm",
-                state_revision=stored.exam_state["state_revision"],
-                question_token=sec["pool"][boundary_level_key]["question_token"],
-            ),
+            answer_body,
             BackgroundTasks(),
             student=record.student,
             db=db,
@@ -1104,10 +1171,11 @@ async def test_boundary_confirmation_asks_one_extra_question_when_a_matching_ite
     sec = stored.exam_state[section]
     assert sec["done"] is True
     assert sec["evidence_status"] == "completed"
-    assert len(sec["asked"]) == 4
+    expected_asked_count = 6 if section == "reading" else 4
+    assert len(sec["asked"]) == expected_asked_count
     assert sec["asked"][-1]["bank_item_id"] == boundary_item_id
     bank_item_ids = [a["bank_item_id"] for a in sec["asked"]]
-    assert len(bank_item_ids) == len(set(bank_item_ids)) == 4
+    assert len(bank_item_ids) == len(set(bank_item_ids)) == expected_asked_count
 
 
 async def test_boundary_confirmation_caps_at_one_question_when_answer_is_correct(
@@ -1139,7 +1207,7 @@ async def test_boundary_confirmation_caps_at_one_question_when_answer_is_correct
         await language_exam.answer_mcq(
             record.session_id,
             McqAnswerIn(
-                choice_index=0,  # correct this time
+                choice_indices=[0, 0, 0, 0],  # correct this time
                 request_id="boundary-reading-confirm-correct",
                 state_revision=stored.exam_state["state_revision"],
                 question_token=sec["pool"][boundary_level_key]["question_token"],
@@ -1153,7 +1221,7 @@ async def test_boundary_confirmation_caps_at_one_question_when_answer_is_correct
     sec = stored.exam_state[section]
     assert sec["done"] is True
     assert sec["evidence_status"] == "completed"
-    assert len(sec["asked"]) == 4
+    assert len(sec["asked"]) == 6
 
 
 async def test_boundary_confirmation_completes_safely_when_no_matching_item_exists(
@@ -1176,7 +1244,7 @@ async def test_boundary_confirmation_completes_safely_when_no_matching_item_exis
     sec = stored.exam_state[section]
     assert sec["done"] is True
     assert sec["evidence_status"] == "completed"
-    assert len(sec["asked"]) == 3
+    assert len(sec["asked"]) == 5
     # A boundary situation WAS detected and attempted (proving detection ran), it just found
     # nothing usable -- this must not be retried or left half-finished.
     assert sec["boundary_asked"] is True
@@ -1222,7 +1290,7 @@ async def test_boundary_confirmation_excludes_an_already_used_bank_item_id(
     sec = stored.exam_state[section]
     assert sec["done"] is True
     assert sec["evidence_status"] == "completed"
-    assert len(sec["asked"]) == 3
+    assert len(sec["asked"]) == 5
     assert sec["boundary_asked"] is True
     # The excluded id appears exactly once (the original B2 staircase answer) -- never again as a
     # freshly-injected boundary question, proving the exclusion actually suppressed it.
@@ -1938,6 +2006,84 @@ async def test_speaking_bank_prompt_prefers_unused_subskill_over_already_used_on
     assert item["subskill"] == "routine_description"
 
 
+async def test_speaking_bank_prompt_avoids_recently_seen_student_or_language_items(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="completed",
+    )
+    recent_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="Recently used prompt.",
+        subskill="routine_description",
+    )
+    fresh_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="A2",
+        prompt_text="Fresh prompt.",
+        subskill="simple_preference",
+    )
+    async with postgres_session_factory() as db:
+        row = (await db.execute(select(LanguageExamSession).where(LanguageExamSession.id == record.session_id))).scalar_one()
+        row.exam_state = {
+            "version": 3,
+            "sections": ["speaking"],
+            "speaking": {"results": [{"bank_item_id": recent_id, "bank_item_subskill": "routine_description"}]},
+        }
+        flag_modified(row, "exam_state")
+        await db.commit()
+
+    async with postgres_session_factory() as db:
+        recent_ids = await language_exam._recent_speaking_exclusion_ids(
+            db,
+            language_id=record.language_id,
+            student_id=record.student_id,
+        )
+        item = await language_exam._speaking_bank_prompt(
+            db,
+            language_id=record.language_id,
+            level_str="A2",
+            recent_item_ids=recent_ids,
+        )
+
+    assert recent_id in recent_ids
+    assert item is not None
+    assert item["bank_item_id"] == fresh_id
+
+
+async def test_speaking_bank_prompt_allows_recent_item_when_bank_is_too_thin(
+    postgres_session_factory,
+    exam_record_factory,
+) -> None:
+    record = await exam_record_factory(
+        state={"version": 3, "state_revision": 1, "sections": [], "cursor": 0},
+        status="completed",
+    )
+    only_id = await _insert_speaking_bank_item(
+        postgres_session_factory,
+        language_id=record.language_id,
+        level="B1",
+        prompt_text="Only available prompt.",
+        subskill="past_narration",
+    )
+
+    async with postgres_session_factory() as db:
+        item = await language_exam._speaking_bank_prompt(
+            db,
+            language_id=record.language_id,
+            level_str="B1",
+            recent_item_ids={only_id},
+        )
+
+    assert item is not None
+    assert item["bank_item_id"] == only_id
+
+
 async def test_speaking_bank_prompt_falls_back_to_used_subskill_when_none_unused_available(
     postgres_session_factory,
     exam_record_factory,
@@ -2618,7 +2764,7 @@ async def test_two_concurrent_evaluation_retries_enqueue_one_worker(
     assert stored.exam_state["state_revision"] == state["state_revision"] + 1
 
 
-async def test_ai_grading_failure_creates_no_profile_or_analytics_projection(
+async def test_ai_grading_failure_completes_with_low_confidence_fallback_report(
     monkeypatch,
     postgres_session_factory,
     exam_record_factory,
@@ -2636,11 +2782,13 @@ async def test_ai_grading_failure_creates_no_profile_or_analytics_projection(
 
     stored = await _stored_exam(postgres_session_factory, record.session_id)
     evaluation = stored.exam_state["evaluation"]
-    assert stored.status == "failed"
-    assert stored.is_completed is False
-    assert stored.assessment_report is None
-    assert evaluation["evaluation_status"] == "scorer_unavailable"
-    assert evaluation["error_code"] == "scorer_unavailable"
+    assert stored.status == "completed"
+    assert stored.is_completed is True
+    assert stored.assessment_report is not None
+    assert stored.assessment_report["scorer_fallback_used"] is True
+    assert stored.assessment_report["confidence"] <= 0.55
+    assert evaluation["evaluation_status"] == "completed"
+    assert evaluation.get("error_code") is None
     assert evaluation["evaluation_lease_expires_at"] is None
 
     async with postgres_session_factory() as db:
@@ -2656,18 +2804,17 @@ async def test_ai_grading_failure_creates_no_profile_or_analytics_projection(
                 )
             )
         ).scalar_one_or_none()
-    assert analytics is None
-    assert profile is None
+    assert analytics is not None
+    assert profile is not None
 
 
-async def test_malformed_ai_grading_output_leaves_the_session_safely_failed(
+async def test_malformed_ai_grading_output_completes_with_fallback_report(
     monkeypatch,
     postgres_session_factory,
     exam_record_factory,
 ) -> None:
-    """A schema-invalid (not merely absent) AI grading response must fail the exam the same
-    safe way an outright-unavailable grader already does: no level, no profile/analytics rows,
-    no silent completion."""
+    """Schema-invalid AI grading output should no longer strand the student on a failed final
+    page; the evaluator completes with a clearly marked low-confidence fallback report."""
 
     record = await exam_record_factory(state=_completed_evidence_state(), status="evaluating")
     monkeypatch.setattr(language_exam, "AsyncSessionLocal", postgres_session_factory)
@@ -2687,11 +2834,13 @@ async def test_malformed_ai_grading_output_leaves_the_session_safely_failed(
 
     stored = await _stored_exam(postgres_session_factory, record.session_id)
     evaluation = stored.exam_state["evaluation"]
-    assert stored.status == "failed"
-    assert stored.is_completed is False
-    assert stored.assessment_report is None
-    assert evaluation["evaluation_status"] == "scorer_unavailable"
-    assert evaluation["error_code"] == "scorer_unavailable"
+    assert stored.status == "completed"
+    assert stored.is_completed is True
+    assert stored.assessment_report is not None
+    assert stored.assessment_report["scorer_fallback_used"] is True
+    assert stored.assessment_report["confidence"] <= 0.55
+    assert evaluation["evaluation_status"] == "completed"
+    assert evaluation.get("error_code") is None
 
     async with postgres_session_factory() as db:
         analytics = await db.get(
@@ -2706,8 +2855,8 @@ async def test_malformed_ai_grading_output_leaves_the_session_safely_failed(
                 )
             )
         ).scalar_one_or_none()
-    assert analytics is None
-    assert profile is None
+    assert analytics is not None
+    assert profile is not None
 
 
 async def test_evaluation_heartbeat_prevents_a_second_live_worker(

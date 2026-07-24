@@ -235,7 +235,7 @@ import {
 import { getErrorMessage } from '../../../api/client.js'
 import { ROUTES } from '../../../constants/app.js'
 import LevelUpCelebration from '../../../components/language/LevelUpCelebration.vue'
-import { levelUpState, checkLevelUp, dismissLevelUp } from '../../../composables/useLevelUp.js'
+import { levelUpState, syncLevelSeen, dismissLevelUp } from '../../../composables/useLevelUp.js'
 
 const router = useRouter()
 
@@ -349,7 +349,9 @@ function featureColor(f) {
 onMounted(async () => {
   try {
     data.value = await fetchCurriculum()
-    checkLevelUp(data.value?.current_level) // celebrate if the learner just reached a new level
+    // Curriculum can be opened immediately after placement; sync the displayed level without
+    // launching a level-up modal that may feel like a second, conflicting placement result.
+    syncLevelSeen(data.value?.current_level)
   } catch (e) {
     error.value = getErrorMessage(e, 'Could not load your curriculum')
   } finally {

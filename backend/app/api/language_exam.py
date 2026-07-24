@@ -25,6 +25,8 @@ import copy
 import hashlib
 import json
 import logging
+import math
+import re
 import secrets
 import unicodedata
 import uuid
@@ -65,9 +67,11 @@ from app.schemas.language_exam import (
     McqAnswerIn,
     McqPromptOut,
     MultiSkillReportSchema,
+    SpeakingGradeSchema,
     SpeakingPromptOut,
     SpeakingTurnFeedbackOut,
     WritingAnswerIn,
+    WritingGradeSchema,
     WritingPromptOut,
 )
 from app.services.language_access_service import require_active_language_subscription
@@ -80,6 +84,7 @@ from app.services.language_exam_service import (
     build_verified_speaking_evidence,
     cefr_from_rank,
     cefr_rank,
+    level_from_score10,
     overall_level,
 )
 from app.services.language_gap_fill_service import gap_fill_content_error, normalize_gap_fill_text
@@ -122,7 +127,25 @@ SPEAKING_TURNS = 3
 INTERVIEW_TURNS = 2  # Phase 2 — guided follow-up seeded by Phase 1 evidence.
 ADAPTIVE_MAX_STEPS = 5  # MCQ sections: max adaptive questions before settling on a level.
 MIN_MCQ_EVIDENCE_ITEMS = 3  # MCQ sections: don't settle on a level from fewer answered items than this.
+READING_ADAPTIVE_MAX_STEPS = 7
+READING_MIN_EVIDENCE_ITEMS = 5
 WRITING_MIN_WORDS = 40
+WRITING_TASK_TOTAL = 2
+WRITING_TASK1_PROMPT = (
+    "Write an email to a friend about a recent problem you had and how you solved it. "
+    "Write 50-80 words."
+)
+WRITING_TASK1_MIN_WORDS = 50
+WRITING_TASK1_MAX_WORDS = 80
+WRITING_TASK2_ROUTE_LEVELS = {
+    "A1_A2": ("A2", "A1"),
+    "B1_B2": ("B2", "B1"),
+    "C1_C2": ("C1", "C2"),
+}
+PLACEMENT_EXAM_DURATION_SECONDS = 60 * 60
+PLACEMENT_EXAM_TIME_EXPIRED_MESSAGE = (
+    "The 60-minute placement exam time is up. Please start a fresh attempt."
+)
 EVALUATION_LEASE_SECONDS = 15 * 60
 
 
@@ -143,7 +166,13 @@ async def _student_grade(db: AsyncSession, *, student_id: int) -> int | None:
     ).scalar_one_or_none()
 
 
-def _new_adaptive_section(pool: dict[str, dict], start_level: str, *, dual_slot: bool = False) -> dict:
+def _new_adaptive_section(
+    pool: dict[str, dict],
+    start_level: str,
+    *,
+    dual_slot: bool = False,
+    max_steps: int = ADAPTIVE_MAX_STEPS,
+) -> dict:
     """Build the adaptive section state. Starts at the nearest available level to the estimate.
 
     dual_slot: Listening-only. When True, each pool[level] is {"mcq": item_or_none,
@@ -174,7 +203,7 @@ def _new_adaptive_section(pool: dict[str, dict], start_level: str, *, dual_slot:
         "current_level": start_level if tokenized_pool else "",
         "start_level": start_level,
         "asked": [],
-        "max_steps": ADAPTIVE_MAX_STEPS,
+        "max_steps": max_steps,
         "ready": bool(tokenized_pool),
         "done": False,
         "evidence_status": "missing_student_response" if tokenized_pool else "content_unavailable",
@@ -252,6 +281,22 @@ def _listening_text_from_body(body: dict | None) -> str:
     return str(text).strip()
 
 
+_FEMALE_LISTENING_CUES_RE = re.compile(
+    r"\b(mrs\.?|ms\.?|miss|layla|leila|laila|nadia|maria|anna|sara|sarah|fatima|"
+    r"my husband)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _listening_tts_voice_for_text(text: str | None) -> str:
+    """Pick a single-speaker placement-listening voice that does not contradict obvious cues."""
+
+    cleaned = str(text or "")
+    if _FEMALE_LISTENING_CUES_RE.search(cleaned):
+        return "F1"
+    return (get_settings().LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
+
+
 def _first_question(body: dict | None) -> dict | None:
     for q in (body or {}).get("questions") or []:
         choices = q.get("choices")
@@ -318,22 +363,26 @@ def _is_valid_gap_fill_item(item: dict) -> bool:
     return gap_fill_content_error(item) is None
 
 
-# Phase 6: Listening task bundles. A bundle is still one adaptive-pool item/passage (the
+# Phase 6: task bundles. A bundle is still one adaptive-pool item/passage (the
 # staircase moves one CEFR level per passage exactly as before) -- only the *scoring* of that one
 # passage now rolls up from several sub-answers. Strict majority: a 1-1 tie (2 blanks/subquestions)
 # does NOT count as correct, only counts >half.
 _BUNDLE_SUBQUESTION_COUNT = 3
+_READING_BUNDLE_SUBQUESTION_COUNT = 4
+_READING_MVP_SOURCE = "reading_mvp_v1_draft"
 _BUNDLE_BLANK_COUNT = 3
 _NOTE_TEMPLATE_TOKENS = ("{{1}}", "{{2}}", "{{3}}")
+_READING_TEXT_RESPONSE_TYPES = {"short_answer", "constructed_response", "gap_fill"}
+_READING_MATCHING_RESPONSE_TYPES = {"matching"}
 
 
 def _majority_correct(flags: list[bool]) -> bool:
     return sum(flags) * 2 > len(flags)
 
 
-def _is_valid_mcq_bundle_item(item: dict) -> bool:
+def _is_valid_mcq_bundle_item(item: dict, *, expected_count: int = _BUNDLE_SUBQUESTION_COUNT) -> bool:
     subquestions = item.get("subquestions")
-    if not isinstance(subquestions, list) or len(subquestions) != _BUNDLE_SUBQUESTION_COUNT:
+    if not isinstance(subquestions, list) or len(subquestions) != expected_count:
         return False
     for sq in subquestions:
         if not isinstance(sq, dict) or not str(sq.get("question") or "").strip():
@@ -343,6 +392,53 @@ def _is_valid_mcq_bundle_item(item: dict) -> bool:
         if not isinstance(options, list) or len(options) != 4:
             return False
         if not isinstance(ci, int) or isinstance(ci, bool) or not (0 <= ci < len(options)):
+            return False
+    return True
+
+
+def _reading_subquestion_response_type(sq: dict) -> str:
+    return str(sq.get("response_type") or "mcq").strip() or "mcq"
+
+
+def _is_valid_reading_bundle_item(item: dict) -> bool:
+    subquestions = item.get("subquestions")
+    if not isinstance(subquestions, list) or len(subquestions) != _READING_BUNDLE_SUBQUESTION_COUNT:
+        return False
+    for sq in subquestions:
+        if not isinstance(sq, dict) or not str(sq.get("question") or "").strip():
+            return False
+        response_type = _reading_subquestion_response_type(sq)
+        if response_type == "mcq":
+            options = sq.get("options")
+            ci = sq.get("correct_index")
+            if not isinstance(options, list) or len(options) != 4:
+                return False
+            if not isinstance(ci, int) or isinstance(ci, bool) or not (0 <= ci < len(options)):
+                return False
+        elif response_type in _READING_TEXT_RESPONSE_TYPES:
+            accepted = sq.get("accepted_answers")
+            max_words = sq.get("max_words", 12)
+            if not isinstance(accepted, list) or not any(str(a or "").strip() for a in accepted):
+                return False
+            if not isinstance(max_words, int) or isinstance(max_words, bool) or not (1 <= max_words <= 30):
+                return False
+        elif response_type in _READING_MATCHING_RESPONSE_TYPES:
+            matching_items = sq.get("matching_items")
+            match_options = sq.get("match_options")
+            correct_indices = sq.get("correct_indices")
+            if not isinstance(matching_items, list) or not (2 <= len(matching_items) <= 5):
+                return False
+            if not all(isinstance(i, str) and i.strip() for i in matching_items):
+                return False
+            if not isinstance(match_options, list) or len(match_options) < len(matching_items):
+                return False
+            if not all(isinstance(o, str) and o.strip() for o in match_options):
+                return False
+            if not isinstance(correct_indices, list) or len(correct_indices) != len(matching_items):
+                return False
+            if any(not isinstance(i, int) or isinstance(i, bool) or not (0 <= i < len(match_options)) for i in correct_indices):
+                return False
+        else:
             return False
     return True
 
@@ -364,12 +460,17 @@ def _is_valid_gap_fill_bundle_item(item: dict) -> bool:
 
 
 def _is_valid_mcq_pool_item(item: dict, *, skill: str) -> bool:
-    """Accepts either the legacy single-question shape (all skills) or, Listening only, the
-    Phase 6 bundle shape -- so existing single-question rows keep working as a fallback while
-    bundled rows are the new primary content."""
-    if _is_valid_mcq_item(item):
-        return True
-    return skill == "listening" and _is_valid_mcq_bundle_item(item)
+    """Validate pool items by skill.
+
+    Reading placement now uses only curated passage bundles: one passage with exactly four
+    subquestions. Legacy single-question Reading rows are intentionally rejected so they cannot
+    leak back through old bank rows, boundary rows, or fallback content.
+    """
+    if skill == "reading":
+        return _is_valid_reading_bundle_item(item)
+    if skill == "listening":
+        return _is_valid_mcq_item(item) or _is_valid_mcq_bundle_item(item, expected_count=_BUNDLE_SUBQUESTION_COUNT)
+    return _is_valid_mcq_item(item)
 
 
 def _is_valid_gap_fill_pool_item(item: dict) -> bool:
@@ -425,21 +526,78 @@ def _already_used_bank_item_ids(state: dict, skill: str) -> set[int]:
 
 
 def _mcq_continuation_level(
-    *, pool_levels: set[str], asked_levels: set[str], asked_count: int, current: str
+    *,
+    pool_levels: set[str],
+    asked_levels: set[str],
+    asked_count: int,
+    current: str,
+    min_evidence_items: int = MIN_MCQ_EVIDENCE_ITEMS,
 ) -> str | None:
     """When the adaptive staircase converges/plateaus, decide whether to keep probing instead of
     settling on a level (P1.2 minimum evidence floor).
 
     Returns the next unasked pool level to ask (nearest to `current` by CEFR rank distance, same
     selection style as _new_adaptive_section's initial-level snap), or None if evidence is already
-    sufficient (asked_count >= MIN_MCQ_EVIDENCE_ITEMS) or the pool has no unasked levels left — in
+    sufficient (asked_count >= min_evidence_items) or the pool has no unasked levels left — in
     which case the caller should fall through to its existing completion path."""
-    if asked_count >= MIN_MCQ_EVIDENCE_ITEMS:
+    if asked_count >= min_evidence_items:
         return None
     remaining = [lv for lv in pool_levels if lv not in asked_levels]
     if not remaining:
         return None
     return min(remaining, key=lambda lv: abs(cefr_rank(CEFRLevel(lv)) - cefr_rank(CEFRLevel(current))))
+
+
+def _min_evidence_for_section(section: str) -> int:
+    return READING_MIN_EVIDENCE_ITEMS if section == "reading" else MIN_MCQ_EVIDENCE_ITEMS
+
+
+def _reading_weighted_result(asked: list[dict]) -> tuple[CEFRLevel, float]:
+    """Reading-specific placement score from all evidence, not just the highest correct rung.
+
+    Correct answers contribute one band above the item as evidence that the learner can handle
+    that difficulty; wrong answers contribute one band below it. The final estimate is the
+    weighted floor of those signals with a small consistency boost for strong accuracy, capped by
+    the highest level actually answered correctly so one low-level streak cannot over-place.
+    """
+    total = len(asked or [])
+    if not total:
+        return CEFRLevel.A2, 0.0
+
+    correct_ranks: list[int] = []
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for answer in asked:
+        try:
+            rank = cefr_rank(CEFRLevel(answer["level"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        weight = 1.0 + (rank * 0.08)
+        if answer.get("correct"):
+            correct_ranks.append(rank)
+            signal = min(len(ALL_CEFR_LEVELS) - 1, rank + 1)
+        else:
+            signal = max(0, rank - 1)
+        weighted_sum += signal * weight
+        weight_total += weight
+
+    correct_count = len(correct_ranks)
+    pct = round(correct_count / total * 100, 1) if total else 0.0
+    if not correct_ranks:
+        valid_levels = []
+        for answer in asked:
+            try:
+                valid_levels.append(CEFRLevel(answer["level"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+        lowest = min(valid_levels, key=cefr_rank) if valid_levels else CEFRLevel.A1
+        return cefr_from_rank(cefr_rank(lowest) - 1), pct
+
+    average_signal = weighted_sum / weight_total if weight_total else float(max(correct_ranks))
+    boost = 0.5 if pct >= 75 else 0.25 if pct >= 60 else 0.0
+    estimated_rank = math.floor(average_signal + boost)
+    estimated_rank = min(estimated_rank, max(correct_ranks))
+    return cefr_from_rank(estimated_rank), pct
 
 
 def _boundary_situation(asked: list[dict]) -> tuple[str, str] | None:
@@ -529,9 +687,11 @@ async def _question_bank_pool(
             language_id=language_id,
             skill=skill,
             level=lvl,
-            count=4 if skill == "listening" else 1,
+            count=12 if skill == "reading" else 4 if skill == "listening" else 1,
             used_item_ids=used_item_ids,
         ):
+            if skill == "reading" and row.source != _READING_MVP_SOURCE:
+                continue
             item = bank_item_to_exam_item(row)
             if not _is_valid_mcq_pool_item(item, skill=skill):
                 continue
@@ -711,6 +871,17 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             # content (re)prepared here.
             needs_grammar_vocab = "grammar_vocab" in (source_state.get("sections") or SECTIONS)
             student_id = int(sess.student_id)
+            analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+            reading_start_level = (
+                analytics.reading_level.value
+                if analytics and analytics.reading_level
+                else level
+            )
+            listening_start_level = (
+                analytics.listening_level.value
+                if analytics and analytics.listening_level
+                else level
+            )
             if not check("placement_generation", f"{student_id}:{session_id}"):
                 logger.warning(
                     "Placement content generation rate-limited session_id=%s user_id=%s",
@@ -730,15 +901,12 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 used_item_ids=_already_used_bank_item_ids(source_state, "reading"),
             )
             r_missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
-            r_seeded = await _seeded_pool(
-                db,
-                language_id=language_id,
-                skill=LanguageSkill.reading,
-                levels=r_missing,
-            )
-            r_generated_bank = await _generated_pool(
-                db, language_id=language_id, levels=r_missing
-            )
+            if r_missing:
+                logger.warning(
+                    "Reading placement bundle bank missing levels session_id=%s levels=%s",
+                    session_id,
+                    ",".join(r_missing),
+                )
             g_pool = (
                 await _question_bank_pool(
                     db,
@@ -766,47 +934,17 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 skill=LanguageSkill.listening,
                 levels=l_missing,
             )
-            writing_used_ids = _already_used_bank_item_ids(source_state, "writing")
-            reviewed_writing_prompt = await _writing_prompt(
-                db,
-                language_id=language_id,
-                level_str=level,
-                include_generic=False,
-                used_item_ids=writing_used_ids,
-            )
-            generic_writing_prompt = reviewed_writing_prompt or await _writing_prompt(
-                db,
-                language_id=language_id,
-                level_str=level,
-                include_generic=True,
-                used_item_ids=writing_used_ids,
-            )
             await db.rollback()
 
         # External-only preparation.  The database session above is closed before reaching here.
         start_level = level if level in ALL_CEFR_LEVELS else "B1"
-        missing = [lv for lv in ALL_CEFR_LEVELS if lv not in r_pool]
-        try:
-            generated_reading = (
-                await ai_engine.generate_comprehension_set(skill="reading", levels=missing)
-                if missing
-                else None
-            )
-        except Exception:
-            generated_reading = None
-        for item in (generated_reading or {}).get("items", []):
-            r_pool[item["level"]] = {
-                "passage": item["text"],
-                "situation": "",
-                "question": item["question"],
-                "options": item["options"],
-                "correct_index": item["correct_index"],
-                "level": item["level"],
-            }
-        for fallback_pool in (r_seeded, r_generated_bank):
-            for fallback_level, item in fallback_pool.items():
-                r_pool.setdefault(fallback_level, item)
-        reading_section = _new_adaptive_section(r_pool, start_level)
+        # Reading must stay on the curated MVP bundle bank: one passage with four subquestions.
+        # Do not backfill missing levels with generated/seeded single-question items.
+        reading_section = _new_adaptive_section(
+            r_pool,
+            reading_start_level if reading_start_level in ALL_CEFR_LEVELS else start_level,
+            max_steps=READING_ADAPTIVE_MAX_STEPS,
+        )
         grammar_vocab_section = _new_adaptive_section(g_pool, start_level) if needs_grammar_vocab else None
 
         missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
@@ -848,19 +986,29 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             lvl: {"mcq": l_pool.get(lvl), "gap_fill": l_gap_fill_pool.get(lvl)}
             for lvl in set(l_pool) | set(l_gap_fill_pool)
         }
-        listening_section = _new_adaptive_section(l_dual_pool, start_level, dual_slot=True)
+        listening_section = _new_adaptive_section(
+            l_dual_pool,
+            listening_start_level if listening_start_level in ALL_CEFR_LEVELS else start_level,
+            dual_slot=True,
+        )
 
-        writing_prompt = reviewed_writing_prompt
-        if not writing_prompt:
-            try:
-                writing_prompt = await ai_engine.generate_writing_prompt(level=level)
-            except Exception:
-                writing_prompt = None
-        writing_prompt = writing_prompt or generic_writing_prompt
+        writing_prompt_payload = _writing_task1_payload()
+        writing_prompt = str((writing_prompt_payload or {}).get("prompt") or "")
         writing_section = {
-            "prompt": writing_prompt or "",
+            "mode": "adaptive_two_task",
+            "task_index": 1,
+            "task_total": WRITING_TASK_TOTAL,
+            "tasks": [dict(writing_prompt_payload)],
+            "prompt": writing_prompt,
             "prompt_token": _new_exam_token() if writing_prompt else "",
-            "min_words": WRITING_MIN_WORDS,
+            "min_words": int((writing_prompt_payload or {}).get("min_words") or WRITING_MIN_WORDS),
+            "max_words": (writing_prompt_payload or {}).get("max_words"),
+            "task_type": str((writing_prompt_payload or {}).get("task_type") or ""),
+            "student_instructions": str((writing_prompt_payload or {}).get("student_instructions") or ""),
+            "rubric_focus": list((writing_prompt_payload or {}).get("rubric_focus") or []),
+            "expected_language_features": list((writing_prompt_payload or {}).get("expected_language_features") or []),
+            "bank_item_id": (writing_prompt_payload or {}).get("bank_item_id"),
+            "source": str((writing_prompt_payload or {}).get("source") or ""),
             "response": None,
             "ready": bool(writing_prompt),
             "done": False,
@@ -964,7 +1112,7 @@ async def _writing_prompt(
     level_str: str,
     include_generic: bool = True,
     used_item_ids: set[int] | None = None,
-) -> str | None:
+) -> dict | None:
     """Pull a reviewed/seeded writing prompt near the level; optionally fall back to generic."""
     try:
         lvl = LanguageLevel(level_str)
@@ -981,31 +1129,345 @@ async def _writing_prompt(
         item = bank_item_to_exam_item(row)
         prompt = str(item.get("question") or "").strip()
         if prompt:
-            return prompt
-    q = (
-        select(LanguageContentItem)
-        .where(
-            LanguageContentItem.language_id == language_id,
-            LanguageContentItem.skill == LanguageSkill.writing,
-            LanguageContentItem.content_type == "writing_prompt",
-            LanguageContentItem.level == lvl,
-            LanguageContentItem.is_published.is_(True),
-        )
-        .order_by(func.random())
-        .limit(1)
-    )
-    row = (await db.execute(q)).scalar_one_or_none()
-    if row:
-        body = row.body_json or {}
-        prompt = body.get("prompt") or body.get("text") or row.title
-        if prompt:
-            return str(prompt)
+            body = item.get("body") or {}
+            return {
+                "prompt": prompt,
+                "min_words": _coerce_writing_word_limit(body.get("target_min_words") or body.get("min_words"), WRITING_MIN_WORDS),
+                "max_words": _coerce_writing_word_limit(body.get("target_max_words"), None),
+                "task_type": str(body.get("task_type") or item.get("subskill") or "").strip(),
+                "student_instructions": str(body.get("student_instructions") or "").strip(),
+                "rubric_focus": list(body.get("rubric_focus") or []),
+                "expected_language_features": list(body.get("expected_language_features") or []),
+                "bank_item_id": item.get("bank_item_id"),
+                "source": str(row.source or ""),
+            }
     if not include_generic:
         return None
     return (
-        "Write a short message (at least 40 words) describing a memorable day you had recently. "
-        "Explain what happened, who you were with, and how you felt."
+        {
+            "prompt": (
+                "Write a short message (at least 40 words) describing a memorable day you had recently. "
+                "Explain what happened, who you were with, and how you felt."
+            ),
+            "min_words": WRITING_MIN_WORDS,
+            "max_words": None,
+            "task_type": "fallback_short_message",
+            "student_instructions": "Write in English. Stay on topic. Do not use bullet points.",
+            "rubric_focus": [],
+            "expected_language_features": [],
+            "bank_item_id": None,
+            "source": "generic_fallback",
+        }
     )
+
+
+def _coerce_writing_word_limit(value: object, default: int | None) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
+def _normalise_writing_prompt_payload(value: object) -> dict | None:
+    if not value:
+        return None
+    if isinstance(value, dict):
+        prompt = str(value.get("prompt") or "").strip()
+        if not prompt:
+            return None
+        min_words = _coerce_writing_word_limit(value.get("min_words"), WRITING_MIN_WORDS)
+        max_words = _coerce_writing_word_limit(value.get("max_words"), None)
+        return {
+            "prompt": prompt,
+            "min_words": min_words,
+            "max_words": max_words,
+            "task_type": str(value.get("task_type") or "").strip(),
+            "student_instructions": str(value.get("student_instructions") or "").strip(),
+            "rubric_focus": list(value.get("rubric_focus") or []),
+            "expected_language_features": list(value.get("expected_language_features") or []),
+            "bank_item_id": value.get("bank_item_id"),
+            "source": str(value.get("source") or "").strip(),
+        }
+    prompt = str(value).strip()
+    if not prompt:
+        return None
+    return {
+        "prompt": prompt,
+        "min_words": WRITING_MIN_WORDS,
+        "max_words": None,
+        "task_type": "",
+        "student_instructions": "",
+        "rubric_focus": [],
+        "expected_language_features": [],
+        "bank_item_id": None,
+        "source": "",
+    }
+
+
+def _writing_task1_payload() -> dict:
+    return {
+        "prompt": WRITING_TASK1_PROMPT,
+        "min_words": WRITING_TASK1_MIN_WORDS,
+        "max_words": WRITING_TASK1_MAX_WORDS,
+        "task_type": "task1_anchor_email",
+        "student_instructions": "Write in English. Stay on topic. Do not use bullet points.",
+        "rubric_focus": [
+            "task_fulfillment",
+            "communicative_achievement",
+            "organization",
+            "grammar",
+            "vocabulary",
+        ],
+        "expected_language_features": [
+            "basic past tense",
+            "clear sequencing",
+            "everyday vocabulary",
+            "email register",
+        ],
+        "bank_item_id": None,
+        "source": "writing_task1_anchor",
+        "route": "anchor",
+    }
+
+
+def _writing_task2_fallback_payload(route: str) -> dict:
+    if route == "A1_A2":
+        return {
+            "prompt": (
+                "Describe a memorable day in your life. Say where you were, who was with you, "
+                "and what happened. Write 60-90 words."
+            ),
+            "min_words": 60,
+            "max_words": 90,
+            "task_type": "personal_narrative",
+            "student_instructions": "Write in English. Stay on topic. Do not use bullet points.",
+        }
+    if route == "C1_C2":
+        return {
+            "prompt": (
+                "Some people believe that final examinations should be replaced by continuous assessment. "
+                "Write an essay discussing both approaches and give your own opinion. Write 200-250 words."
+            ),
+            "min_words": 200,
+            "max_words": 250,
+            "task_type": "discussion_essay",
+            "student_instructions": "Write in English. Organize your ideas into clear paragraphs. Do not use bullet points.",
+        }
+    return {
+        "prompt": (
+            "If you could change one rule at your school, what would you change? Explain why and "
+            "describe how this change would help students. Write 120-160 words."
+        ),
+        "min_words": 120,
+        "max_words": 160,
+        "task_type": "opinion_response",
+        "student_instructions": "Write in English. Organize your ideas clearly. Do not use bullet points.",
+    }
+
+
+async def _writing_task2_prompt(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    route: str,
+    used_item_ids: set[int] | None = None,
+) -> dict:
+    levels = WRITING_TASK2_ROUTE_LEVELS.get(route) or WRITING_TASK2_ROUTE_LEVELS["B1_B2"]
+    for level in levels:
+        payload = await _writing_prompt(
+            db,
+            language_id=language_id,
+            level_str=level,
+            include_generic=False,
+            used_item_ids=used_item_ids,
+        )
+        if payload:
+            payload = dict(payload)
+            payload["route"] = route
+            return payload
+    fallback = _writing_task2_fallback_payload(route)
+    fallback.update({
+        "rubric_focus": [],
+        "expected_language_features": [],
+        "bank_item_id": None,
+        "source": f"writing_task2_{route.lower()}_fallback",
+        "route": route,
+    })
+    return fallback
+
+
+def _writing_route_from_score(score: float) -> str:
+    if score < 4.5:
+        return "A1_A2"
+    if score < 7.5:
+        return "B1_B2"
+    return "C1_C2"
+
+
+def _writing_route_from_level(level: CEFRLevel | str) -> str:
+    try:
+        rank = cefr_rank(CEFRLevel(str(level)))
+    except ValueError:
+        return "B1_B2"
+    if rank <= cefr_rank(CEFRLevel.A2):
+        return "A1_A2"
+    if rank <= cefr_rank(CEFRLevel.B2):
+        return "B1_B2"
+    return "C1_C2"
+
+
+def _writing_grade_to_dict(grade: WritingGradeSchema, *, fallback_route: str | None = None) -> dict:
+    score = float(grade.score)
+    task_fulfillment = grade.task_fulfillment or grade.task_achievement
+    communicative = grade.communicative_achievement or grade.task_achievement
+    organization = grade.organization or grade.coherence
+    vocabulary = grade.vocabulary or grade.lexical
+    spelling = grade.spelling_punctuation or min(vocabulary, grade.grammar)
+    return {
+        "level": grade.level.value,
+        "score": round(score, 1),
+        "route": fallback_route or _writing_route_from_score(score),
+        "criteria": {
+            "task_fulfillment": task_fulfillment,
+            "communicative_achievement": communicative,
+            "organization": organization,
+            "grammar": grade.grammar,
+            "vocabulary": vocabulary,
+            "spelling_punctuation": spelling,
+        },
+        "feedback": grade.feedback,
+    }
+
+
+def _fallback_writing_task1_grade(text: str) -> dict:
+    words = len(str(text or "").split())
+    score = 4.0 if words < WRITING_TASK1_MIN_WORDS else 5.5
+    route = _writing_route_from_score(score)
+    return {
+        "level": level_from_score10(score).value,
+        "score": score,
+        "route": route,
+        "criteria": {},
+        "feedback": "Preliminary writing routing used a fallback because the scorer was unavailable.",
+        "fallback": True,
+    }
+
+
+def _fallback_writing_grade(task: dict) -> WritingGradeSchema:
+    text = str(task.get("response") or "").strip()
+    words = len(text.split())
+    min_words = max(1, int(task.get("min_words") or WRITING_MIN_WORDS))
+    max_words = int(task.get("max_words") or 0)
+    length_ratio = min(1.0, words / min_words)
+    has_sentence_punct = bool(re.search(r"[.!?]", text))
+    sentence_count = len(re.findall(r"[.!?]", text))
+    has_linkers = bool(re.search(r"\b(and|but|because|so|then|also|however|therefore|although|for example)\b", text, re.I))
+    concise_bonus = 0.0 if max_words and words > max_words * 1.25 else 0.4
+    base = 2.2 + (length_ratio * 3.4) + (0.7 if has_sentence_punct else 0.0) + min(1.0, sentence_count * 0.2) + (0.7 if has_linkers else 0.0) + concise_bonus
+    score = round(max(2.0, min(6.4, base)), 1)
+    grammar = round(max(2.0, min(6.2, score - (0.3 if not has_sentence_punct else 0.0))), 1)
+    vocabulary = round(max(2.0, min(6.4, score + (0.2 if words >= min_words else -0.2))), 1)
+    organization = round(max(2.0, min(6.4, score + (0.3 if has_linkers else -0.2))), 1)
+    task_fulfillment = round(max(2.0, min(6.5, 2.5 + length_ratio * 3.6)), 1)
+    communicative = round(max(2.0, min(6.3, score)), 1)
+    spelling = round(max(2.0, min(6.2, grammar)), 1)
+    weighted = round(
+        task_fulfillment * 0.20
+        + communicative * 0.15
+        + organization * 0.20
+        + grammar * 0.20
+        + vocabulary * 0.20
+        + spelling * 0.05,
+        1,
+    )
+    return WritingGradeSchema(
+        level=level_from_score10(weighted),
+        task_achievement=task_fulfillment,
+        coherence=organization,
+        lexical=vocabulary,
+        grammar=grammar,
+        task_fulfillment=task_fulfillment,
+        communicative_achievement=communicative,
+        organization=organization,
+        vocabulary=vocabulary,
+        spelling_punctuation=spelling,
+        score=weighted,
+        feedback="Fallback writing score used because the AI writing scorer was temporarily unavailable.",
+        detected_errors=[],
+    )
+
+
+def _fallback_speaking_grade(results: list[dict]) -> SpeakingGradeSchema:
+    transcripts = [str(r.get("transcription") or "").strip() for r in results if str(r.get("transcription") or "").strip()]
+    word_count = sum(len(t.split()) for t in transcripts)
+    turn_count = len(transcripts)
+    avg_words = word_count / max(1, turn_count)
+    has_linkers = bool(re.search(r"\b(and|but|because|so|then|also|however|for example)\b", " ".join(transcripts), re.I))
+    base = 2.4 + min(2.8, word_count / 70 * 2.8) + min(1.4, avg_words / 24 * 1.4) + (0.5 if has_linkers else 0.0)
+    score = round(max(2.0, min(6.2, base)), 1)
+    fluency = round(max(2.0, min(6.3, score + (0.2 if turn_count >= 2 else -0.2))), 1)
+    lexical = round(max(2.0, min(6.2, score)), 1)
+    grammar = round(max(2.0, min(6.1, score - 0.1)), 1)
+    final_score = round((fluency + lexical + grammar) / 3, 1)
+    return SpeakingGradeSchema(
+        level=level_from_score10(final_score),
+        fluency=fluency,
+        lexical=lexical,
+        grammar=grammar,
+        pronunciation=0.0,
+        score=final_score,
+        feedback="Fallback speaking score used because the AI speaking scorer was temporarily unavailable.",
+        detected_errors=[],
+    )
+
+
+def _error_field(error: object, field: str) -> str:
+    if isinstance(error, dict):
+        return str(error.get(field) or "")
+    return str(getattr(error, field, "") or "")
+
+
+def _compact_language_feedback_text(value: object) -> str:
+    text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _student_answer_detected_errors(errors: list, answer_texts: list[str], *, limit: int = 5) -> list:
+    """Keep only corrections whose original text appears in a student's own writing/speech."""
+    haystacks = [
+        compacted for compacted in (_compact_language_feedback_text(text) for text in answer_texts) if compacted
+    ]
+    if not haystacks:
+        return []
+    kept: list = []
+    seen: set[tuple[str, str]] = set()
+    for error in errors:
+        original = _compact_language_feedback_text(_error_field(error, "original_text"))
+        corrected = _compact_language_feedback_text(_error_field(error, "corrected_text"))
+        if len(original) < 3 or not corrected:
+            continue
+        if not any(original in answer for answer in haystacks):
+            continue
+        key = (original, corrected)
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(error)
+        if len(kept) >= limit:
+            break
+    return kept
+
+
+def _apply_writing_route_cap(level: CEFRLevel, route: str) -> CEFRLevel:
+    rank = cefr_rank(level)
+    if route == "A1_A2":
+        return cefr_from_rank(min(rank, cefr_rank(CEFRLevel.B1)))
+    if route == "B1_B2":
+        return cefr_from_rank(min(rank, cefr_rank(CEFRLevel.B2)))
+    return level
 
 
 _SPEAKING_BANK_SCENARIO = {
@@ -1049,6 +1511,7 @@ async def _speaking_bank_prompt(
     language_id: int,
     level_str: str,
     used_item_ids: set[int] | None = None,
+    recent_item_ids: set[int] | None = None,
     used_subskills: set[str] | None = None,
 ) -> dict | None:
     """Pull one verified, unused, MVP-marked speaking_prompt bank item at the target level, or
@@ -1061,29 +1524,44 @@ async def _speaking_bank_prompt(
     predate it -- those legacy rows are untouched (not deleted/deactivated), just never
     selected here.
 
+    recent_item_ids is a soft cross-attempt exclusion: prefer prompts this student has not seen
+    recently, then fall back to the same selection without the recent filter if the target band is
+    thin. used_item_ids remains hard session-scoped exclusion so the same live attempt never asks
+    the identical bank item twice.
+
     used_subskills, if given, is a soft diversity preference applied in priority order (never a
     hard requirement -- a thin bank can never fail to produce a prompt just because every
     remaining item shares an already-seen subskill):
-      1. Target level, preferring an item whose subskill/task_type hasn't appeared this session.
+      1. Target level, preferring a recent-unseen item whose subskill/task_type hasn't appeared
+         this session.
       2. An adjacent CEFR level (+/-1 band), still preferring an unused subskill -- covers levels
          that today have exactly one subskill of their own (e.g. A1 = self_intro only, A2 =
          routine_description only), where a second turn at the same level would otherwise always
          repeat it even though a neighboring level has something fresh.
-      3. Target level again, unused bank_item_id only -- subskill may repeat.
-      4. None -- caller falls back to live AI generation."""
+      3. Target level again, recent-unseen and unused bank_item_id only -- subskill may repeat.
+      4. Repeat steps 1-3 without the recent filter, while still excluding this session's items.
+      5. None -- caller falls back to live AI generation."""
     try:
         lvl = LanguageLevel(level_str)
     except ValueError:
         lvl = LanguageLevel.A2
+    session_used_ids = {int(x) for x in (used_item_ids or set()) if x is not None}
+    recent_ids = {int(x) for x in (recent_item_ids or set()) if x is not None}
 
-    async def _at_level(level: LanguageLevel, *, exclude_subskills: set[str] | None) -> dict | None:
+    async def _at_level(
+        level: LanguageLevel,
+        *,
+        exclude_subskills: set[str] | None,
+        avoid_recent: bool,
+    ) -> dict | None:
+        excluded_ids = session_used_ids | (recent_ids if avoid_recent else set())
         for row in await select_placement_bank_items(
             db,
             language_id=language_id,
             skill="speaking_prompt",
             level=level,
             count=1,
-            used_item_ids=used_item_ids,
+            used_item_ids=excluded_ids,
             require_mvp_marker=True,
             exclude_subskills=exclude_subskills,
         ):
@@ -1092,16 +1570,21 @@ async def _speaking_bank_prompt(
                 return item
         return None
 
-    if used_subskills:
-        item = await _at_level(lvl, exclude_subskills=used_subskills)
-        if item is not None:
-            return item
-        for neighbor in _adjacent_speaking_levels(lvl):
-            item = await _at_level(neighbor, exclude_subskills=used_subskills)
+    for avoid_recent in (True, False):
+        if used_subskills:
+            item = await _at_level(lvl, exclude_subskills=used_subskills, avoid_recent=avoid_recent)
             if item is not None:
                 return item
+            for neighbor in _adjacent_speaking_levels(lvl):
+                item = await _at_level(neighbor, exclude_subskills=used_subskills, avoid_recent=avoid_recent)
+                if item is not None:
+                    return item
 
-    return await _at_level(lvl, exclude_subskills=None)
+        item = await _at_level(lvl, exclude_subskills=None, avoid_recent=avoid_recent)
+        if item is not None:
+            return item
+
+    return None
 
 
 def _speaking_bank_question_text(item: dict) -> str:
@@ -1134,6 +1617,81 @@ def _already_used_speaking_subskills(state: dict, section: str) -> set[str]:
     return {str(r["bank_item_subskill"]) for r in results if r.get("bank_item_subskill")}
 
 
+RECENT_SPEAKING_PROMPT_DAYS = 30
+RECENT_SPEAKING_PROMPT_STUDENT_SESSIONS = 12
+RECENT_SPEAKING_PROMPT_LANGUAGE_SESSIONS = 24
+
+
+def _speaking_bank_ids_from_state(state: dict | None) -> set[int]:
+    if not isinstance(state, dict):
+        return set()
+    ids: set[int] = set()
+
+    def add_id(value: object) -> None:
+        try:
+            if value:
+                ids.add(int(value))
+        except (TypeError, ValueError):
+            return
+
+    for section in SPEAKING_LIKE:
+        spoken = state.get(section) or {}
+        add_id(spoken.get("pending_bank_item_id"))
+        for result in spoken.get("results", []) or []:
+            add_id(result.get("bank_item_id"))
+    return ids
+
+
+async def _recent_speaking_bank_item_ids(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    student_id: int | None = None,
+    session_limit: int = RECENT_SPEAKING_PROMPT_STUDENT_SESSIONS,
+) -> set[int]:
+    since = datetime.now(timezone.utc) - timedelta(days=RECENT_SPEAKING_PROMPT_DAYS)
+    stmt = (
+        select(LanguageExamSession.exam_state)
+        .where(
+            LanguageExamSession.language_id == language_id,
+            LanguageExamSession.exam_state.isnot(None),
+            LanguageExamSession.created_at >= since,
+        )
+        .order_by(LanguageExamSession.created_at.desc())
+        .limit(max(1, int(session_limit or 1)))
+    )
+    if student_id is not None:
+        stmt = stmt.where(LanguageExamSession.student_id == student_id)
+    rows = (
+        await db.execute(stmt)
+    ).scalars().all()
+    ids: set[int] = set()
+    for state in rows:
+        ids.update(_speaking_bank_ids_from_state(state))
+    return ids
+
+
+async def _recent_speaking_exclusion_ids(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    student_id: int,
+) -> set[int]:
+    student_recent = await _recent_speaking_bank_item_ids(
+        db,
+        language_id=language_id,
+        student_id=student_id,
+        session_limit=RECENT_SPEAKING_PROMPT_STUDENT_SESSIONS,
+    )
+    language_recent = await _recent_speaking_bank_item_ids(
+        db,
+        language_id=language_id,
+        student_id=None,
+        session_limit=RECENT_SPEAKING_PROMPT_LANGUAGE_SESSIONS,
+    )
+    return student_recent | language_recent
+
+
 # ---------------------------------------------------------------------------------------
 # state -> output contract
 # ---------------------------------------------------------------------------------------
@@ -1144,6 +1702,105 @@ def _current_section(state: dict) -> str | None:
     if cursor >= len(sections):
         return None
     return sections[cursor]
+
+
+def _parse_exam_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _ensure_exam_timer(state: dict, *, now: datetime | None = None) -> bool:
+    if not isinstance(state, dict):
+        return False
+    current = now or datetime.now(timezone.utc)
+    changed = False
+    try:
+        duration = int(state.get("exam_duration_seconds") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration <= 0:
+        duration = PLACEMENT_EXAM_DURATION_SECONDS
+        state["exam_duration_seconds"] = duration
+        changed = True
+
+    started_at = _parse_exam_datetime(state.get("exam_started_at"))
+    if started_at is None:
+        started_at = current
+        state["exam_started_at"] = started_at.isoformat()
+        changed = True
+
+    expires_at = _parse_exam_datetime(state.get("exam_expires_at"))
+    if expires_at is None:
+        state["exam_expires_at"] = (started_at + timedelta(seconds=duration)).isoformat()
+        changed = True
+    return changed
+
+
+def _exam_remaining_seconds(state: dict, *, now: datetime | None = None) -> int:
+    snapshot = dict(state or {})
+    current = now or datetime.now(timezone.utc)
+    _ensure_exam_timer(snapshot, now=current)
+    expires_at = _parse_exam_datetime(snapshot.get("exam_expires_at"))
+    if expires_at is None:
+        return PLACEMENT_EXAM_DURATION_SECONDS
+    return max(0, int(math.ceil((expires_at - current).total_seconds())))
+
+
+def _exam_timer_payload(state: dict, *, now: datetime | None = None) -> dict:
+    snapshot = dict(state or {})
+    current = now or datetime.now(timezone.utc)
+    _ensure_exam_timer(snapshot, now=current)
+    remaining = _exam_remaining_seconds(snapshot, now=current)
+    try:
+        duration = int(snapshot.get("exam_duration_seconds") or PLACEMENT_EXAM_DURATION_SECONDS)
+    except (TypeError, ValueError):
+        duration = PLACEMENT_EXAM_DURATION_SECONDS
+    return {
+        "exam_duration_seconds": duration,
+        "exam_started_at": _parse_exam_datetime(snapshot.get("exam_started_at")),
+        "exam_expires_at": _parse_exam_datetime(snapshot.get("exam_expires_at")),
+        "time_remaining_seconds": remaining,
+        "time_expired": bool(snapshot.get("exam_time_expired")) or remaining <= 0,
+    }
+
+
+def _time_expired_detail(state: dict) -> dict:
+    return {
+        "code": "time_expired",
+        "message": PLACEMENT_EXAM_TIME_EXPIRED_MESSAGE,
+        "current_state_revision": _state_revision(state),
+    }
+
+
+def _expire_exam_if_needed(
+    sess: LanguageExamSession,
+    state: dict,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    current = now or datetime.now(timezone.utc)
+    changed = _ensure_exam_timer(state, now=current)
+    if sess.status == "in_progress" and _exam_remaining_seconds(state, now=current) <= 0:
+        state["exam_time_expired"] = True
+        state["exam_time_expired_at"] = current.isoformat()
+        state["evaluation"] = {
+            **dict(state.get("evaluation") or {}),
+            "evaluation_status": "time_expired",
+            "error_code": "time_expired",
+            "error_message": PLACEMENT_EXAM_TIME_EXPIRED_MESSAGE,
+        }
+        sess.status = "failed"
+        sess.is_completed = False
+        _bump_state_revision(state)
+        changed = True
+    return changed
 
 
 async def _build_state_out(
@@ -1169,6 +1826,7 @@ async def _build_state_out(
     cursor = state.get("cursor", 0)
     revision = _state_revision(state)
     completed_sections = [s for s in sections if state.get(s, {}).get("done")]
+    timer = _exam_timer_payload(state)
 
     if sess.status in ("evaluating", "completed", "failed") or cursor >= len(sections):
         phase = sess.status if sess.status in ("completed", "failed") else "evaluating"
@@ -1180,6 +1838,7 @@ async def _build_state_out(
             session_id=sess.id, state_revision=revision, phase=phase, section_index=len(sections),
             section_total=len(sections), sections=sections, completed_sections=completed_sections,
             resumed=resumed,
+            **timer,
             evidence_status="completed" if sess.status == "completed" else evaluation_status,
             error_code=evaluation.get("error_code"),
             error_message=evaluation.get("error_message"),
@@ -1202,6 +1861,7 @@ async def _build_state_out(
             section_index=section_index,
             section_total=len(sections), sections=sections, completed_sections=completed_sections,
             resumed=resumed,
+            **timer,
             evidence_status="content_unavailable" if unavailable else "retry_required",
             error_code="content_unavailable" if unavailable else None,
             error_message=(
@@ -1215,6 +1875,7 @@ async def _build_state_out(
         session_id=sess.id, state_revision=revision, phase=section, section_index=section_index,
         section_total=len(sections),
         sections=sections, completed_sections=completed_sections, last_feedback=last_feedback, resumed=resumed,
+        **timer,
         evidence_status=str(state.get(section, {}).get("evidence_status") or "missing_student_response"),
     )
 
@@ -1267,7 +1928,16 @@ async def _build_state_out(
                 question_type=item.get("question_type", "mcq"),
                 word_bank=item.get("word_bank"),
                 subquestions=(
-                    [ListeningSubquestionOut(question=sq.get("question", ""), options=sq.get("options", []))
+                    [
+                        ListeningSubquestionOut(
+                            question=sq.get("question", ""),
+                            options=sq.get("options", []),
+                            response_type=_reading_subquestion_response_type(sq),
+                            max_words=sq.get("max_words"),
+                            word_bank=sq.get("word_bank"),
+                            matching_items=sq.get("matching_items"),
+                            match_options=sq.get("match_options"),
+                        )
                      for sq in subquestions]
                     if isinstance(subquestions, list) else None
                 ),
@@ -1280,6 +1950,11 @@ async def _build_state_out(
         out.writing = WritingPromptOut(
             prompt=wr.get("prompt", ""),
             min_words=wr.get("min_words", WRITING_MIN_WORDS),
+            max_words=wr.get("max_words"),
+            task_type=str(wr.get("task_type") or ""),
+            student_instructions=str(wr.get("student_instructions") or ""),
+            task_index=int(wr.get("task_index") or 1),
+            task_total=int(wr.get("task_total") or 1),
             prompt_token=str(wr.get("prompt_token") or ""),
         )
         out.prompt_token = out.writing.prompt_token
@@ -1322,7 +1997,7 @@ def _is_valid_bank_cache_file(path: Path) -> bool:
 
 
 def _validate_local_bank_cache_url(
-    url: str, audio_meta: dict | None, *, bank_item_id: int | None
+    url: str, audio_meta: dict | None, *, bank_item_id: int | None, expected_voice: str | None = None
 ) -> str | None:
     """For a persistent Listening bank-cache URL, confirm the underlying local file genuinely
     exists (and clears a trivial-size floor) before trusting it, so a deleted/corrupted/truncated
@@ -1332,6 +2007,14 @@ def _validate_local_bank_cache_url(
     and only ever logs on rejection -- a normal valid cache hit produces no log output."""
     if not url.startswith(_LISTENING_BANK_CACHE_URL_PREFIX):
         return url
+
+    if expected_voice and isinstance(audio_meta, dict) and audio_meta.get("voice") != expected_voice:
+        logger.warning(
+            "Listening bank-cache audio rejected: voice mismatch bank_item_id=%s expected_voice=%s",
+            bank_item_id,
+            expected_voice,
+        )
+        return None
 
     relative = (audio_meta or {}).get("storage_key") or url[len("/uploads/") :]
     path = _safe_upload_relative_path(relative)
@@ -1355,10 +2038,15 @@ async def _resolve_listening_audio(db: AsyncSession | None, item: dict) -> str |
     the private transcript is never sent to the browser.
     """
 
+    audio_text = str(item.get("audio_text") or "").strip() or _listening_text_from_body(item.get("body") or {})
+    expected_voice = _listening_tts_voice_for_text(audio_text) if audio_text else None
     audio_url = item.get("audio_url")
     if _is_usable_audio_url(audio_url):
         validated = _validate_local_bank_cache_url(
-            str(audio_url), item.get("audio_meta"), bank_item_id=item.get("bank_item_id")
+            str(audio_url),
+            item.get("audio_meta"),
+            bank_item_id=item.get("bank_item_id"),
+            expected_voice=expected_voice,
         )
         if validated:
             return validated
@@ -1415,8 +2103,9 @@ async def _materialize_listening_audio(
 
     generated_url = None
     try:
+        voice = _listening_tts_voice_for_text(audio_text)
         generated_url = await asyncio.wait_for(
-            synthesize_exam_audio(audio_text), timeout=_LISTENING_TTS_TIMEOUT_S
+            synthesize_exam_audio(audio_text, voice=voice), timeout=_LISTENING_TTS_TIMEOUT_S
         )
     except Exception as exc:  # pragma: no cover - model/runtime variance
         logger.warning("Placement listening TTS failed error_type=%s", type(exc).__name__)
@@ -1583,14 +2272,14 @@ def exam_evidence_statuses(state: dict) -> dict[str, str]:
             if isinstance(answer.get("correct"), bool)
             and bool(answer.get("level"))
             and (
-                # Legacy single-answer MCQ/Gap-Fill, or a Listening bundle's multi-part answer
-                # (chosen_indices/answer_texts) -- any one of these shapes is a real recorded
-                # student answer; requiring "chosen_index" specifically (pre-bundle behavior)
-                # wrongly reported bundle evidence as missing once a section could complete.
+                # Legacy single-answer MCQ/Gap-Fill, a Listening bundle's multi-part answer
+                # (chosen_indices/answer_texts), or a mixed Reading bundle's subquestion_answers
+                # -- any one of these shapes is real recorded student evidence.
                 isinstance(answer.get("chosen_index"), int)
                 or isinstance(answer.get("chosen_indices"), list)
                 or isinstance(answer.get("answer_text"), str)
                 or isinstance(answer.get("answer_texts"), list)
+                or isinstance(answer.get("subquestion_answers"), list)
             )
         ]
         if not valid or section_state.get("done") is not True:
@@ -1606,6 +2295,19 @@ def exam_evidence_statuses(state: dict) -> dict[str, str]:
             statuses["writing"] = declared
         elif not writing.get("ready", True) or not str(writing.get("prompt") or "").strip():
             statuses["writing"] = "content_unavailable"
+        elif int(writing.get("task_total") or 1) > 1:
+            tasks = writing.get("tasks") or []
+            task_total = int(writing.get("task_total") or 1)
+            completed_tasks = [
+                task
+                for task in tasks[:task_total]
+                if len(str(task.get("response") or "").split())
+                >= max(1, int(task.get("min_words") or WRITING_MIN_WORDS))
+            ]
+            if writing.get("done") is not True or len(completed_tasks) < task_total:
+                statuses["writing"] = "missing_student_response"
+            else:
+                statuses["writing"] = "completed"
         elif writing.get("done") is not True or len(str(writing.get("response") or "").split()) < min_words:
             statuses["writing"] = "missing_student_response"
         else:
@@ -1700,7 +2402,7 @@ def _provisional_from_phase1(state: dict) -> tuple[CEFRLevel, str]:
         asked = state.get(section, {}).get("asked", [])
         if not asked:
             return None
-        level, _ = adaptive_result(asked)
+        level, _ = _reading_weighted_result(asked) if section == "reading" else adaptive_result(asked)
         return level
 
     reading_level = _comp_level("reading")
@@ -1759,6 +2461,57 @@ _WEEKS_TO_NEXT = {"A1": 10, "A2": 12, "B1": 16, "B2": 20, "C1": 24, "C2": 0}
 
 def _weeks_to_next_level(level: CEFRLevel) -> int:
     return _WEEKS_TO_NEXT.get(level.value, 14)
+
+
+def _reading_diagnostic_breakdown(asked: list[dict]) -> dict:
+    by_subskill: dict[str, dict] = {}
+    word_counts: list[int] = []
+    levels_seen: list[str] = []
+    questions_answered = 0
+
+    def record_subskill(subskill_value: object, is_correct: bool) -> None:
+        subskill = str(subskill_value or "comprehension").strip() or "comprehension"
+        bucket = by_subskill.setdefault(
+            subskill,
+            {"answered": 0, "correct": 0, "score_percent": 0.0},
+        )
+        bucket["answered"] += 1
+        if is_correct:
+            bucket["correct"] += 1
+
+    for answer in asked or []:
+        level = str(answer.get("level") or "")
+        if level and level not in levels_seen:
+            levels_seen.append(level)
+        sub_correct = answer.get("sub_correct")
+        subskills = answer.get("subskills")
+        if isinstance(sub_correct, list) and sub_correct:
+            questions_answered += len(sub_correct)
+            subskills_list = subskills if isinstance(subskills, list) else []
+            fallback_subskill = answer.get("subskill") or "comprehension"
+            for idx, flag in enumerate(sub_correct):
+                record_subskill(
+                    subskills_list[idx] if idx < len(subskills_list) else fallback_subskill,
+                    bool(flag),
+                )
+        else:
+            questions_answered += 1
+            record_subskill(answer.get("subskill") or "comprehension", bool(answer.get("correct")))
+        try:
+            wc = int(answer.get("word_count") or 0)
+        except (TypeError, ValueError):
+            wc = 0
+        if wc > 0:
+            word_counts.append(wc)
+    for bucket in by_subskill.values():
+        bucket["score_percent"] = round(bucket["correct"] / bucket["answered"] * 100, 1) if bucket["answered"] else 0.0
+    return {
+        "items_answered": len(asked or []),
+        "questions_answered": questions_answered,
+        "levels_seen": levels_seen,
+        "average_passage_word_count": round(sum(word_counts) / len(word_counts), 1) if word_counts else 0.0,
+        "by_subskill": by_subskill,
+    }
 
 
 def _parse_utc(value: object) -> datetime | None:
@@ -1953,8 +2706,18 @@ async def _run_claimed_evaluation(
             await db.rollback()
 
             sp_detected: list = []
+            scorer_fallback_used = False
             if sp_results:
-                sp_grade = await ai_engine.grade_speaking(evidence=sp_evidence, effective_level=guess)
+                try:
+                    sp_grade = await ai_engine.grade_speaking(evidence=sp_evidence, effective_level=guess)
+                except Exception as exc:
+                    logger.warning(
+                        "Placement final speaking scorer unavailable; using fallback session_id=%s error_type=%s",
+                        session_id,
+                        type(exc).__name__,
+                    )
+                    sp_grade = _fallback_speaking_grade(sp_results)
+                    scorer_fallback_used = True
                 speaking_level, speaking_score = sp_grade.level, sp_grade.score
                 speaking_breakdown = {
                     "fluency": sp_grade.fluency, "lexical": sp_grade.lexical,
@@ -1977,19 +2740,89 @@ async def _run_claimed_evaluation(
             r_asked = state.get("reading", {}).get("asked", [])
             l_asked = state.get("listening", {}).get("asked", [])
             g_asked = state.get("grammar_vocab", {}).get("asked", [])
-            reading_level, reading_pct = adaptive_result(r_asked)
+            reading_level, reading_pct = _reading_weighted_result(r_asked)
             listening_level, listening_pct = adaptive_result(l_asked)
             grammar_vocab_level, grammar_vocab_pct = adaptive_result(g_asked)
             r_correct, r_total = sum(1 for a in r_asked if a.get("correct")), len(r_asked)
             l_correct, l_total = sum(1 for a in l_asked if a.get("correct")), len(l_asked)
             g_correct, g_total = sum(1 for a in g_asked if a.get("correct")), len(g_asked)
+            reading_breakdown = _reading_diagnostic_breakdown(r_asked)
 
             # --- Writing: AI grade.
             wr = state.get("writing", {})
-            grade = await ai_engine.grade_writing(
-                prompt_text=wr.get("prompt", ""), answer=wr.get("response", ""), effective_level=guess
-            )
-            writing_level, writing_score = grade.level, grade.score
+            writing_tasks = [
+                task
+                for task in (wr.get("tasks") or [])
+                if str(task.get("response") or "").strip()
+            ]
+            if not writing_tasks and str(wr.get("response") or "").strip():
+                writing_tasks = [wr]
+            task_weights = [0.35, 0.65] if len(writing_tasks) >= 2 else [1.0]
+            writing_task_grades: list[dict] = []
+            writing_detected: list = []
+            weighted_score = 0.0
+            weight_total = 0.0
+            criteria_totals = {
+                "task_fulfillment": 0.0,
+                "communicative_achievement": 0.0,
+                "organization": 0.0,
+                "grammar": 0.0,
+                "vocabulary": 0.0,
+                "spelling_punctuation": 0.0,
+            }
+            for idx, task in enumerate(writing_tasks):
+                try:
+                    task_grade = await ai_engine.grade_writing(
+                        prompt_text=task.get("prompt", ""),
+                        answer=task.get("response", ""),
+                        effective_level=guess,
+                        target_min_words=task.get("min_words"),
+                        target_max_words=task.get("max_words"),
+                        task_type=task.get("task_type"),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Placement final writing scorer unavailable; using fallback session_id=%s task_index=%s error_type=%s",
+                        session_id,
+                        idx + 1,
+                        type(exc).__name__,
+                    )
+                    task_grade = _fallback_writing_grade(task)
+                    scorer_fallback_used = True
+                weight = task_weights[idx] if idx < len(task_weights) else task_weights[-1]
+                weighted_score += task_grade.score * weight
+                weight_total += weight
+                task_criteria = {
+                    "task_fulfillment": task_grade.task_fulfillment or task_grade.task_achievement,
+                    "communicative_achievement": task_grade.communicative_achievement or task_grade.task_achievement,
+                    "organization": task_grade.organization or task_grade.coherence,
+                    "grammar": task_grade.grammar,
+                    "vocabulary": task_grade.vocabulary or task_grade.lexical,
+                    "spelling_punctuation": task_grade.spelling_punctuation
+                    or min(task_grade.vocabulary or task_grade.lexical, task_grade.grammar),
+                }
+                for key, value in task_criteria.items():
+                    criteria_totals[key] += float(value) * weight
+                writing_detected.extend(task_grade.detected_errors)
+                writing_task_grades.append(
+                    {
+                        "task_index": idx + 1,
+                        "task_type": task.get("task_type", ""),
+                        "route": task.get("route", ""),
+                        "level": task_grade.level.value,
+                        "score": task_grade.score,
+                        "word_count": len(str(task.get("response") or "").split()),
+                        "target_min_words": task.get("min_words"),
+                        "target_max_words": task.get("max_words"),
+                        "feedback": task_grade.feedback,
+                    }
+                )
+            if not writing_task_grades:
+                raise RuntimeError("Verified writing evidence is unavailable")
+            writing_score = round(weighted_score / weight_total, 1) if weight_total else 0.0
+            writing_level = level_from_score10(writing_score)
+            route = str((writing_tasks[-1] if writing_tasks else wr).get("route") or "")
+            writing_level = _apply_writing_route_cap(writing_level, route)
 
             overall = overall_level([reading_level, listening_level, writing_level, speaking_level])
 
@@ -2016,6 +2849,8 @@ async def _run_claimed_evaluation(
             # No acoustic scorer is present. Make that limitation visible and reduce confidence;
             # pronunciation is never inserted as a fabricated numeric criterion.
             confidence = min(confidence * 0.85, 0.78)
+            if scorer_fallback_used:
+                confidence = min(confidence, 0.55)
 
             # --- Narrative from all evidence. Pronunciation is deliberately unassessed because
             #     final grading receives verified transcripts, not the raw audio signal.
@@ -2033,11 +2868,25 @@ async def _run_claimed_evaluation(
                 f"READING: {r_correct}/{r_total} correct -> {reading_level.value}\n\n"
                 f"{grammar_evidence}"
                 f"WRITING (level {writing_level.value}, score {writing_score}):\n"
-                f"Task: {wr.get('prompt','')}\nAnswer: {wr.get('response','')}\n"
-                f"Grader feedback: {grade.feedback}\n\n"
+                + "\n\n".join(
+                    f"Task {idx + 1}: {task.get('prompt','')}\nAnswer: {task.get('response','')}\n"
+                    for idx, task in enumerate(writing_tasks)
+                )
+                + "\n"
+                + "\n".join(
+                    f"Task {grade_info['task_index']} feedback: {grade_info['feedback']}"
+                    for grade_info in writing_task_grades
+                )
+                + "\n\n"
                 f"Cross-phase consistency: {consistency}."
             )
             narrative = await ai_engine.build_final_narrative(evidence=evidence)
+            recommendations = list(narrative.recommendations[:3])
+            if scorer_fallback_used:
+                recommendations = [
+                    "Review this placement result, then retry report evaluation later to refresh detailed rubric feedback.",
+                    *recommendations,
+                ][:3]
 
             # --- Backend-computed guidance: strongest/weakest skill + time to next level.
             skill_levels = {
@@ -2047,13 +2896,25 @@ async def _run_claimed_evaluation(
             strongest = max(skill_levels.items(), key=lambda kv: cefr_rank(kv[1]))[0]
             weakest = min(skill_levels.items(), key=lambda kv: cefr_rank(kv[1]))[0]
             writing_breakdown = {
-                "task_achievement": grade.task_achievement,
-                "coherence": grade.coherence,
-                "lexical": grade.lexical,
-                "grammar": grade.grammar,
+                key: round(value / weight_total, 1) if weight_total else 0.0
+                for key, value in criteria_totals.items()
             }
+            writing_breakdown["tasks"] = writing_task_grades
+            writing_breakdown["weights"] = [0.35, 0.65] if len(writing_task_grades) >= 2 else [1.0]
 
-            detected = list(narrative.detected_errors) + list(grade.detected_errors) + sp_detected
+            student_answer_texts = [
+                str(task.get("response") or "")
+                for task in writing_tasks
+                if str(task.get("response") or "").strip()
+            ] + [
+                str(r.get("transcription") or "")
+                for r in sp_results
+                if str(r.get("transcription") or "").strip()
+            ]
+            detected = [] if scorer_fallback_used else _student_answer_detected_errors(
+                writing_detected + sp_detected,
+                student_answer_texts,
+            )
             speaking_turns = [
                 {
                     "question": r.get("question", ""),
@@ -2084,14 +2945,16 @@ async def _run_claimed_evaluation(
                 recommended_starting_lesson_topic=narrative.recommended_starting_lesson_topic,
                 strongest_skill=strongest,
                 weakest_skill=weakest,
-                recommendations=narrative.recommendations[:3],
+                recommendations=recommendations,
                 weeks_to_next_level=_weeks_to_next_level(overall),
                 writing_breakdown=writing_breakdown,
+                reading_breakdown=reading_breakdown,
                 speaking_breakdown=speaking_breakdown,
                 speaking_turns=speaking_turns,
                 confidence=round(confidence, 2),
                 cross_phase_consistency=consistency,
                 unassessed_components=["speaking.pronunciation"],
+                scorer_fallback_used=scorer_fallback_used,
                 speaking_assessment=speaking_assessment_core,
             )
 
@@ -2420,12 +3283,14 @@ async def initiate_exam(
         check_or_raise("placement_poll", f"{student.id}:{existing.id}")
         state = copy.deepcopy(existing.exam_state or {})
         protocol_changed = _ensure_state_protocol(state)
+        timer_changed = _expire_exam_if_needed(existing, state)
+        protocol_changed = protocol_changed or timer_changed
         if protocol_changed:
             existing.exam_state = state
             flag_modified(existing, "exam_state")
         if existing.status == "in_progress":
             protocol_changed = _maybe_retrigger_prep(existing, language.id, background_tasks) or protocol_changed
-        else:
+        elif existing.status == "evaluating":
             _schedule_evaluation_recovery(existing, background_tasks)
         if protocol_changed:
             state = copy.deepcopy(existing.exam_state or state)
@@ -2451,7 +3316,17 @@ async def initiate_exam(
     # MVP: prefer a curated, MVP-approved speaking_prompt bank item over live scenario/question
     # generation; fall back to the existing AI-generated (or grade-banded) path unchanged if the
     # bank has nothing usable for this level/language.
-    opening_bank_item = await _speaking_bank_prompt(db, language_id=language_id, level_str=level)
+    recent_speaking_item_ids = await _recent_speaking_exclusion_ids(
+        db,
+        language_id=language_id,
+        student_id=student_id,
+    )
+    opening_bank_item = await _speaking_bank_prompt(
+        db,
+        language_id=language_id,
+        level_str=level,
+        recent_item_ids=recent_speaking_item_ids,
+    )
     if opening_bank_item is not None:
         scenario = _speaking_scenario_from_bank_item(opening_bank_item)
     else:
@@ -2462,12 +3337,20 @@ async def initiate_exam(
     await db.execute(select(User.id).where(User.id == student_id).with_for_update())
     existing = (await db.execute(active_stmt.with_for_update())).scalar_one_or_none()
     if existing:
-        _schedule_evaluation_recovery(existing, background_tasks)
+        state = copy.deepcopy(existing.exam_state or {})
+        changed = _ensure_state_protocol(state)
+        changed = _expire_exam_if_needed(existing, state) or changed
+        if changed:
+            existing.exam_state = state
+            flag_modified(existing, "exam_state")
+        if existing.status == "evaluating":
+            _schedule_evaluation_recovery(existing, background_tasks)
         await db.commit()
         return await _build_state_out(db, existing, resumed=True)
     profile = await ensure_language_profile(db, student_id, language_id)
     ensure_placement_retake_allowed(profile)
 
+    now = datetime.now(timezone.utc)
     state = {
         "version": 3,
         "state_revision": 1,
@@ -2475,7 +3358,11 @@ async def initiate_exam(
         "cursor": 0,
         "start_level_hint": level,
         "learner_grade": learner_grade,
-        "content_prep_at": datetime.now(timezone.utc).isoformat(),
+        "exam_duration_seconds": PLACEMENT_EXAM_DURATION_SECONDS,
+        "exam_started_at": now.isoformat(),
+        "exam_expires_at": (now + timedelta(seconds=PLACEMENT_EXAM_DURATION_SECONDS)).isoformat(),
+        "exam_time_expired": False,
+        "content_prep_at": now.isoformat(),
         "content_prep_token": _new_exam_token(),
         "content_prep_status": "preparing",
         "speaking": {
@@ -2501,8 +3388,21 @@ async def initiate_exam(
         },
         # Filled in by the background _prepare_content task (until then: not ready).
         "listening": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
-        "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
-        "writing": {"prompt": "", "prompt_token": "", "min_words": WRITING_MIN_WORDS, "response": None, "ready": False, "done": False, "evidence_status": "retry_required"},
+        "reading": {"mode": "adaptive", "pool": {}, "current_level": "", "asked": [], "max_steps": READING_ADAPTIVE_MAX_STEPS, "ready": False, "done": False, "evidence_status": "retry_required"},
+        "writing": {
+            "mode": "adaptive_two_task",
+            "task_index": 1,
+            "task_total": WRITING_TASK_TOTAL,
+            "tasks": [],
+            "prompt": "",
+            "prompt_token": "",
+            "min_words": WRITING_TASK1_MIN_WORDS,
+            "max_words": WRITING_TASK1_MAX_WORDS,
+            "response": None,
+            "ready": False,
+            "done": False,
+            "evidence_status": "retry_required",
+        },
         # No "interview" section for new sessions (product decision: guided interview removed).
         # _ensure_interview_ready/_provisional_from_phase1/interview_opening stay in place as
         # dormant compatibility code for any already-persisted session whose own "sections" list
@@ -2538,6 +3438,7 @@ async def get_state(
     check_or_raise("placement_poll", f"{student.id}:{session_id}")
     state = copy.deepcopy(sess.exam_state or {})
     changed = _ensure_state_protocol(state)
+    changed = _expire_exam_if_needed(sess, state) or changed
     if changed:
         sess.exam_state = state
         flag_modified(sess, "exam_state")
@@ -2584,6 +3485,8 @@ async def abandon_exam(
 
 def _maybe_finalize(sess: LanguageExamSession, state: dict, background_tasks: BackgroundTasks) -> bool:
     """If all sections are done, flip to evaluating and schedule the unified grading."""
+    if state.get("exam_time_expired") or _exam_remaining_seconds(state) <= 0:
+        return False
     evaluation = dict(state.get("evaluation") or {})
     current_eval_status = str(evaluation.get("evaluation_status") or evaluation.get("status") or "")
     if sess.status == "in_progress" and _current_section(state) is None and current_eval_status not in {"pending", "running", "completed"}:
@@ -2686,8 +3589,18 @@ async def create_speaking_live_transcription_session(
     than raising whenever the feature is disabled, misconfigured, or the upstream call fails --
     the Speaking flow must continue exactly as before regardless of this endpoint's outcome.
     """
-    await _load_session(db, session_id, student)
+    sess = await _load_session(db, session_id, student, for_update=True)
     check_or_raise("placement_poll", f"{student.id}:{session_id}")
+    state = copy.deepcopy(sess.exam_state or {})
+    changed = _expire_exam_if_needed(sess, state)
+    if changed:
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+    if state.get("exam_time_expired") or _exam_remaining_seconds(state) <= 0:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
+    if sess.status != "in_progress":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Exam is not in progress")
     result = await create_live_transcription_session()
     if result is None:
         return LiveTranscriptionSessionOut(available=False)
@@ -2720,6 +3633,15 @@ async def speaking_turn(
     language_id = int(sess.language_id)
     initial_status = str(sess.status)
     snapshot = copy.deepcopy(sess.exam_state or {})
+    _ensure_exam_timer(snapshot)
+    if snapshot.get("exam_time_expired") or _exam_remaining_seconds(snapshot) <= 0:
+        sess = await _load_session(db, session_id, student_id, for_update=True)
+        state = copy.deepcopy(sess.exam_state or {})
+        if _expire_exam_if_needed(sess, state):
+            sess.exam_state = state
+            flag_modified(sess, "exam_state")
+            await db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
     # Free section navigation: falls back to the cursor's section exactly like before when omitted.
     section = section or _current_section(snapshot)
     spoken_snapshot = snapshot.get(section, {})
@@ -2759,7 +3681,9 @@ async def speaking_turn(
     )
     if existing_receipt:
         current = await _load_session(db, session_id, student_id)
-        return await _build_state_out(db, current)
+        current_state = current.exam_state or {}
+        requested_section = section if not current_state.get(section, {}).get("done") else None
+        return await _build_state_out(db, current, requested_section=requested_section)
     _require_state_revision(snapshot, supplied_revision=state_revision)
     if (
         initial_status != "in_progress"
@@ -2795,6 +3719,11 @@ async def speaking_turn(
     # Re-read and validate after STT/AI. No row lock was held during either external call.
     sess = await _load_session(db, session_id, student_id, for_update=True)
     state = copy.deepcopy(sess.exam_state or {})
+    if _expire_exam_if_needed(sess, state):
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
     existing_receipt = _request_receipt(
         state,
         kind="speaking_turn",
@@ -2803,7 +3732,8 @@ async def speaking_turn(
     )
     if existing_receipt:
         await db.commit()
-        return await _build_state_out(db, sess)
+        requested_section = section if not state.get(section, {}).get("done") else None
+        return await _build_state_out(db, sess, requested_section=requested_section)
     # Re-validate the SAME (possibly non-cursor) section is still answerable in the freshly
     # reloaded state -- not whether it still equals the cursor's section, since free section
     # navigation means those can legitimately differ.
@@ -2832,6 +3762,8 @@ async def speaking_turn(
     sp = state[section]
     answered_bank_item_id = sp.get("pending_bank_item_id")
     answered_bank_item_subskill = sp.get("pending_bank_item_subskill")
+    if answered_bank_item_id:
+        await record_bank_item_answer(db, item_id=int(answered_bank_item_id), correct=False)
     sp.setdefault("results", []).append(
         {
             "question": question,
@@ -2877,11 +3809,17 @@ async def speaking_turn(
         # keeps its own unmodified behavior -- this only applies to the live "speaking" section.
         next_bank_item = None
         if section == "speaking":
+            recent_speaking_item_ids = await _recent_speaking_exclusion_ids(
+                db,
+                language_id=language_id,
+                student_id=session_student_id,
+            )
             next_bank_item = await _speaking_bank_prompt(
                 db,
                 language_id=language_id,
                 level_str=assessment.estimated_level.value,
                 used_item_ids=_already_used_speaking_bank_item_ids(state, section),
+                recent_item_ids=recent_speaking_item_ids,
                 used_subskills=_already_used_speaking_subskills(state, section),
             )
         if next_bank_item is not None:
@@ -2910,7 +3848,8 @@ async def speaking_turn(
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     await db.commit()
-    return await _build_state_out(db, sess, last_feedback=feedback)
+    requested_section = section if not state.get(section, {}).get("done") else None
+    return await _build_state_out(db, sess, last_feedback=feedback, requested_section=requested_section)
 
 
 @router.post("/{session_id}/answer", response_model=ExamStateOut)
@@ -2923,7 +3862,13 @@ async def answer_mcq(
 ):
     """Record an MCQ answer and advance to the next item/section."""
     sess = await _load_session(db, session_id, student, for_update=True)
+    student_id = int(student.id)
     state = copy.deepcopy(sess.exam_state or {})
+    if _expire_exam_if_needed(sess, state):
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
     payload_hash = canonical_payload_hash(
         kind="mcq_answer",
         payload={
@@ -2934,6 +3879,7 @@ async def answer_mcq(
             "answer_text": body.answer_text,
             "choice_indices": body.choice_indices,
             "answer_texts": body.answer_texts,
+            "subquestion_answers": body.subquestion_answers,
             "section": body.section,
         },
     )
@@ -2944,7 +3890,7 @@ async def answer_mcq(
         payload_hash=payload_hash,
     ):
         await db.commit()
-        return await _build_state_out(db, sess)
+        return await _build_state_out(db, sess, requested_section=body.section)
     _require_state_revision(state, supplied_revision=body.state_revision)
     # Free section navigation: the student may be answering a section other than the session's
     # internal progress cursor's section (e.g. jumped here via a tab click). Falls back to the
@@ -2956,7 +3902,7 @@ async def answer_mcq(
         or section not in state.get("sections", [])
     ):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not in an MCQ section")
-    check_or_raise("placement_answer", f"{student.id}:{session_id}")
+    check_or_raise("placement_answer", f"{student_id}:{session_id}")
 
     sec = state[section]
     cur = sec.get("current_level")
@@ -2980,31 +3926,123 @@ async def answer_mcq(
 
     if is_mcq_bundle:
         subquestions = item["subquestions"]
-        if body.choice_indices is None or body.choice_index is not None or body.answer_text is not None or body.answer_texts is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This question requires choice_indices only.",
-            )
-        if len(body.choice_indices) != len(subquestions):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="choice_indices length must match the number of subquestions",
-            )
         sub_correct: list[bool] = []
-        for idx, (choice, sq) in enumerate(zip(body.choice_indices, subquestions)):
-            options = sq.get("options") or []
-            if choice >= len(options):
+        has_non_choice_answers = any(_reading_subquestion_response_type(sq) != "mcq" for sq in subquestions)
+        if has_non_choice_answers:
+            if (
+                body.subquestion_answers is None
+                or body.choice_index is not None
+                or body.answer_text is not None
+                or body.choice_indices is not None
+                or body.answer_texts is not None
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"choice_indices[{idx}] out of range",
+                    detail="This question requires subquestion_answers only.",
                 )
-            sub_correct.append(choice == sq.get("correct_index"))
+            if len(body.subquestion_answers) != len(subquestions):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="subquestion_answers length must match the number of subquestions",
+                )
+            normalized_answers: list[int | str] = []
+            for idx, (answer, sq) in enumerate(zip(body.subquestion_answers, subquestions)):
+                response_type = _reading_subquestion_response_type(sq)
+                if response_type == "mcq":
+                    if not isinstance(answer, int) or isinstance(answer, bool):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] must be an integer choice index",
+                        )
+                    options = sq.get("options") or []
+                    if answer >= len(options):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] out of range",
+                        )
+                    normalized_answers.append(answer)
+                    sub_correct.append(answer == sq.get("correct_index"))
+                elif response_type in _READING_TEXT_RESPONSE_TYPES:
+                    if not isinstance(answer, str):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] must be text",
+                        )
+                    max_words = int(sq.get("max_words") or 12)
+                    if len(answer.split()) > max_words:
+                        raise HTTPException(
+                            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"Your answer for question {idx + 1} must be no more than {max_words} words.",
+                        )
+                    normalized_answer = normalize_gap_fill_text(answer, case_sensitive=bool(sq.get("case_sensitive", False)))
+                    normalized_accepted = {
+                        normalize_gap_fill_text(a, case_sensitive=bool(sq.get("case_sensitive", False)))
+                        for a in (sq.get("accepted_answers") or [])
+                    }
+                    normalized_answers.append(normalized_answer)
+                    sub_correct.append(normalized_answer in normalized_accepted)
+                elif response_type in _READING_MATCHING_RESPONSE_TYPES:
+                    if not isinstance(answer, list):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] must be a list of match indices",
+                        )
+                    match_options = sq.get("match_options") or []
+                    correct_indices = sq.get("correct_indices") or []
+                    if len(answer) != len(correct_indices):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] length must match the number of matching items",
+                        )
+                    if any(not isinstance(i, int) or isinstance(i, bool) or not (0 <= i < len(match_options)) for i in answer):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"subquestion_answers[{idx}] contains an out-of-range match index",
+                        )
+                    normalized_answers.append(list(answer))
+                    sub_correct.append(list(answer) == list(correct_indices))
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail={
+                            "code": "content_unavailable",
+                            "message": "This question is temporarily unavailable. Please retry.",
+                        },
+                    )
+            asked_entry["subquestion_answers"] = normalized_answers
+        else:
+            if body.choice_indices is None or body.choice_index is not None or body.answer_text is not None or body.answer_texts is not None or body.subquestion_answers is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This question requires choice_indices only.",
+                )
+            if len(body.choice_indices) != len(subquestions):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="choice_indices length must match the number of subquestions",
+                )
+            for idx, (choice, sq) in enumerate(zip(body.choice_indices, subquestions)):
+                options = sq.get("options") or []
+                if choice >= len(options):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"choice_indices[{idx}] out of range",
+                    )
+                sub_correct.append(choice == sq.get("correct_index"))
+            asked_entry["chosen_indices"] = list(body.choice_indices)
         correct = _majority_correct(sub_correct)
-        asked_entry["chosen_indices"] = list(body.choice_indices)
         asked_entry["sub_correct"] = sub_correct
         asked_entry["question_type"] = "mcq"
+        asked_entry["question_count"] = len(subquestions)
+        if section == "reading":
+            subskills = [
+                str(sq.get("subskill") or sq.get("reading_subskill") or item.get("subskill") or "").strip()
+                for sq in subquestions
+            ]
+            if any(subskills):
+                asked_entry["subskills"] = subskills
     elif qtype == "mcq":
-        if body.choice_index is None or body.answer_text is not None:
+        if body.choice_index is None or body.answer_text is not None or body.subquestion_answers is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This question requires choice_index only.",
@@ -3019,7 +4057,7 @@ async def answer_mcq(
         asked_entry["chosen_index"] = body.choice_index
     elif is_gap_fill_bundle:
         blanks = item["blanks"]
-        if body.answer_texts is None or body.answer_text is not None or body.choice_index is not None or body.choice_indices is not None:
+        if body.answer_texts is None or body.answer_text is not None or body.choice_index is not None or body.choice_indices is not None or body.subquestion_answers is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This question requires answer_texts only.",
@@ -3117,6 +4155,21 @@ async def answer_mcq(
             },
         )
 
+    if section == "reading":
+        metrics = (item.get("body") or {}).get("placement_metrics") or {}
+        subskill = str(item.get("subskill") or metrics.get("subskill") or "").strip()
+        if subskill:
+            asked_entry["subskill"] = subskill
+        if metrics:
+            try:
+                asked_entry["word_count"] = int(metrics.get("word_count") or 0)
+            except (TypeError, ValueError):
+                asked_entry["word_count"] = 0
+            try:
+                asked_entry["avg_sentence_words"] = float(metrics.get("avg_sentence_words") or 0.0)
+            except (TypeError, ValueError):
+                asked_entry["avg_sentence_words"] = 0.0
+
     bank_item_id = item.get("bank_item_id")
     if bank_item_id:
         await record_bank_item_answer(db, item_id=int(bank_item_id), correct=correct)
@@ -3145,6 +4198,7 @@ async def answer_mcq(
                 asked_levels=asked_levels,
                 asked_count=len(sec["asked"]),
                 current=cur,
+                min_evidence_items=_min_evidence_for_section(section),
             )
             boundary_item = None
             if continuation is None and not sec.get("boundary_asked"):
@@ -3195,7 +4249,8 @@ async def answer_mcq(
     sess.exam_state = state
     flag_modified(sess, "exam_state")
     await db.commit()
-    return await _build_state_out(db, sess)
+    requested_section = section if not state.get(section, {}).get("done") else None
+    return await _build_state_out(db, sess, requested_section=requested_section)
 
 
 @router.post("/{session_id}/writing")
@@ -3208,7 +4263,18 @@ async def submit_writing(
 ):
     """Record the writing answer and flow into the Phase-2 spoken interview (or finalize)."""
     sess = await _load_session(db, session_id, student)
+    session_language_id = int(sess.language_id)
+    student_id = int(student.id)
     snapshot = copy.deepcopy(sess.exam_state or {})
+    _ensure_exam_timer(snapshot)
+    if snapshot.get("exam_time_expired") or _exam_remaining_seconds(snapshot) <= 0:
+        sess = await _load_session(db, session_id, student_id, for_update=True)
+        state = copy.deepcopy(sess.exam_state or {})
+        if _expire_exam_if_needed(sess, state):
+            sess.exam_state = state
+            flag_modified(sess, "exam_state")
+            await db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
     payload_hash = canonical_payload_hash(
         kind="writing_answer",
         payload={
@@ -3226,7 +4292,8 @@ async def submit_writing(
         request_id=body.request_id,
         payload_hash=payload_hash,
     ):
-        return await _build_state_out(db, sess)
+        requested_section = "writing" if not snapshot.get("writing", {}).get("done") else None
+        return await _build_state_out(db, sess, requested_section=requested_section)
     _require_state_revision(snapshot, supplied_revision=body.state_revision)
     # Free section navigation: writing is answerable whenever it's a real member of this
     # session's sections, regardless of the internal progress cursor's position. The explicit
@@ -3254,32 +4321,75 @@ async def submit_writing(
             detail=f"Your answer must be at least {min_words} words.",
         )
 
-    # Build the interview opening from a prospective snapshot outside any lock/transaction.
+    writing_snapshot = snapshot.get("writing", {})
+    task_index = max(1, int(writing_snapshot.get("task_index") or 1))
+    task_total = max(1, int(writing_snapshot.get("task_total") or 1))
+    is_intermediate_writing_task = task_index < task_total
+    preliminary_grade: dict | None = None
+    next_writing_prompt: dict | None = None
     prospective = copy.deepcopy(snapshot)
-    prospective["writing"]["response"] = body.text
-    prospective["writing"]["done"] = True
-    prospective["writing"]["evidence_status"] = "completed"
-    _advance_if_section_done(prospective)
+
     await db.rollback()
-    try:
-        await _ensure_interview_ready(prospective)
-    except Exception as exc:
-        logger.warning(
-            "Placement interview preparation failed session_id=%s error_type=%s",
-            session_id,
-            type(exc).__name__,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "content_unavailable",
-                "message": "The interview prompt is temporarily unavailable. Please retry.",
+    if is_intermediate_writing_task:
+        try:
+            grade = await ai_engine.grade_writing(
+                prompt_text=writing_snapshot.get("prompt", ""),
+                answer=body.text,
+                effective_level=await _effective_level(db, student_id=student_id, language_id=session_language_id),
+                target_min_words=writing_snapshot.get("min_words"),
+                target_max_words=writing_snapshot.get("max_words"),
+                task_type=writing_snapshot.get("task_type"),
+            )
+            preliminary_grade = _writing_grade_to_dict(grade)
+        except Exception as exc:
+            logger.warning(
+                "Preliminary writing routing used fallback session_id=%s error_type=%s",
+                session_id,
+                type(exc).__name__,
+            )
+            preliminary_grade = _fallback_writing_task1_grade(body.text)
+        route = str(preliminary_grade.get("route") or "B1_B2")
+        next_writing_prompt = await _writing_task2_prompt(
+            db,
+            language_id=session_language_id,
+            route=route,
+            used_item_ids={
+                int(task.get("bank_item_id"))
+                for task in (writing_snapshot.get("tasks") or [])
+                if task.get("bank_item_id")
             },
-        ) from None
+        )
+        await db.rollback()
+    else:
+        # Build the interview opening from a prospective snapshot outside any lock/transaction.
+        prospective["writing"]["response"] = body.text
+        prospective["writing"]["done"] = True
+        prospective["writing"]["evidence_status"] = "completed"
+        _advance_if_section_done(prospective)
+        try:
+            await _ensure_interview_ready(prospective)
+        except Exception as exc:
+            logger.warning(
+                "Placement interview preparation failed session_id=%s error_type=%s",
+                session_id,
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "content_unavailable",
+                    "message": "The interview prompt is temporarily unavailable. Please retry.",
+                },
+            ) from None
 
     # Merge under a fresh short lock and reject any state that moved while AI was running.
-    sess = await _load_session(db, session_id, student, for_update=True)
+    sess = await _load_session(db, session_id, student_id, for_update=True)
     state = copy.deepcopy(sess.exam_state or {})
+    if _expire_exam_if_needed(sess, state):
+        sess.exam_state = state
+        flag_modified(sess, "exam_state")
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_time_expired_detail(state))
     if _request_receipt(
         state,
         kind="writing_answer",
@@ -3287,7 +4397,8 @@ async def submit_writing(
         payload_hash=payload_hash,
     ):
         await db.commit()
-        return await _build_state_out(db, sess)
+        requested_section = "writing" if not state.get("writing", {}).get("done") else None
+        return await _build_state_out(db, sess, requested_section=requested_section)
     if (
         sess.status != "in_progress"
         or "writing" not in state.get("sections", [])
@@ -3303,14 +4414,68 @@ async def submit_writing(
         supplied_token=body.prompt_token,
         expected_token=str(state.get("writing", {}).get("prompt_token") or ""),
     )
-    state["writing"]["response"] = body.text
-    state["writing"]["done"] = True
-    state["writing"]["evidence_status"] = "completed"
-    _advance_if_section_done(state)
-    if _current_section(state) == "interview":
-        state["interview"] = copy.deepcopy(prospective["interview"])
+    writing_state = state["writing"]
+    task_index = max(1, int(writing_state.get("task_index") or 1))
+    task_total = max(1, int(writing_state.get("task_total") or 1))
+    tasks = list(writing_state.get("tasks") or [])
+    current_task = {
+        "prompt": writing_state.get("prompt", ""),
+        "min_words": writing_state.get("min_words", WRITING_MIN_WORDS),
+        "max_words": writing_state.get("max_words"),
+        "task_type": writing_state.get("task_type", ""),
+        "student_instructions": writing_state.get("student_instructions", ""),
+        "rubric_focus": list(writing_state.get("rubric_focus") or []),
+        "expected_language_features": list(writing_state.get("expected_language_features") or []),
+        "bank_item_id": writing_state.get("bank_item_id"),
+        "source": writing_state.get("source", ""),
+        "route": writing_state.get("route", "anchor"),
+        "response": body.text,
+        "word_count": len(body.text.split()),
+    }
+    if preliminary_grade:
+        current_task["preliminary_grade"] = preliminary_grade
+    task_slot = task_index - 1
+    if task_slot < len(tasks):
+        tasks[task_slot] = {**tasks[task_slot], **current_task}
+    else:
+        tasks.append(current_task)
 
-    finalizing = _maybe_finalize(sess, state, background_tasks)
+    finalizing = False
+    if task_index < task_total and next_writing_prompt:
+        next_task = dict(next_writing_prompt)
+        tasks.append(next_task)
+        writing_state.update(
+            {
+                "tasks": tasks,
+                "task_index": task_index + 1,
+                "task_total": task_total,
+                "prompt": str(next_task.get("prompt") or ""),
+                "prompt_token": _new_exam_token(),
+                "min_words": int(next_task.get("min_words") or WRITING_MIN_WORDS),
+                "max_words": next_task.get("max_words"),
+                "task_type": str(next_task.get("task_type") or ""),
+                "student_instructions": str(next_task.get("student_instructions") or ""),
+                "rubric_focus": list(next_task.get("rubric_focus") or []),
+                "expected_language_features": list(next_task.get("expected_language_features") or []),
+                "bank_item_id": next_task.get("bank_item_id"),
+                "source": str(next_task.get("source") or ""),
+                "route": str(next_task.get("route") or ""),
+                "response": None,
+                "done": False,
+                "evidence_status": "missing_student_response",
+            }
+        )
+    else:
+        writing_state["tasks"] = tasks
+        writing_state["response"] = "\n\n".join(
+            str(task.get("response") or "").strip() for task in tasks if str(task.get("response") or "").strip()
+        )
+        writing_state["done"] = True
+        writing_state["evidence_status"] = "completed"
+        _advance_if_section_done(state)
+        if _current_section(state) == "interview":
+            state["interview"] = copy.deepcopy(prospective["interview"])
+        finalizing = _maybe_finalize(sess, state, background_tasks)
     result_revision = _bump_state_revision(state)
     _record_request(
         state,
@@ -3332,7 +4497,11 @@ async def submit_writing(
                 message="Analyzing every skill and generating your placement report...",
             ).model_dump(),
         )
-    return JSONResponse(status_code=status.HTTP_200_OK, content=(await _build_state_out(db, sess)).model_dump())
+    requested_section = "writing" if not state.get("writing", {}).get("done") else None
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=(await _build_state_out(db, sess, requested_section=requested_section)).model_dump(),
+    )
 
 
 @router.post(
@@ -3434,9 +4603,12 @@ async def get_exam_report(
             report = None
     evaluation = (sess.exam_state or {}).get("evaluation") or {}
     error_code = str(evaluation.get("error_code") or "") or None
+    error_message = str(evaluation.get("error_message") or "")
+    if not error_message and error_code:
+        error_message = "Placement evaluation failed. You can retry it."
     return ExamReportOut(
         session_id=sess.id, status=sess.status, is_completed=sess.is_completed,
         report=report, completed_at=sess.completed_at,
         error_code=error_code,
-        error_message=("Placement evaluation failed. You can retry it." if error_code else None),
+        error_message=error_message or None,
     )

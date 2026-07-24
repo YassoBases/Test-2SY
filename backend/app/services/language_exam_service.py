@@ -688,23 +688,44 @@ class AIEngineService:
 
     # ---- multi-skill exam: writing ----------------------------------------------------
     async def grade_writing(
-        self, *, prompt_text: str, answer: str, effective_level: str = "A2"
+        self,
+        *,
+        prompt_text: str,
+        answer: str,
+        effective_level: str = "A2",
+        target_min_words: int | None = None,
+        target_max_words: int | None = None,
+        task_type: str | None = None,
     ) -> WritingGradeSchema:
-        """Grade a written answer on the 4 IELTS criteria -> CEFR level + 0-10 scores + errors."""
+        """Grade a written answer on six placement criteria -> CEFR level + 0-10 score."""
         words = len((answer or "").split())
         if self._mock:
             raise ExamAIError("Writing evaluation service is unavailable")
+        target_range = (
+            f"{target_min_words}-{target_max_words} words"
+            if target_min_words and target_max_words
+            else f"at least {target_min_words} words"
+            if target_min_words
+            else "not specified"
+        )
         prompt = (
             f"Writing task: {prompt_text}\n"
-            f"Word count: {words}. Grade independently from any prior learner level.\n\n"
+            f"Task type: {task_type or 'not specified'}\n"
+            f"Target length: {target_range}\n"
+            f"Candidate word count: {words}. Grade independently from any prior learner level. "
+            "Consider whether the answer is long enough and appropriately concise for the task.\n\n"
             f"Candidate's written answer:\n\"\"\"\n{answer}\n\"\"\"\n\n"
-            "Grade it strictly on the four IELTS writing criteria. Return JSON with EXACTLY: "
+            "Grade it strictly on these six placement writing criteria. Return JSON with EXACTLY: "
             "level (A1|A2|B1|B2|C1|C2), "
-            "task_achievement (0.0-10.0: did they address the whole prompt with a clear position?), "
-            "coherence (0.0-10.0: paragraphing, linking words, progression of ideas), "
-            "lexical (0.0-10.0: vocabulary range, accuracy, spelling), "
-            "grammar (0.0-10.0: structure variety, accuracy, punctuation), "
-            "score (0.0-10.0: equal-weight average of the four), "
+            "task_fulfillment (0.0-10.0: answered all parts and stayed on topic), "
+            "communicative_achievement (0.0-10.0: register/style fits the task type), "
+            "organization (0.0-10.0: paragraphs, progression, cohesion, linking), "
+            "grammar (0.0-10.0: accuracy and range of structures), "
+            "vocabulary (0.0-10.0: range, precision, collocation, repetition control), "
+            "spelling_punctuation (0.0-10.0: spelling, capitalization, punctuation impact), "
+            "task_achievement (same as task_fulfillment), coherence (same as organization), "
+            "lexical (same as vocabulary), "
+            "score (0.0-10.0: weighted score using 20/15/20/20/20/5), "
             "feedback (English, concise), detected_errors (list of "
             "{original_text, corrected_text, rule_explanation in English}, up to 5)."
         )
@@ -716,8 +737,29 @@ class AIEngineService:
             if not data:
                 raise ExamAIError("Writing grader returned no usable result")
             grade = WritingGradeSchema.model_validate(data)
-            crit = [grade.task_achievement, grade.coherence, grade.lexical, grade.grammar]
-            grade.score = round(sum(crit) / 4.0, 1)
+            task_fulfillment = grade.task_fulfillment or grade.task_achievement
+            communicative = grade.communicative_achievement or grade.task_achievement
+            organization = grade.organization or grade.coherence
+            grammar = grade.grammar
+            vocabulary = grade.vocabulary or grade.lexical
+            spelling = grade.spelling_punctuation or min(vocabulary, grammar)
+            grade.task_fulfillment = task_fulfillment
+            grade.communicative_achievement = communicative
+            grade.organization = organization
+            grade.vocabulary = vocabulary
+            grade.spelling_punctuation = spelling
+            grade.task_achievement = task_fulfillment
+            grade.coherence = organization
+            grade.lexical = vocabulary
+            grade.score = round(
+                task_fulfillment * 0.20
+                + communicative * 0.15
+                + organization * 0.20
+                + grammar * 0.20
+                + vocabulary * 0.20
+                + spelling * 0.05,
+                1,
+            )
             grade.level = level_from_score10(grade.score)
             return grade
         except ExamAIError:

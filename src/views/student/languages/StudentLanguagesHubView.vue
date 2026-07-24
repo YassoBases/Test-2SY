@@ -48,7 +48,7 @@
           <div class="d-flex align-center flex-wrap gap-3 justify-space-between">
             <div>
               <div class="font-weight-bold">One step before you begin</div>
-              <div class="text-body-2">A quick 3-5 minute AI interview sets your starting level.</div>
+              <div class="text-body-2">A focused 60-minute placement exam sets your reading, listening, writing, and speaking levels.</div>
             </div>
             <v-btn
               color="secondary"

@@ -1,8 +1,8 @@
 """Draft speaking-placement prompt content and seeding logic (Blueprint Phase A0+A1, MVP
 activation).
 
-MVP product decision: the drafted speaking_prompt items (originally 30; extended with a small A1/A2
-diversity top-up, see SPEAKING_PROMPT_SEEDS) are used for MVP placement WITHOUT a completed
+MVP product decision: the drafted speaking_prompt items (originally 30; extended with cross-level
+diversity top-ups, see SPEAKING_PROMPT_SEEDS) are used for MVP placement WITHOUT a completed
 human-review pass. This module must never write or imply that a human review was performed --
 every item it writes carries an explicit, machine-readable "mvp_approved_pending_full_review" /
 human_reviewed=False marker (see MVP_REVIEW_STATUS below), and a full linguistic/content audit is
@@ -525,6 +525,288 @@ SPEAKING_PROMPT_SEEDS: list[SpeakingPromptSeed] = [
         boundary=("C1", "C2"),
     ),
 ]
+
+
+SPEAKING_PROMPT_SEEDS.extend(
+    [
+        # --- A1 top-up: more basic personal prompts ---------------------------------------
+        _seed(
+            key="A1:self_intro:04",
+            level="A1",
+            subskill="self_intro",
+            situation="You are joining a new English group.",
+            prompt_text="Say hello and introduce yourself. Tell the group your name, your country, and one hobby.",
+        ),
+        _seed(
+            key="A1:self_intro:05",
+            level="A1",
+            subskill="self_intro",
+            situation="Your teacher asks you to introduce yourself to the class.",
+            prompt_text="Tell the class your name, your age, and one thing you do every day.",
+        ),
+        _seed(
+            key="A1:self_intro:06",
+            level="A1",
+            subskill="self_intro",
+            situation="You are making a short voice message for a new friend.",
+            prompt_text="Introduce yourself. Say where you live and two things you like.",
+        ),
+        _seed(
+            key="A1:simple_personal_information:04",
+            level="A1",
+            subskill="simple_personal_information",
+            situation="A new classmate wants to know about your room.",
+            prompt_text="Describe your room in simple words. What things are in your room?",
+        ),
+        _seed(
+            key="A1:simple_personal_information:05",
+            level="A1",
+            subskill="simple_personal_information",
+            situation="Someone asks about your day at school.",
+            prompt_text="What subjects do you study? Say one subject you like and why.",
+        ),
+        _seed(
+            key="A1:simple_personal_information:06",
+            level="A1",
+            subskill="simple_personal_information",
+            situation="A friend asks about your home.",
+            prompt_text="Tell me about your home. Is it big or small? What do you like there?",
+        ),
+        # --- A2 top-up: routine and simple preference -------------------------------------
+        _seed(
+            key="A2:routine_description:04",
+            level="A2",
+            subskill="routine_description",
+            situation="A friend wants to understand your study habits.",
+            prompt_text="Describe how you study English. When do you study, and what activities help you learn?",
+        ),
+        _seed(
+            key="A2:routine_description:05",
+            level="A2",
+            subskill="routine_description",
+            situation="Someone asks about a normal evening in your life.",
+            prompt_text="Tell me about your usual evening. What do you do after school or after work?",
+        ),
+        _seed(
+            key="A2:routine_description:06",
+            level="A2",
+            subskill="routine_description",
+            situation="A classmate asks how you prepare for a busy day.",
+            prompt_text="Describe your morning routine on a busy day. What do you do first, next, and last?",
+        ),
+        _seed(
+            key="A2:simple_preference:04",
+            level="A2",
+            subskill="simple_preference",
+            situation="A friend is asking about how you travel around your city.",
+            prompt_text="Do you prefer walking, taking a bus, or going by car? Explain your choice.",
+        ),
+        _seed(
+            key="A2:simple_preference:05",
+            level="A2",
+            subskill="simple_preference",
+            situation="Someone asks about learning at home or in class.",
+            prompt_text="Do you prefer studying at home or studying in a classroom? Say why.",
+        ),
+        _seed(
+            key="A2:simple_preference:06",
+            level="A2",
+            subskill="simple_preference",
+            situation="A friend asks about your free time.",
+            prompt_text="Do you prefer quiet activities or active activities in your free time? Explain your preference.",
+        ),
+        # --- B1 top-up: narration and justified opinion -----------------------------------
+        _seed(
+            key="B1:past_narration:04",
+            level="B1",
+            subskill="past_narration",
+            situation="A friend asks about a time you solved a problem.",
+            prompt_text="Describe a problem you had and how you solved it. What happened, and what did you learn?",
+        ),
+        _seed(
+            key="B1:past_narration:05",
+            level="B1",
+            subskill="past_narration",
+            situation="Someone asks about an important change in your life.",
+            prompt_text="Talk about a change you experienced. What changed, how did you feel, and why was it important?",
+        ),
+        _seed(
+            key="B1:past_narration:06",
+            level="B1",
+            subskill="past_narration",
+            situation="A classmate asks about a time you helped someone.",
+            prompt_text="Tell me about a time you helped another person. What did you do, and how did it end?",
+        ),
+        _seed(
+            key="B1:opinion_justification:04",
+            level="B1",
+            subskill="opinion_justification",
+            situation="A class is discussing homework.",
+            prompt_text="Do you think students should have homework every day? Give your opinion and reasons.",
+        ),
+        _seed(
+            key="B1:opinion_justification:05",
+            level="B1",
+            subskill="opinion_justification",
+            situation="A friend asks about learning languages.",
+            prompt_text="What is the best way to improve English speaking? Explain your opinion with examples.",
+        ),
+        _seed(
+            key="B1:opinion_justification:06",
+            level="B1",
+            subskill="opinion_justification",
+            situation="Someone asks about how people should spend free time.",
+            prompt_text="Is it better to plan your free time or decide at the last minute? Explain your view.",
+        ),
+        # --- B2 top-up: comparison and hypothetical reasoning -----------------------------
+        _seed(
+            key="B2:compare_contrast:04",
+            level="B2",
+            subskill="compare_contrast",
+            situation="A friend is choosing between online and in-person learning.",
+            prompt_text="Compare online classes with face-to-face classes. Which works better for different learners, and why?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="B2:compare_contrast:05",
+            level="B2",
+            subskill="compare_contrast",
+            situation="A group is discussing ways to manage time.",
+            prompt_text="Compare making a strict schedule with keeping a flexible routine. What are the benefits and drawbacks of each?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="B2:compare_contrast:06",
+            level="B2",
+            subskill="compare_contrast",
+            situation="A discussion about different ways to learn from mistakes.",
+            prompt_text="Compare learning from personal experience with learning from advice. Which approach is more effective, and why?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="B2:hypothetical_reasoning:04",
+            level="B2",
+            subskill="hypothetical_reasoning",
+            situation="A school committee asks for student suggestions.",
+            prompt_text="If you could design one new school activity, what would it be? Explain how it would help students.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="B2:hypothetical_reasoning:05",
+            level="B2",
+            subskill="hypothetical_reasoning",
+            situation="A friend asks about an important decision.",
+            prompt_text="If you had to choose between a safe option and a challenging opportunity, how would you decide?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="B2:hypothetical_reasoning:06",
+            level="B2",
+            subskill="hypothetical_reasoning",
+            situation="Someone asks how you would improve your local area.",
+            prompt_text="If you could improve one thing in your neighborhood, what would you change and why?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        # --- C1 top-up: abstract discussion ------------------------------------------------
+        _seed(
+            key="C1:abstract_discussion:04",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A seminar is discussing modern work and study habits.",
+            prompt_text="Discuss whether constant connectivity has improved people's productivity or made concentration more difficult.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C1:abstract_discussion:05",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A discussion about how people make choices.",
+            prompt_text="To what extent do you think convenience shapes people's decisions more than quality or long-term value?",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C1:abstract_discussion:06",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A thoughtful conversation about education.",
+            prompt_text="Discuss whether schools should focus more on creativity or on measurable academic results.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C1:abstract_discussion:07",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A group is discussing media and public opinion.",
+            prompt_text="How does the way information is presented influence what people believe? Give a balanced discussion.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C1:abstract_discussion:08",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A discussion about ambition and wellbeing.",
+            prompt_text="Discuss whether ambition usually helps people live better lives or creates unnecessary pressure.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C1:abstract_discussion:09",
+            level="C1",
+            subskill="abstract_discussion",
+            situation="A conversation about communities and change.",
+            prompt_text="Discuss how communities can preserve identity while adapting to social and technological change.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        # --- C2 top-up: nuanced argument ---------------------------------------------------
+        _seed(
+            key="C2:nuanced_argument:04",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A debate about fairness and achievement.",
+            prompt_text="Some people argue that success is mainly the result of personal effort; others emphasize circumstances and opportunity. Evaluate both views and defend a nuanced position.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C2:nuanced_argument:05",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A discussion about progress and tradition.",
+            prompt_text="Assess the claim that societies should prioritize innovation even when it disrupts familiar ways of life.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C2:nuanced_argument:06",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A debate about expert advice and public choice.",
+            prompt_text="Evaluate whether important public decisions should rely primarily on expert judgment or broader public opinion.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C2:nuanced_argument:07",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A discussion requiring careful qualification.",
+            prompt_text="Critically discuss the idea that efficiency should be the main measure of a successful institution.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C2:nuanced_argument:08",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A debate about education and independence.",
+            prompt_text="Some argue that education should challenge students' beliefs, while others say it should give clear shared foundations. Weigh both positions and state your view.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+        _seed(
+            key="C2:nuanced_argument:09",
+            level="C2",
+            subskill="nuanced_argument",
+            situation="A discussion about technology and responsibility.",
+            prompt_text="Evaluate the argument that technological creators should be held responsible for how people use their products.",
+            grade_band=tuple(OLDER_GRADE_BANDS),
+        ),
+    ]
+)
 
 
 async def _table_exists(db: AsyncSession) -> bool:
