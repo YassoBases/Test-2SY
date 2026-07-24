@@ -42,6 +42,10 @@ from app.services.language_speaking_lesson_planner.session_runtime import (
     student_safe_activity,
 )
 from app.services.language_speaking_lesson_planner.storage import (
+    ACTIVE_BLUEPRINT_KEY,
+    ATTEMPT_LINEAGE_KEY,
+    LEARNING_PLAN_KEY,
+    LEARNING_SESSION_KEY,
     load_s9_state,
     merge_speaking_bucket_into_payload,
     save_s9_state,
@@ -83,6 +87,19 @@ def _official_cefr(row: LanguageProgression) -> str:
     return val.value if hasattr(val, "value") else str(val or "A2")
 
 
+def _blueprint_matches_official_cefr(blueprint, official_cefr: str) -> bool:
+    if blueprint is None:
+        return True
+    return str(getattr(blueprint, "official_cefr_hint", "") or "").upper() == official_cefr.upper()
+
+
+def _clear_stale_s9_state(bucket: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(bucket)
+    for key in (LEARNING_PLAN_KEY, ACTIVE_BLUEPRINT_KEY, LEARNING_SESSION_KEY, ATTEMPT_LINEAGE_KEY):
+        cleaned.pop(key, None)
+    return cleaned
+
+
 def _ensure_lineage(lineage: SpeakingSessionAttemptLineage | None, session_id: str) -> SpeakingSessionAttemptLineage:
     if lineage is None or lineage.session_id != session_id:
         return SpeakingSessionAttemptLineage.empty_for_session(session_id)
@@ -101,12 +118,17 @@ async def get_speaking_journey(
     bucket = speaking_bucket_from_payload(payload)
     state = load_s9_state(bucket)
     plan, blueprint, session, lineage = state.plan, state.blueprint, state.session, state.attempt_lineage
+    official = _official_cefr(row)
+
+    if not _blueprint_matches_official_cefr(blueprint, official):
+        bucket = _clear_stale_s9_state(bucket)
+        plan, blueprint, session, lineage = None, None, None, None
 
     if plan is None or blueprint is None:
         km = knowledge_model_from_speaking_bucket(bucket, student_id=student_id, language_id=language_id)
         rec = select_speaking_target(
             km,
-            official_cefr=_official_cefr(row),
+            official_cefr=official,
             speaking_goal=speaking_goal,
         )
         blueprint = assemble_speaking_lesson_blueprint(rec)
@@ -139,7 +161,7 @@ async def get_speaking_journey(
         alex_remaining = None
 
     return build_speaking_journey_bundle(
-        official_level=_official_cefr(row),
+        official_level=official,
         plan=plan,
         blueprint=blueprint,
         session=session,
@@ -157,12 +179,33 @@ async def start_speaking_session(
     student_id: int,
     language_id: int = 1,
     live_session_id: str | None = None,
+    speaking_goal: str = "general_english",
 ) -> dict[str, Any]:
     row = await _load_row(db, student_id=student_id, language_id=language_id)
     payload = dict(row.promotion_readiness_json or {})
     bucket = speaking_bucket_from_payload(payload)
     state = load_s9_state(bucket)
     plan, blueprint, existing, lineage = state.plan, state.blueprint, state.session, state.attempt_lineage
+    if not _blueprint_matches_official_cefr(blueprint, _official_cefr(row)):
+        bucket = _clear_stale_s9_state(bucket)
+        payload = merge_speaking_bucket_into_payload(payload, bucket)
+        row.promotion_readiness_json = payload
+        flag_modified(row, "promotion_readiness_json")
+        await get_speaking_journey(
+            db,
+            student_id=student_id,
+            language_id=language_id,
+            speaking_goal=speaking_goal,
+        )
+        payload = dict(row.promotion_readiness_json or {})
+        bucket = speaking_bucket_from_payload(payload)
+        state = load_s9_state(bucket)
+        plan, blueprint, existing, lineage = (
+            state.plan,
+            state.blueprint,
+            state.session,
+            state.attempt_lineage,
+        )
     if blueprint is None:
         raise ValueError("no_active_blueprint")
 

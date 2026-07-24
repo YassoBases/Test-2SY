@@ -1,7 +1,11 @@
 from types import SimpleNamespace
 
 from app.models.language.enums import LanguageLevel
-from app.services.language_progression_service import _analytics_level_if_higher, _analytics_overall_if_higher
+from app.services.language_progression_service import (
+    _analytics_level_if_higher,
+    _analytics_overall_if_higher,
+    _reconcile_stale_lower_progression_from_analytics,
+)
 from app.services.language_writing.enums import OfficialWritingCEFR
 from app.services.language_writing.enums import WritingGoal
 from app.services.language_writing_curriculum.selector import select_writing_curriculum_node
@@ -24,6 +28,31 @@ def test_stale_progression_overall_a1_can_be_corrected_from_higher_analytics_ove
     )
 
     assert _analytics_overall_if_higher(analytics, LanguageLevel.A1) == LanguageLevel.B1
+
+
+def test_existing_progression_row_reconciles_stale_lower_speaking_from_analytics():
+    row = SimpleNamespace(
+        official_reading_cefr=LanguageLevel.A1,
+        official_listening_cefr=LanguageLevel.A1,
+        official_writing_cefr=LanguageLevel.A1,
+        official_speaking_cefr=LanguageLevel.A1,
+        official_overall_cefr=LanguageLevel.A1,
+        version=1,
+        updated_at=None,
+    )
+    analytics = SimpleNamespace(
+        reading_level=LanguageLevel.A1,
+        listening_level=LanguageLevel.A1,
+        writing_level=LanguageLevel.A1,
+        speaking_level=LanguageLevel.B2,
+        overall_level_internal=LanguageLevel.B1,
+    )
+
+    assert _reconcile_stale_lower_progression_from_analytics(row, analytics) is True
+    assert row.official_speaking_cefr == LanguageLevel.B2
+    assert row.official_reading_cefr == LanguageLevel.A1
+    assert row.official_overall_cefr == LanguageLevel.B1
+    assert row.version == 2
 
 
 def test_writing_goal_from_learner_memory_supports_all_writing_specific_goals():

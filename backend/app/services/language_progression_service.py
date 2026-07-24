@@ -143,6 +143,53 @@ def _analytics_overall_if_higher(
     return None
 
 
+def _coerce_language_level(value: LanguageLevel | str | None, default: LanguageLevel) -> LanguageLevel:
+    if isinstance(value, LanguageLevel):
+        return value
+    try:
+        return LanguageLevel(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _reconcile_stale_lower_progression_from_analytics(
+    row: LanguageProgression,
+    analytics: LanguageAnalytics | None,
+) -> bool:
+    """Persist analytics levels only when they correct stale lower progression columns."""
+    if analytics is None:
+        return False
+
+    changed = False
+    official_levels: dict[str, LanguageLevel] = {}
+    for skill_key, progression_attr in _SKILL_TO_PROGRESSION_ATTR.items():
+        current = _coerce_language_level(getattr(row, progression_attr, None), LanguageLevel.A1)
+        corrected = _analytics_level_if_higher(analytics, skill_key, current)
+        if corrected is not None:
+            setattr(row, progression_attr, corrected)
+            current = corrected
+            changed = True
+        official_levels[skill_key] = current
+
+    current_overall = _coerce_language_level(
+        getattr(row, "official_overall_cefr", None),
+        LanguageLevel.A1,
+    )
+    corrected_overall = _analytics_overall_if_higher(analytics, current_overall)
+    bottleneck = bottleneck_level({key: level for key, level in official_levels.items()})
+    candidates = [level for level in (corrected_overall, bottleneck) if level is not None]
+    if candidates:
+        best = max(candidates, key=lambda level: CEFR_RANK.get(level, 0))
+        if CEFR_RANK.get(best, 0) > CEFR_RANK.get(current_overall, 0):
+            row.official_overall_cefr = best
+            changed = True
+
+    if changed:
+        row.version = int(row.version or 0) + 1
+        row.updated_at = datetime.now(timezone.utc)
+    return changed
+
+
 async def select_skill_level(
     db: AsyncSession,
     *,
@@ -366,6 +413,17 @@ async def ensure_progression_row(
     """
     row = await db.get(LanguageProgression, {"student_id": student_id, "language_id": language_id})
     if row is not None:
+        analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
+        if _reconcile_stale_lower_progression_from_analytics(row, analytics):
+            await record_progression_event(
+                db,
+                student_id=student_id,
+                language_id=language_id,
+                event_type="official_levels_reconciled_from_higher_analytics",
+                payload_json={"source": "ensure_progression_row"},
+                force=True,
+            )
+            await db.flush()
         return row
 
     analytics = await db.get(LanguageAnalytics, {"student_id": student_id, "language_id": language_id})
