@@ -31,6 +31,9 @@ export function useLiveTranscriptionPreview() {
   // incremental text FRAGMENT for one segment of speech, never the full transcript so far, so
   // fragments must be accumulated per-segment and then joined across segments, not replaced.
   let itemText = new Map()
+  let browserRecognition = null
+  let browserFinalText = ''
+  let browserInterimText = ''
   // Segments whose .completed event has already arrived -- their text is now final. Realtime
   // can legitimately split one continuous utterance into multiple segments (e.g. across a brief
   // pause), each with its own item_id, so a segment being "completed" must not stop OTHER,
@@ -41,7 +44,54 @@ export function useLiveTranscriptionPreview() {
   let inFlightPromise = null
 
   function updateTranscriptFromItems() {
-    transcript.value = Array.from(itemText.values()).join(' ').trim()
+    const realtimeText = Array.from(itemText.values()).join(' ').trim()
+    const browserText = `${browserFinalText} ${browserInterimText}`.trim()
+    transcript.value = realtimeText || browserText
+  }
+
+  function startBrowserSpeechRecognition() {
+    if (typeof window === 'undefined') return false
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!Recognition || browserRecognition) return false
+    try {
+      const recognition = new Recognition()
+      recognition.lang = 'en-US'
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.maxAlternatives = 1
+      recognition.onresult = (event) => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i]
+          const text = result?.[0]?.transcript || ''
+          if (!text) continue
+          if (result.isFinal) browserFinalText = `${browserFinalText} ${text}`.trim()
+          else interim = `${interim} ${text}`.trim()
+        }
+        browserInterimText = interim
+        updateTranscriptFromItems()
+      }
+      recognition.onerror = () => {
+        browserRecognition = null
+      }
+      recognition.onend = () => {
+        browserRecognition = null
+      }
+      browserRecognition = recognition
+      recognition.start()
+      return true
+    } catch {
+      browserRecognition = null
+      return false
+    }
+  }
+
+  function stopBrowserSpeechRecognition() {
+    try {
+      browserRecognition?.stop()
+    } catch { /* best-effort cleanup only */ }
+    browserRecognition = null
+    updateTranscriptFromItems()
   }
 
   function segmentKey(event) {
@@ -91,6 +141,7 @@ export function useLiveTranscriptionPreview() {
     try {
       localStream?.getTracks().forEach((track) => track.stop())
     } catch { /* best-effort cleanup only */ }
+    stopBrowserSpeechRecognition()
     dataChannel = null
     peerConnection = null
     localStream = null
@@ -100,6 +151,8 @@ export function useLiveTranscriptionPreview() {
     transcript.value = ''
     itemText = new Map()
     completedKeys = new Set()
+    browserFinalText = ''
+    browserInterimText = ''
     unavailable.value = false
   }
 
@@ -111,6 +164,7 @@ export function useLiveTranscriptionPreview() {
     connecting.value = true
     inFlightPromise = (async () => {
       try {
+        startBrowserSpeechRecognition()
         if (typeof RTCPeerConnection === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
           unavailable.value = true
           return
