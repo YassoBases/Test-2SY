@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.services.language_educational_package.lifecycle import PackageLifecycleStatus
 from app.services.language_educational_package.types import EducationalPackage
 from app.services.language_progression_service import ensure_progression_row
 from app.services.language_speaking_educational_package.author_pipeline import (
@@ -19,8 +18,6 @@ from app.services.language_speaking_educational_package.persistence import (
     get_package_item_by_id,
     package_from_item,
 )
-from app.services.language_speaking_educational_package.projection import project_package_for_student
-from app.services.language_speaking_educational_package.storage_index import elp_index_from_payload
 from app.services.language_speaking_educational_package_api.service import (
     SpeakingLearningPackageApiError,
     create_speaking_learning_package_api,
@@ -111,17 +108,6 @@ def _bind_alex_to_educational_case(
     return new_bp
 
 
-def _find_reusable_package_id(payload: dict[str, Any] | None, mission_id: str) -> str | None:
-    index = elp_index_from_payload(payload)
-    by_mission = index.get("active_by_mission") or {}
-    if mission_id and by_mission.get(mission_id):
-        return str(by_mission[mission_id])
-    order = index.get("order") or []
-    if order:
-        return str(order[-1])
-    return None
-
-
 async def ensure_learning_package_for_journey(
     db: AsyncSession,
     *,
@@ -156,7 +142,8 @@ async def ensure_learning_package_for_journey(
     )
     mission_id = str(constraints.get("mission_id") or "")
 
-    reusable_id = _find_reusable_package_id(payload, mission_id)
+    # Reuse only through the full constraints fingerprint after grammar/date stamping.
+    reusable_id = None
     if reusable_id:
         item = await get_package_item_by_id(
             db, student_id=student_id, language_id=language_id, package_id=reusable_id

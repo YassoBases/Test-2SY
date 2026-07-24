@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.language_educational_package.constraints import ELP_CONSTRAINTS_SCHEMA_VERSION
 from app.services.language_speaking_curriculum_engine.cefr_policy import (
     lesson_authoring_policy_for_cefr,
     lexical_recycling_policy_for_cefr,
@@ -228,7 +229,7 @@ def enrich_speaking_constraints_payload(payload: dict[str, Any]) -> dict[str, An
     )
     out.update(
         {
-            "schema_version": "2.3.0",
+            "schema_version": ELP_CONSTRAINTS_SCHEMA_VERSION,
             "vocabulary_ids": [v.vocabulary_id for v in vocab],
             "vocabulary_surface_forms": [v.surface for v in vocab],
             "vocabulary_targets": [v.to_dict() for v in vocab],

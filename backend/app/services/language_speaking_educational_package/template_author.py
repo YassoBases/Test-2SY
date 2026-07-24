@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from app.services.language_educational_package.constraints import PackageConstraints
@@ -17,6 +18,21 @@ from app.services.language_speaking_curriculum_engine.story_complexity import (
 
 
 AUTHOR_PROVIDER_TEMPLATE = "template_fallback"
+
+_DAILY_CASE_DETAILS = (
+    "near the classroom door before the lesson starts",
+    "beside a notice board after a short announcement",
+    "in a quiet hallway while another student is waiting",
+    "at a study table with a small misunderstanding",
+    "outside a classroom after a rushed message",
+)
+
+
+def _seed_index(seed: str, modulo: int, *, salt: str = "") -> int:
+    if modulo <= 0:
+        return 0
+    digest = hashlib.sha256(f"{seed}|{salt}".encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % modulo
 
 
 def author_package_json_template(constraints: PackageConstraints) -> str:
@@ -49,6 +65,13 @@ def author_package_json_template(constraints: PackageConstraints) -> str:
     characters = characters[: complexity.characters_max]
     world = constraints.story_world or f"a {constraints.scenario_type} situation"
     title = constraints.story_title_hint or f"A {constraints.scenario_type} moment"
+    if constraints.daily_story_seed:
+        detail = _DAILY_CASE_DETAILS[
+            _seed_index(constraints.daily_story_seed, len(_DAILY_CASE_DETAILS), salt="case_detail")
+        ]
+        world = f"{world} Today's variation starts {detail}."
+        if constraints.story_title_hint:
+            title = f"{constraints.story_title_hint}: {detail.split(' before ')[0].title()}"
     emotional = str(perso.get("emotional_framing") or "").strip()
     if emotional:
         world = f"{world} Emotional framing: {emotional}."

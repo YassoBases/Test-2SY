@@ -33,6 +33,8 @@ EDUCATIONAL CASE + CEFR COMPLEXITY:
 - Higher CEFR must feel like harder real-life situations (trade-offs, conflicting
   interests, hidden motivations, long-term consequences) — not only more words.
 - Write the Educational Case narrative FIRST as a coherent situation.
+- Use daily_story_key / daily_story_seed only as a backend variation seed: make today's
+  story fresh for this student while preserving CEFR, vocabulary, grammar, and progression.
 - Then satisfy vocabulary constraints by weaving EXACT surfaces into that narrative
   naturally — NEVER dump vocabulary lists or paste tokens awkwardly.
 - Demonstrate every grammar_targets topic inside the story body using
@@ -185,6 +187,8 @@ def build_author_user_prompt(constraints: PackageConstraints) -> str:
         "recycle_across": recycling.get("required_sections"),
         "exact_surfaces": surfaces,
         "grammar_targets": [dict(g) for g in constraints.grammar_targets],
+        "daily_story_key": constraints.daily_story_key,
+        "daily_story_seed": constraints.daily_story_seed,
     }
     return (
         "PackageConstraints (backend-owned; do not alter educational decisions):\n"
@@ -200,6 +204,8 @@ def build_author_user_prompt(constraints: PackageConstraints) -> str:
         "(4) teaching names patterns students already saw, "
         "(5) discussion/reflection at required depth, "
         "(6) mini practice continues the same case. "
+        "Use daily_story_seed to vary names, setting details, conflict details, and events "
+        "without changing any backend-owned targets. "
         "Never mechanically dump vocabulary. Never invent IDs. Never mention Alex."
     )
 

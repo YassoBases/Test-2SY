@@ -11,7 +11,7 @@ from app.services.language_educational_package.question_ladder import (
     default_ladder_policy_for_cefr,
 )
 
-ELP_CONSTRAINTS_SCHEMA_VERSION = "2.2.0"
+ELP_CONSTRAINTS_SCHEMA_VERSION = "2.4.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +116,9 @@ class PackageConstraints:
     communicative_goal: str = ""
     character_hints: tuple[str, ...] = ()
     story_title_hint: str = ""
+    authoring_day: str = ""
+    daily_story_key: str = ""
+    daily_story_seed: str = ""
     case_category: str = ""
     case_archetype: str = ""
     stakeholder_hints: tuple[str, ...] = ()
@@ -164,6 +167,9 @@ class PackageConstraints:
             "communicative_goal": self.communicative_goal,
             "character_hints": list(self.character_hints),
             "story_title_hint": self.story_title_hint,
+            "authoring_day": self.authoring_day,
+            "daily_story_key": self.daily_story_key,
+            "daily_story_seed": self.daily_story_seed,
             "case_category": self.case_category,
             "case_archetype": self.case_archetype,
             "stakeholder_hints": list(self.stakeholder_hints),
@@ -289,6 +295,9 @@ class PackageConstraints:
                 str(x) for x in (raw.get("character_hints") or []) if str(x).strip()
             ),
             story_title_hint=str(raw.get("story_title_hint") or ""),
+            authoring_day=str(raw.get("authoring_day") or ""),
+            daily_story_key=str(raw.get("daily_story_key") or ""),
+            daily_story_seed=str(raw.get("daily_story_seed") or ""),
             case_category=str(
                 raw.get("case_category")
                 or (

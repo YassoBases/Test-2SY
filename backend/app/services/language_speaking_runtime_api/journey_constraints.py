@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.models.language.progression import LanguageProgression
 from app.services.language_speaking_curriculum.skill_catalog import SPEAKING_SKILL_GRAPH
@@ -24,6 +27,37 @@ from app.services.language_speaking_lesson_planner.types import (
 def _official_cefr(row: LanguageProgression) -> str:
     val = row.official_speaking_cefr
     return (val.value if hasattr(val, "value") else str(val or "A2")).upper()
+
+
+def _current_authoring_day() -> str:
+    try:
+        return datetime.now(ZoneInfo("Asia/Damascus")).date().isoformat()
+    except Exception:  # noqa: BLE001 - local timezone data may be unavailable in CI
+        return datetime.now(timezone.utc).date().isoformat()
+
+
+def _daily_story_seed(
+    *,
+    student_id: int,
+    language_id: int,
+    mission_id: str,
+    official_cefr: str,
+    learning_stage: int,
+    blueprint_hash: str,
+    authoring_day: str,
+) -> str:
+    blob = "|".join(
+        (
+            str(student_id),
+            str(language_id),
+            mission_id,
+            official_cefr.upper(),
+            str(learning_stage),
+            blueprint_hash,
+            authoring_day,
+        )
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:24]
 
 
 def _mission_for_blueprint(
@@ -127,6 +161,19 @@ def build_constraints_payload_from_journey(
     )
 
     stage = int(getattr(row, "learning_stage_speaking", None) or 1)
+    official_cefr = str(blueprint.official_cefr_hint or _official_cefr(row)).upper()
+    authoring_day = _current_authoring_day()
+    student_id = int(getattr(row, "student_id", 0) or 0)
+    language_id = int(getattr(row, "language_id", 0) or 0)
+    daily_seed = _daily_story_seed(
+        student_id=student_id,
+        language_id=language_id,
+        mission_id=mission_id,
+        official_cefr=official_cefr,
+        learning_stage=max(1, stage),
+        blueprint_hash=blueprint.blueprint_hash,
+        authoring_day=authoring_day,
+    )
     promo = dict(getattr(row, "promotion_readiness_json", None) or {})
     # Pass progression + case memory snapshots so Curriculum Graph can adapt
     from app.services.language_speaking_case_personalization.memory import (
@@ -143,7 +190,7 @@ def build_constraints_payload_from_journey(
 
     base = {
         "skill": "speaking",
-        "official_cefr": blueprint.official_cefr_hint or _official_cefr(row),
+        "official_cefr": official_cefr,
         "learning_stage": max(1, stage),
         "mission_id": mission_id,
         "mission_kind": mission_kind,
@@ -162,6 +209,9 @@ def build_constraints_payload_from_journey(
         "communicative_goal": world["communicative_goal"],
         "character_hints": world["character_hints"],
         "story_title_hint": world["story_title_hint"],
+        "authoring_day": authoring_day,
+        "daily_story_key": f"speaking:{mission_id}:{authoring_day}:{daily_seed[:12]}",
+        "daily_story_seed": daily_seed,
         "session_goal": session_goal,
         "input_material_kind": "story",
         "mini_practice_task_id": mini_task or f"task_{mission_id}",
