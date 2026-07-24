@@ -20,6 +20,7 @@ from app.api.language_exam import (
     _ensure_state_protocol,
     _exam_remaining_seconds,
     _expire_exam_if_needed,
+    _expired_incomplete_exam_can_be_replaced,
     _is_valid_mcq_pool_item,
     _mcq_continuation_level,
     _new_exam_token,
@@ -88,6 +89,28 @@ def test_expired_exam_marks_session_failed_without_completion():
     assert state["evaluation"]["error_code"] == "time_expired"
     assert state["evaluation"]["evaluation_status"] == "time_expired"
     assert state["state_revision"] == 4
+
+
+def test_expired_incomplete_exam_is_replaceable_but_completed_exam_is_not():
+    failed_session = LanguageExamSession(
+        id="expired-placement-session",
+        student_id=1,
+        language_id=1,
+        exam_state={"exam_time_expired": True},
+        status="failed",
+        is_completed=False,
+    )
+    completed_session = LanguageExamSession(
+        id="completed-placement-session",
+        student_id=1,
+        language_id=1,
+        exam_state={"exam_time_expired": True},
+        status="failed",
+        is_completed=True,
+    )
+
+    assert _expired_incomplete_exam_can_be_replaced(failed_session, failed_session.exam_state) is True
+    assert _expired_incomplete_exam_can_be_replaced(completed_session, completed_session.exam_state) is False
 
 
 def test_existing_state_is_upgraded_without_touching_answers():

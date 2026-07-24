@@ -1803,6 +1803,14 @@ def _expire_exam_if_needed(
     return changed
 
 
+def _expired_incomplete_exam_can_be_replaced(sess: LanguageExamSession, state: dict) -> bool:
+    return (
+        sess.status == "failed"
+        and state.get("exam_time_expired") is True
+        and sess.is_completed is not True
+    )
+
+
 async def _build_state_out(
     db: AsyncSession,
     sess: LanguageExamSession,
@@ -3288,17 +3296,21 @@ async def initiate_exam(
         if protocol_changed:
             existing.exam_state = state
             flag_modified(existing, "exam_state")
-        if existing.status == "in_progress":
-            protocol_changed = _maybe_retrigger_prep(existing, language.id, background_tasks) or protocol_changed
-        elif existing.status == "evaluating":
-            _schedule_evaluation_recovery(existing, background_tasks)
-        if protocol_changed:
-            state = copy.deepcopy(existing.exam_state or state)
-            _bump_state_revision(state)
-            existing.exam_state = state
-            flag_modified(existing, "exam_state")
-        await db.commit()
-        return await _build_state_out(db, existing, resumed=True)
+        if _expired_incomplete_exam_can_be_replaced(existing, state):
+            await db.commit()
+            existing = None
+        else:
+            if existing.status == "in_progress":
+                protocol_changed = _maybe_retrigger_prep(existing, language.id, background_tasks) or protocol_changed
+            elif existing.status == "evaluating":
+                _schedule_evaluation_recovery(existing, background_tasks)
+            if protocol_changed:
+                state = copy.deepcopy(existing.exam_state or state)
+                _bump_state_revision(state)
+                existing.exam_state = state
+                flag_modified(existing, "exam_state")
+            await db.commit()
+            return await _build_state_out(db, existing, resumed=True)
 
     ensure_placement_retake_allowed(profile)
     check_or_raise("placement_start", student.id)
@@ -3343,10 +3355,14 @@ async def initiate_exam(
         if changed:
             existing.exam_state = state
             flag_modified(existing, "exam_state")
-        if existing.status == "evaluating":
-            _schedule_evaluation_recovery(existing, background_tasks)
-        await db.commit()
-        return await _build_state_out(db, existing, resumed=True)
+        if _expired_incomplete_exam_can_be_replaced(existing, state):
+            await db.commit()
+            existing = None
+        else:
+            if existing.status == "evaluating":
+                _schedule_evaluation_recovery(existing, background_tasks)
+            await db.commit()
+            return await _build_state_out(db, existing, resumed=True)
     profile = await ensure_language_profile(db, student_id, language_id)
     ensure_placement_retake_allowed(profile)
 
