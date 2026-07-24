@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.language.content import LanguageContentItem
@@ -21,6 +21,16 @@ SOURCE_TAG = "speaking_elp_e1"
 
 def _content_item_has_student_owner() -> bool:
     return hasattr(LanguageContentItem, "student_id")
+
+
+def _student_owner_clause(student_id: int):
+    json_owner = LanguageContentItem.body_json["owner_student_id"].astext == str(student_id)
+    if not _content_item_has_student_owner():
+        return json_owner
+    return or_(
+        LanguageContentItem.student_id == student_id,
+        and_(LanguageContentItem.student_id.is_(None), json_owner),
+    )
 
 
 def _level_from_cefr(cefr: str) -> LanguageLevel:
@@ -93,10 +103,7 @@ async def get_package_item_by_id(
         LanguageContentItem.content_type == CONTENT_TYPE,
         LanguageContentItem.body_json["package_id"].astext == package_id,
     ]
-    if _content_item_has_student_owner():
-        clauses.append(LanguageContentItem.student_id == student_id)
-    else:
-        clauses.append(LanguageContentItem.body_json["owner_student_id"].astext == str(student_id))
+    clauses.append(_student_owner_clause(student_id))
     result = await db.execute(select(LanguageContentItem).where(*clauses))
     return result.scalar_one_or_none()
 
@@ -115,10 +122,7 @@ async def find_cached_package_item(
         LanguageContentItem.body_json["constraints_fingerprint"].astext == constraints_fingerprint,
         LanguageContentItem.is_published.is_(True),
     ]
-    if _content_item_has_student_owner():
-        clauses.append(LanguageContentItem.student_id == student_id)
-    else:
-        clauses.append(LanguageContentItem.body_json["owner_student_id"].astext == str(student_id))
+    clauses.append(_student_owner_clause(student_id))
     result = await db.execute(
         select(LanguageContentItem)
         .where(*clauses)
