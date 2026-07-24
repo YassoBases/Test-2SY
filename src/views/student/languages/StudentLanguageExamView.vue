@@ -1442,6 +1442,23 @@ function markLocalTimeExpired(message = 'Time is up. Please start a fresh attemp
   preparingSpeech.value = false
 }
 
+function isExpiredExamState(data) {
+  return data?.phase === 'failed' && data?.error_code === 'time_expired'
+}
+
+async function initiateReplacingExpiredAttempt() {
+  let data = await initiateExam()
+  if (isExpiredExamState(data) && data?.session_id) {
+    try {
+      await abandonExam(data.session_id)
+    } catch {
+      /* continue; the backend may already have made this expired attempt inert */
+    }
+    data = await initiateExam()
+  }
+  return data
+}
+
 async function onExamTimerTick() {
   if (examTimeRemaining.value == null) return
   examTimeRemaining.value = Math.max(0, Math.ceil(Number(examTimeRemaining.value) || 0) - 1)
@@ -1615,7 +1632,7 @@ async function start() {
   busy.value = true
   loadError.value = ''
   try {
-    const data = await initiateExam()
+    const data = await initiateReplacingExpiredAttempt()
     sessionId.value = data.session_id
     lastFeedback.value = null
     speakingChat.value = []
