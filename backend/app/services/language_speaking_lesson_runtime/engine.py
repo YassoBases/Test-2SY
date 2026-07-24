@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +19,12 @@ from app.services.language_speaking_educational_package.persistence import (
     package_from_item,
 )
 from app.services.language_speaking_educational_package.projection import project_package_for_student
-from app.services.language_speaking_educational_package.storage_index import elp_index_from_payload
+from app.services.language_speaking_educational_package.storage_index import (
+    elp_index_from_payload,
+    merge_elp_index_into_payload,
+)
 from app.services.language_speaking_lesson_runtime.storage import (
+    clear_runtime_from_payload,
     merge_runtime_into_payload,
     runtime_from_payload,
 )
@@ -61,6 +66,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _current_runtime_authoring_day() -> str:
+    try:
+        return datetime.now(ZoneInfo("Asia/Damascus")).date().isoformat()
+    except Exception:  # noqa: BLE001 - timezone data may be unavailable in CI
+        return datetime.now(timezone.utc).date().isoformat()
+
+
 async def _lock_row(
     db: AsyncSession, *, student_id: int, language_id: int
 ) -> LanguageProgression | None:
@@ -80,6 +92,13 @@ def _assert_frozen(pkg: EducationalPackage) -> None:
         raise LessonRuntimeError("not_frozen", "Learning package is not frozen.")
 
 
+def _official_cefr_from_row(row: LanguageProgression | None) -> str:
+    if row is None:
+        return ""
+    val = getattr(row, "official_speaking_cefr", None)
+    return (val.value if hasattr(val, "value") else str(val or "")).upper()
+
+
 def _build_constraints_summary(item_body: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(item_body, dict):
         return {}
@@ -96,7 +115,53 @@ def _build_constraints_summary(item_body: dict[str, Any] | None) -> dict[str, An
         "lesson_length_band": raw.get("lesson_length_band"),
         "scenario_type": raw.get("scenario_type"),
         "difficulty": raw.get("difficulty"),
+        "schema_version": raw.get("schema_version"),
+        "authoring_day": raw.get("authoring_day"),
+        "daily_story_key": raw.get("daily_story_key"),
+        "daily_story_seed": raw.get("daily_story_seed"),
     }
+
+
+def _package_matches_current_runtime_context(
+    row: LanguageProgression | None,
+    constraints_summary: dict[str, Any],
+) -> bool:
+    official = _official_cefr_from_row(row)
+    package_cefr = str(constraints_summary.get("official_cefr") or "").upper()
+    if official and package_cefr != official:
+        return False
+    if not str(constraints_summary.get("daily_story_key") or "").strip():
+        return False
+    authoring_day = str(constraints_summary.get("authoring_day") or "").strip()
+    if authoring_day != _current_runtime_authoring_day():
+        return False
+    return True
+
+
+def _clear_stale_package_runtime_references(
+    payload: dict[str, Any] | None,
+    *,
+    package_id: str,
+    constraints_fingerprint: str = "",
+    mission_id: str = "",
+) -> dict[str, Any]:
+    out = clear_runtime_from_payload(payload)
+    index = elp_index_from_payload(out)
+    index["order"] = [str(pid) for pid in (index.get("order") or []) if str(pid) != package_id]
+    by_id = dict(index.get("by_package_id") or {})
+    by_id.pop(package_id, None)
+    index["by_package_id"] = by_id
+    index["by_fingerprint"] = {
+        str(fp): str(pid)
+        for fp, pid in dict(index.get("by_fingerprint") or {}).items()
+        if str(pid) != package_id and (not constraints_fingerprint or str(fp) != constraints_fingerprint)
+    }
+    index["active_by_mission"] = {
+        str(mid): str(pid)
+        for mid, pid in dict(index.get("active_by_mission") or {}).items()
+        if str(pid) != package_id and (not mission_id or str(mid) != mission_id)
+    }
+    return merge_elp_index_into_payload(out, index)
 
 
 def _section_progress(state: LessonRuntimeState, package: EducationalPackage) -> dict[str, Any]:
@@ -169,13 +234,30 @@ async def open_lesson_runtime(
         raise LessonRuntimeError("no_package", "No Learning Package available to open.")
 
     item = None
+    stale_seen = False
     for pid in candidates:
         item = await get_package_item_by_id(
             db, student_id=student_id, language_id=language_id, package_id=pid
         )
-        if item is not None:
-            break
+        if item is None:
+            continue
+        body = item.body_json if isinstance(item.body_json, dict) else {}
+        summary = _build_constraints_summary(body)
+        if row is not None and not _package_matches_current_runtime_context(row, summary):
+            stale_seen = True
+            row.promotion_readiness_json = _clear_stale_package_runtime_references(
+                row.promotion_readiness_json,
+                package_id=pid,
+                constraints_fingerprint=str(body.get("constraints_fingerprint") or ""),
+                mission_id=str(summary.get("mission_id") or ""),
+            )
+            flag_modified(row, "promotion_readiness_json")
+            item = None
+            continue
+        break
     if item is None:
+        if stale_seen:
+            raise LessonRuntimeError("no_package", "No Learning Package available to open.")
         if package_id:
             raise LessonRuntimeError("not_found", "Learning package not found.")
         raise LessonRuntimeError("no_package", "No Learning Package available to open.")
@@ -249,7 +331,17 @@ async def get_lesson_runtime_view(
             "Frozen package changed; reopen the lesson.",
         )
     body = item.body_json if isinstance(item.body_json, dict) else {}
-    return _view(state, package, _build_constraints_summary(body))
+    summary = _build_constraints_summary(body)
+    if row is not None and not _package_matches_current_runtime_context(row, summary):
+        row.promotion_readiness_json = _clear_stale_package_runtime_references(
+            row.promotion_readiness_json,
+            package_id=state.package_id,
+            constraints_fingerprint=str(body.get("constraints_fingerprint") or ""),
+            mission_id=str(summary.get("mission_id") or ""),
+        )
+        flag_modified(row, "promotion_readiness_json")
+        raise LessonRuntimeError("no_runtime", "No active lesson runtime.")
+    return _view(state, package, summary)
 
 
 async def _load_mutable(
@@ -274,7 +366,17 @@ async def _load_mutable(
         raise LessonRuntimeError("corrupt", "Learning package payload missing.")
     _assert_frozen(package)
     body = item.body_json if isinstance(item.body_json, dict) else {}
-    return row, state, package, _build_constraints_summary(body)
+    summary = _build_constraints_summary(body)
+    if not _package_matches_current_runtime_context(row, summary):
+        row.promotion_readiness_json = _clear_stale_package_runtime_references(
+            row.promotion_readiness_json,
+            package_id=state.package_id,
+            constraints_fingerprint=str(body.get("constraints_fingerprint") or ""),
+            mission_id=str(summary.get("mission_id") or ""),
+        )
+        flag_modified(row, "promotion_readiness_json")
+        raise LessonRuntimeError("no_runtime", "No active lesson runtime.")
+    return row, state, package, summary
 
 
 def _save(

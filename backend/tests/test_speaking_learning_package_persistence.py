@@ -1,4 +1,5 @@
 from sqlalchemy.dialects import postgresql
+from types import SimpleNamespace
 
 from app.services.language_educational_package.fingerprint import (
     compute_constraints_fingerprint,
@@ -7,6 +8,12 @@ from app.services.language_speaking_educational_package.constraint_builder impor
     build_speaking_package_constraints,
 )
 from app.services.language_speaking_educational_package.persistence import _student_owner_clause
+from app.services.language_speaking_lesson_runtime.engine import (
+    _clear_stale_package_runtime_references,
+    _current_runtime_authoring_day,
+    _package_matches_current_runtime_context,
+)
+from app.services.language_speaking_lesson_runtime.storage import SPEAKING_LESSON_RUNTIME_KEY
 from app.services.language_speaking_runtime_api.journey_constraints import _daily_story_seed
 
 
@@ -100,3 +107,55 @@ def test_daily_story_seed_changes_with_level_and_progression_stage() -> None:
     b1_stage = _daily_story_seed(official_cefr="B1", learning_stage=7, **base)
 
     assert a2_stage != b1_stage
+
+
+def test_stale_a1_package_does_not_match_b2_speaking_runtime_context() -> None:
+    row = SimpleNamespace(official_speaking_cefr="B2")
+
+    assert _package_matches_current_runtime_context(
+        row,
+        {
+            "official_cefr": "A1",
+            "authoring_day": _current_runtime_authoring_day(),
+            "daily_story_key": "speaking:old",
+        },
+    ) is False
+
+
+def test_package_without_daily_story_key_is_stale_for_runtime_context() -> None:
+    row = SimpleNamespace(official_speaking_cefr="B2")
+
+    assert _package_matches_current_runtime_context(
+        row,
+        {
+            "official_cefr": "B2",
+            "authoring_day": _current_runtime_authoring_day(),
+            "daily_story_key": "",
+        },
+    ) is False
+
+
+def test_clearing_stale_package_removes_runtime_and_index_references() -> None:
+    payload = {
+        SPEAKING_LESSON_RUNTIME_KEY: {"package_id": "elp_old"},
+        "speaking_educational_packages": {
+            "order": ["elp_keep", "elp_old"],
+            "by_package_id": {"elp_old": 1, "elp_keep": 2},
+            "by_fingerprint": {"fp_old": "elp_old", "fp_keep": "elp_keep"},
+            "active_by_mission": {"mission_old": "elp_old", "mission_keep": "elp_keep"},
+        },
+    }
+
+    cleaned = _clear_stale_package_runtime_references(
+        payload,
+        package_id="elp_old",
+        constraints_fingerprint="fp_old",
+        mission_id="mission_old",
+    )
+
+    index = cleaned["speaking_educational_packages"]
+    assert SPEAKING_LESSON_RUNTIME_KEY not in cleaned
+    assert index["order"] == ["elp_keep"]
+    assert index["by_package_id"] == {"elp_keep": 2}
+    assert index["by_fingerprint"] == {"fp_keep": "elp_keep"}
+    assert index["active_by_mission"] == {"mission_keep": "elp_keep"}
