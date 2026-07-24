@@ -803,15 +803,24 @@ async function enterDiscussionFromLesson() {
 async function ensureDiscussionSession({ forceOpen = false, forceRestart = false } = {}) {
   discussionError.value = ''
 
+  try {
+    await loadActiveLesson()
+  } catch {
+    /* lesson may not be open yet */
+  }
+  const currentPackageId = lessonState.value?.package_id || ensuredPackageId.value || null
+
   if (!forceRestart) {
     try {
       const active = await loadActiveDiscussion()
-      if (active?.state && (!active.state.completed || !forceOpen)) {
+      const activePackageId = active?.state?.package_id || null
+      const samePackage = !currentPackageId || !activePackageId || activePackageId === currentPackageId
+      if (active?.state && samePackage && (!active.state.completed || !forceOpen)) {
         // /active is text-only; re-open (no restart) once to attach Supertonic audio.
         if (!active.audio_b64 && !discussionLastAudio.value?.b64) {
           try {
             return await openDiscussion({
-              packageId: active.state.package_id || undefined,
+              packageId: activePackageId || undefined,
               forceRestart: false,
             })
           } catch (openErr) {
@@ -824,15 +833,12 @@ async function ensureDiscussionSession({ forceOpen = false, forceRestart = false
         }
         return active
       }
+      if (active?.state && !samePackage) {
+        handleMissingDiscussionPackage()
+      }
     } catch {
       /* no active discussion yet */
     }
-  }
-
-  try {
-    await loadActiveLesson()
-  } catch {
-    /* lesson may not be open yet */
   }
 
   if (!lessonReadyForDiscussion.value) {

@@ -2,7 +2,9 @@ from app.services.language_grammar.enums import GrammarCEFRBand, GrammarEvidence
 from app.services.language_grammar_skill_context.types import SkillGrammarContext
 from app.services.language_speaking_discussion.engine import (
     _effective_turn_limit,
+    _require_current_lesson_package,
     _student_answer_is_enough,
+    DiscussionRuntimeError,
 )
 from app.services.language_speaking_service import _with_grammar_speaking_instruction
 from app.services.language_writing_service import _with_grammar_writing_instruction
@@ -64,3 +66,16 @@ def test_discussion_step_has_single_effective_followup_and_clear_advance_thresho
     assert _effective_turn_limit(step) == 1
     assert _student_answer_is_enough("They is") is False
     assert _student_answer_is_enough("They are at home today") is True
+
+
+def test_discussion_runtime_rejects_stale_package_for_current_lesson():
+    lesson = type("Lesson", (), {"package_id": "elp_current"})()
+
+    _require_current_lesson_package(lesson, "elp_current")
+
+    try:
+        _require_current_lesson_package(lesson, "elp_old")
+    except DiscussionRuntimeError as exc:
+        assert exc.code == "stale_runtime"
+    else:
+        raise AssertionError("Expected stale discussion package to be rejected")

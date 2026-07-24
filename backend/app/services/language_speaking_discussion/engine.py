@@ -176,7 +176,7 @@ def _save(row: LanguageProgression, state: DiscussionRuntimeState) -> None:
     flag_modified(row, "promotion_readiness_json")
 
 
-def _require_lesson_ready(row: LanguageProgression | None) -> None:
+def _require_lesson_ready(row: LanguageProgression | None):
     lesson = lesson_runtime_from_payload(row.promotion_readiness_json if row else None)
     if lesson is None:
         raise DiscussionRuntimeError(
@@ -187,6 +187,15 @@ def _require_lesson_ready(row: LanguageProgression | None) -> None:
         raise DiscussionRuntimeError(
             "lesson_not_ready",
             "Finish the prepared lesson before guided discussion.",
+        )
+    return lesson
+
+
+def _require_current_lesson_package(lesson, package_id: str) -> None:
+    if not lesson or not lesson.package_id or lesson.package_id != package_id:
+        raise DiscussionRuntimeError(
+            "stale_runtime",
+            "This discussion belongs to an older lesson package.",
         )
 
 
@@ -245,20 +254,14 @@ async def open_discussion(
     force_restart: bool = False,
 ) -> DiscussionView:
     row = await _lock_row(db, student_id=student_id, language_id=language_id)
-    _require_lesson_ready(row)
+    lesson = _require_lesson_ready(row)
 
     existing = discussion_from_payload(row.promotion_readiness_json if row else None)
-    lesson = lesson_runtime_from_payload(row.promotion_readiness_json if row else None)
     candidates: list[str] = []
     if package_id:
         candidates.append(package_id)
     else:
-        for pid in [
-            existing.package_id if existing else None,
-            lesson.package_id if lesson else None,
-        ]:
-            if pid and pid not in candidates:
-                candidates.append(pid)
+        candidates.append(lesson.package_id)
     if not candidates:
         raise DiscussionRuntimeError("no_package", "No Learning Package for discussion.")
 
@@ -269,6 +272,7 @@ async def open_discussion(
         package_ids=candidates,
         explicit_package_id=bool(package_id),
     )
+    _require_current_lesson_package(lesson, package.package_id)
 
     if (
         not force_restart
@@ -330,9 +334,11 @@ async def get_discussion_view(
     language_id: int,
 ) -> DiscussionView:
     row = await _lock_row(db, student_id=student_id, language_id=language_id)
+    lesson = _require_lesson_ready(row)
     state = discussion_from_payload(row.promotion_readiness_json if row else None)
     if state is None:
         raise DiscussionRuntimeError("no_runtime", "No active discussion.")
+    _require_current_lesson_package(lesson, state.package_id)
     _item, package = await _load_package(
         db, student_id=student_id, language_id=language_id, package_id=state.package_id
     )
@@ -358,11 +364,13 @@ async def submit_discussion_response(
     row = await _lock_row(db, student_id=student_id, language_id=language_id)
     if row is None:
         raise DiscussionRuntimeError("no_progression", "No progression row.")
+    lesson = _require_lesson_ready(row)
     state = discussion_from_payload(row.promotion_readiness_json)
     if state is None:
         raise DiscussionRuntimeError("no_runtime", "No active discussion.")
     if state.completed:
         raise DiscussionRuntimeError("already_complete", "Discussion already completed.")
+    _require_current_lesson_package(lesson, state.package_id)
 
     _item, package = await _load_package(
         db, student_id=student_id, language_id=language_id, package_id=state.package_id
@@ -455,9 +463,11 @@ async def advance_discussion_step(
     row = await _lock_row(db, student_id=student_id, language_id=language_id)
     if row is None:
         raise DiscussionRuntimeError("no_progression", "No progression row.")
+    lesson = _require_lesson_ready(row)
     state = discussion_from_payload(row.promotion_readiness_json)
     if state is None:
         raise DiscussionRuntimeError("no_runtime", "No active discussion.")
+    _require_current_lesson_package(lesson, state.package_id)
     if state.completed:
         _item, package = await _load_package(
             db, student_id=student_id, language_id=language_id, package_id=state.package_id

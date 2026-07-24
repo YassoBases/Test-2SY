@@ -50,6 +50,7 @@ def _map(exc: DiscussionRuntimeError) -> DiscussionApiError:
         "lesson_not_ready": 409,
         "not_frozen": 409,
         "fingerprint_mismatch": 409,
+        "stale_runtime": 409,
         "already_complete": 409,
         "step_turn_limit": 409,
         "answer_required": 409,
@@ -226,7 +227,7 @@ async def get_discussion_api(
             db, student_id=student_id, language_id=language_id
         )
     except DiscussionRuntimeError as exc:
-        if exc.code in {"no_runtime", "no_package", "not_found"}:
+        if exc.code in {"no_runtime", "no_package", "not_found", "stale_runtime"}:
             return idle_discussion_api()
         raise _map(exc) from exc
     # Keep /active fast — TTS is attached on open/submit/advance (and FE re-open).
