@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.language_progression_service import ensure_progression_row, get_official_cefr
+from app.services.language_progression_service import ensure_progression_row
 from app.services.language_speaking.enums import SpeakingLearningStage
 from app.services.language_speaking_knowledge_model.locking import lock_speaking_progression_row
 from app.services.language_speaking_knowledge_model.storage import (
@@ -109,15 +109,13 @@ async def evaluate_and_persist_speaking_stage(
             new_stage=SpeakingLearningStage.foundation,
         )
 
-    if official_cefr is None:
-        official = await get_official_cefr(
-            db, student_id=student_id, language_id=language_id, skill="speaking"
-        )
-        official_cefr = official.level.value if hasattr(official, "level") else str(official)
-    official_cefr = str(official_cefr).upper()
-
-    # Reject cross-CEFR writes: row CEFR must match evaluation CEFR.
     row_cefr = _official_from_row(row).upper()
+    if official_cefr is None:
+        official_cefr = row_cefr
+    else:
+        official_cefr = str(official_cefr).upper()
+
+    # Reject explicit cross-CEFR writes: row CEFR must match evaluation CEFR.
     if row_cefr != official_cefr:
         raise StaleSpeakingStageDecisionError(
             "stale_cefr",
