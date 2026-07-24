@@ -230,6 +230,24 @@ export async function submitVocabularyChallenge(results) {
   return data
 }
 
+// Daily spelling + pronunciation quiz over ALREADY-learned words (never new/unserved ones).
+export async function fetchDailyVocabQuiz() {
+  const { data } = await api.get('/student/languages/vocabulary/quiz/daily')
+  return data
+}
+
+// Grade one spelling guess server-side — the target word is only revealed in the response.
+export async function submitQuizSpelling(itemId, guess) {
+  const { data } = await api.post('/student/languages/vocabulary/quiz/daily/spelling', { item_id: itemId, guess })
+  return data
+}
+
+// Record the finished quiz as learner-model evidence. results: [{item_id, spelling_correct, spelling_near_miss, pronunciation_score}].
+export async function completeDailyQuiz(results) {
+  const { data } = await api.post('/student/languages/vocabulary/quiz/daily/complete', { results })
+  return data
+}
+
 // Unified learner-model snapshot: component mastery + per-skill confidence + due-review count.
 export async function fetchLearnerModelProfile() {
   const { data } = await api.get('/student/languages/learner-model/profile')
@@ -648,13 +666,13 @@ export async function pronounceWord({ word, blob, durationSeconds }) {
   return data
 }
 
-// ---- Offline infinite vocabulary generator ----
-export async function fetchVocabGeneratorOptions() {
-  const { data } = await api.get('/student/languages/vocabulary/generator/options')
+// ---- AI-generated, interest-aware vocabulary (capped 10/day) ----
+export async function generateAiVocabBatch() {
+  const { data } = await api.post('/student/languages/vocabulary/generate-ai')
   return data
 }
 
-export async function generateVocabBatch({ topic = null, level = null } = {}) {
-  const { data } = await api.post('/student/languages/vocabulary/generate-batch', { topic, level })
+export async function fetchVocabularyWordImage(contentId) {
+  const { data } = await api.post(`/student/languages/vocabulary/${contentId}/image`)
   return data
 }

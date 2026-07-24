@@ -98,9 +98,13 @@ class Settings(BaseSettings):
     WRITING_GENERATION_TIMEOUT_SECONDS: float = 120.0
     WRITING_EDUCATIONAL_ANALYZER: str = "claude"  # claude | mock | off
 
-    # Gemini — retained only for STT fallbacks (student chat, teacher/lesson audio/video)
+    # Gemini — STT fallbacks (student chat, teacher/lesson audio/video) + vocabulary word images
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Vocabulary word illustrations — generated on-demand per word, cached on the content item.
+    ENABLE_VOCABULARY_IMAGES: bool = True
+    LANGUAGE_VOCABULARY_IMAGE_MODEL: str = "gemini-2.5-flash-image"
 
     ENABLE_TTS: bool = False
     TTS_PROVIDER: str = "elevenlabs"

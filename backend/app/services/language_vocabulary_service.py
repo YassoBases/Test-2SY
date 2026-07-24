@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -13,15 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.language.content import LanguageContentItem
-from app.models.language.enums import LanguageSkill, LanguageVocabularyStatus
+from app.models.language.engagement import LanguageActivityLog
+from app.models.language.enums import LanguageLevel, LanguageSkill, LanguageVocabularyStatus
 from app.models.language.progress import LanguageVocabularyProgress
-from app.schemas.language_learning import VocabularyChallengeOut, WordAnalysisOut
+from app.models.language.vocabulary_ai_usage import LanguageVocabularyAiDailyUsage
+from app.schemas.language_learning import (
+    VocabularyAiGenerateOut,
+    VocabularyAiWordOut,
+    VocabularyChallengeOut,
+    WordAnalysisOut,
+)
 from app.services.ai_service import generate_llm_json
 from app.services.language_analytics_service import refresh_language_analytics
 from app.services.language_cache import TTLCache
 from app.services.language_conversation_prompts import level_calibration_line
 
-# Word analyses are stable and the Gemini call is slow — cache aggressively (repeat lookups instant).
+# Word analyses are stable and the LLM call is slow — cache aggressively (repeat lookups instant).
 _WORD_CACHE = TTLCache()
 _WORD_TTL = 7 * 24 * 3600  # 7 days
 from app.services.language_content_service import get_content_item, list_content_items, normalize_word
@@ -29,10 +36,24 @@ from app.services.language_engagement_service import record_activity
 from app.services.language_learner_events import record_challenge_results, record_vocabulary_review
 from app.services.language_subscription_service import get_default_language
 from app.services.language_vocabulary_sr_service import compute_sm2
+from app.services.language_vocabulary_word_bank_service import serve_daily_words
 
 logger = logging.getLogger(__name__)
 
 CONTENT_TYPE = "vocabulary"
+
+# A word is flagged "difficult" once it's been failed (SM-2 quality < 3) this many times.
+DIFFICULT_FAIL_THRESHOLD = 3
+
+# A "difficult" word is cleared after this many consecutive Good/Easy (quality >= 4) grades.
+# Hard (quality == 3) is still a pass but breaks the streak without re-triggering fail_count.
+CONSECUTIVE_GOOD_TO_CLEAR_DIFFICULT = 3
+
+# Daily goal shown on the "words reviewed today" tracker.
+DAILY_REVIEW_GOAL = 10
+
+# AI-generated vocabulary batches are capped per student per day.
+AI_GENERATION_DAILY_LIMIT = 10
 
 _WORD_ANALYSIS_SYSTEM = (
     "You are an expert English vocabulary coach for an English-learning platform whose students are "
@@ -181,6 +202,110 @@ async def analyze_word(*, word: str, level: str = "A2") -> WordAnalysisOut:
     return WordAnalysisOut(word=word, definition="(Analysis is temporarily unavailable. Please try again.)")
 
 
+async def get_student_target_level(
+    db: AsyncSession, *, student_id: int, language_id: int
+) -> LanguageLevel:
+    """CEFR level to target for AI vocabulary generation.
+
+    Currently reading-skill level only (matches the flashcard deck's own level
+    logic in language_content_service.list_content_items). This is the single
+    seam to change once Reading/Listening levels should be blended in (e.g.
+    max() or an average across skills) — every caller in this module goes
+    through this function, not select_skill_level directly.
+    """
+    from app.services.language_progression_service import select_skill_level
+
+    return await select_skill_level(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        skill=LanguageSkill.reading,
+        default=LanguageLevel.A2,
+    )
+
+
+async def _get_or_create_today_usage(
+    db: AsyncSession, *, student_id: int
+) -> LanguageVocabularyAiDailyUsage:
+    today = datetime.now(timezone.utc).date()
+    row = (
+        await db.execute(
+            select(LanguageVocabularyAiDailyUsage).where(
+                LanguageVocabularyAiDailyUsage.student_id == student_id,
+                LanguageVocabularyAiDailyUsage.usage_date == today,
+            )
+        )
+    ).scalar_one_or_none()
+    if row:
+        return row
+    now = datetime.now(timezone.utc)
+    row = LanguageVocabularyAiDailyUsage(
+        student_id=student_id, usage_date=today, generated_count=0, created_at=now, updated_at=now
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def generate_ai_vocabulary_batch(
+    db: AsyncSession, *, student_id: int, count: int = AI_GENERATION_DAILY_LIMIT
+) -> VocabularyAiGenerateOut:
+    """Today's vocabulary batch, capped at 10/day, served from the student's level's fixed word bank
+    (see language_vocabulary_word_bank_service) and auto-scheduled for SM-2.
+
+    Level comes from get_student_target_level (the Reading/Listening blending seam). Words come from
+    the pre-generated, deterministic per-level bank — not a live LLM call — so every student at a
+    given level eventually studies the same curated set, in the same order, which reading/writing
+    can later build content around. Every served word is immediately upserted into the same
+    spaced-repetition table the flashcard deck reads from, so it shows up for review right away —
+    there is exactly one SM-2 authority (language_vocabulary_sr_service).
+    """
+    language = await get_default_language(db)
+    level = await get_student_target_level(db, student_id=student_id, language_id=language.id)
+
+    usage = await _get_or_create_today_usage(db, student_id=student_id)
+    if usage.generated_count >= AI_GENERATION_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily AI vocabulary generation limit reached",
+        )
+    count = max(1, min(int(count or AI_GENERATION_DAILY_LIMIT), AI_GENERATION_DAILY_LIMIT - usage.generated_count))
+
+    served = await serve_daily_words(db, student_id=student_id, language_id=language.id, level=level, count=count)
+    if not served:
+        # Student has exhausted this level's bank for now (or the bank isn't seeded yet).
+        return VocabularyAiGenerateOut(
+            words=[],
+            generated_today=usage.generated_count,
+            remaining_today=AI_GENERATION_DAILY_LIMIT - usage.generated_count,
+        )
+
+    words = [
+        VocabularyAiWordOut(
+            content_id=item.id,
+            word=bw.word,
+            part_of_speech=bw.part_of_speech,
+            definition=bw.definition,
+            example_sentence=bw.example_sentence,
+            example_sentence_ar=bw.example_sentence_ar,
+            translation_ar=bw.translation_ar,
+            image_prompt=bw.image_prompt,
+            cefr_level=bw.cefr_level.value,
+        )
+        for bw, item in served
+    ]
+
+    usage.generated_count += len(words)
+    usage.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return VocabularyAiGenerateOut(
+        words=words,
+        generated_today=usage.generated_count,
+        remaining_today=AI_GENERATION_DAILY_LIMIT - usage.generated_count,
+    )
+
+
 _CHALLENGE_SYSTEM = (
     "You are an adaptive vocabulary-review generator for an English-learning platform whose students "
     "are Syrian secondary-school learners. Write natural English at the requested CEFR level. Output "
@@ -290,7 +415,7 @@ async def save_word(db: AsyncSession, *, student_id: int, word: str) -> dict:
         )
         db.add(
             LanguageContentItem(
-                language_id=language.id, skill=None, level=level, content_type=CONTENT_TYPE,
+                language_id=language.id, skill=LanguageSkill.reading, level=level, content_type=CONTENT_TYPE,
                 title=lemma, body_json={"word": lemma, "source": "saved"}, is_published=True, sort_order=0,
             )
         )
@@ -382,7 +507,14 @@ async def vocabulary_metrics(
 ) -> dict:
     total_words = len(content_ids)
     if total_words == 0:
-        return {"total_words": 0, "known_words": 0, "learning_words": 0, "new_words": 0}
+        return {
+            "total_words": 0,
+            "known_words": 0,
+            "learning_words": 0,
+            "new_words": 0,
+            "reviewed_today": 0,
+            "daily_review_goal": DAILY_REVIEW_GOAL,
+        }
     items = await db.execute(select(LanguageContentItem).where(LanguageContentItem.id.in_(content_ids)))
     lemmas = []
     for item in items.scalars().all():
@@ -400,12 +532,29 @@ async def vocabulary_metrics(
             known += 1
         elif p.status == LanguageVocabularyStatus.learning:
             learning += 1
+    reviewed_today = await _count_reviewed_today(db, student_id=student_id, language_id=language_id)
     return {
         "total_words": total_words,
         "known_words": known,
         "learning_words": learning,
         "new_words": new,
+        "reviewed_today": reviewed_today,
+        "daily_review_goal": DAILY_REVIEW_GOAL,
     }
+
+
+async def _count_reviewed_today(db: AsyncSession, *, student_id: int, language_id: int) -> int:
+    today = datetime.now(timezone.utc).date()
+    return (
+        await db.execute(
+            select(func.count()).select_from(LanguageActivityLog).where(
+                LanguageActivityLog.student_id == student_id,
+                LanguageActivityLog.language_id == language_id,
+                LanguageActivityLog.event_type == "vocabulary_reviewed",
+                func.date(LanguageActivityLog.created_at) == today,
+            )
+        )
+    ).scalar_one()
 
 
 def _is_due(progress: LanguageVocabularyProgress | None, now: datetime) -> bool:
@@ -440,6 +589,8 @@ def _card_out(item: LanguageContentItem, progress: LanguageVocabularyProgress | 
         "last_reviewed_at": progress.last_reviewed_at if progress else None,
         "next_review_at": progress.next_review_at if progress else None,
         "due": _is_due(progress, datetime.now(timezone.utc)),
+        "is_difficult": bool(progress.is_difficult if progress else False),
+        "image_url": body.get("image_url"),
     }
 
 
@@ -478,15 +629,26 @@ async def list_vocabulary(db: AsyncSession, *, student_id: int) -> dict:
     lemmas = [normalize_word((i.body_json or {}).get("word") or "") for i in items]
     lemmas = [l for l in lemmas if l]
     prog_map = await _progress_by_lemma(db, student_id=student_id, language_id=language.id, lemmas=lemmas)
+
+    # list_content_items returns every published (shared/global) item at the student's level —
+    # correct for lessons/reading passages, but vocabulary content items are shared across every
+    # student once created (get_or_create_word_image, word-bank get-or-create), so without this
+    # filter every student's Review Bank showed the WHOLE level bank instead of just the words
+    # actually served to them. A LanguageVocabularyProgress row is the one signal that a word was
+    # actually served to this student (daily batch, save_word, or a lesson encounter).
+    served_items = [
+        item for item in items if normalize_word((item.body_json or {}).get("word") or "") in prog_map
+    ]
+
     cards = []
-    for item in items:
+    for item in served_items:
         lemma = normalize_word((item.body_json or {}).get("word") or "")
         cards.append(_card_out(item, prog_map.get(lemma)))
     metrics = await vocabulary_metrics(
         db,
         student_id=student_id,
         language_id=language.id,
-        content_ids=[i.id for i in items],
+        content_ids=[i.id for i in served_items],
     )
     return {
         "student_level": student_level.value,
@@ -573,6 +735,17 @@ async def review_vocabulary(
     else:
         progress.status = LanguageVocabularyStatus.new
         progress.mastery_score = max(0.0, float(progress.mastery_score or 0.0) - 0.2)
+        progress.fail_count = int(progress.fail_count or 0) + 1
+        if progress.fail_count >= DIFFICULT_FAIL_THRESHOLD:
+            progress.is_difficult = True
+
+    if quality >= 4:
+        progress.consecutive_good_count = int(progress.consecutive_good_count or 0) + 1
+        if progress.is_difficult and progress.consecutive_good_count >= CONSECUTIVE_GOOD_TO_CLEAR_DIFFICULT:
+            progress.is_difficult = False
+    else:
+        # Hard (3) still passes but breaks the "in a row" streak; a fail (<3) breaks it too.
+        progress.consecutive_good_count = 0
 
     await db.flush()
     # Vocabulary earns XP via the daily mission ("review due words" task), not per word,
