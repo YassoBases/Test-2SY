@@ -51,6 +51,37 @@ def _content_item_has_student_owner() -> bool:
     return hasattr(LanguageContentItem, "student_id")
 
 
+def _listening_body_question_count(item: LanguageContentItem | None) -> int:
+    body = item.body_json if item is not None and isinstance(item.body_json, dict) else {}
+    return len(body.get("questions") or [])
+
+
+def _listening_body_grammar_id(item: LanguageContentItem | None) -> str:
+    body = item.body_json if item is not None and isinstance(item.body_json, dict) else {}
+    return str(body.get("grammar_id") or "").strip()
+
+
+def _is_current_personalized_listening_item(
+    item: LanguageContentItem | None,
+    *,
+    student_id: int,
+    grammar_id: str | None,
+) -> bool:
+    if item is None:
+        return False
+    body = item.body_json if isinstance(item.body_json, dict) else {}
+    if getattr(item, "student_id", None) != student_id:
+        return False
+    if body.get("source") != _PERSONALIZED_SOURCE:
+        return False
+    if _listening_body_question_count(item) != 4:
+        return False
+    stamped = _listening_body_grammar_id(item)
+    if not stamped:
+        return False
+    return not grammar_id or stamped == grammar_id
+
+
 async def _official_listening_cefr(db: AsyncSession, *, student_id: int, language_id: int) -> str | None:
     from app.services.language_progression_service import select_skill_level_str
 
@@ -178,6 +209,7 @@ def _personalized_pool_filters(
     language_id: int,
     level: str,
     active_only: bool = True,
+    grammar_id: str | None = None,
 ):
     clauses = [
         LanguageContentItem.language_id == language_id,
@@ -192,6 +224,8 @@ def _personalized_pool_filters(
                 LanguageContentItem.body_json["source"].astext == _PERSONALIZED_SOURCE,
             ]
         )
+        if grammar_id:
+            clauses.append(LanguageContentItem.body_json["grammar_id"].astext == grammar_id)
     if active_only:
         clauses.extend(
             [
@@ -230,15 +264,38 @@ async def _adaptive_level(db: AsyncSession, *, student_id: int, language_id: int
     )
 
 
+async def _current_listening_grammar_id(
+    db: AsyncSession, *, student_id: int, language_id: int
+) -> str | None:
+    try:
+        from app.services.language_grammar.enums import GrammarEvidenceSourceSkill
+        from app.services.language_grammar_skill_context import build_skill_grammar_context
+
+        ctx = await build_skill_grammar_context(
+            db,
+            student_id=student_id,
+            language_id=language_id,
+            source_skill=GrammarEvidenceSourceSkill.listening,
+        )
+        return ctx.grammar_id if ctx else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("current listening grammar resolution failed: %s", exc)
+        return None
+
+
 async def _active_unseen_count(
-    db: AsyncSession, *, student_id: int, language_id: int, level: str
+    db: AsyncSession, *, student_id: int, language_id: int, level: str, grammar_id: str | None = None
 ) -> int:
     res = await db.execute(
         select(func.count())
         .select_from(LanguageContentItem)
         .where(
             *_personalized_pool_filters(
-                student_id=student_id, language_id=language_id, level=level, active_only=True
+                student_id=student_id,
+                language_id=language_id,
+                level=level,
+                active_only=True,
+                grammar_id=grammar_id,
             ),
             LanguageContentItem.id.notin_(_completed_ids_subquery(student_id)),
         )
@@ -253,13 +310,15 @@ async def _unseen_personalized(
     language_id: int,
     level: str,
     newest: bool = False,
+    grammar_id: str | None = None,
 ) -> LanguageContentItem | None:
     if newest:
         q = (
             select(LanguageContentItem)
             .where(
                 *_personalized_pool_filters(
-                    student_id=student_id, language_id=language_id, level=level, active_only=True
+                    student_id=student_id, language_id=language_id, level=level, active_only=True,
+                    grammar_id=grammar_id,
                 ),
                 LanguageContentItem.id.notin_(_completed_ids_subquery(student_id)),
             )
@@ -272,7 +331,7 @@ async def _unseen_personalized(
         student_id=student_id,
         language_id=language_id,
         level=level,
-        pool_filters_fn=_personalized_pool_filters,
+        pool_filters_fn=lambda **kwargs: _personalized_pool_filters(**kwargs, grammar_id=grammar_id),
         completed_ids_subquery=_completed_ids_subquery,
     )
 
@@ -474,6 +533,7 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
     """Fill pool to TARGET one lesson (+ audio) at a time. Called from background task only."""
     language = await get_default_language(db)
     level = await _adaptive_level(db, student_id=student_id, language_id=language.id)
+    grammar_id = await _current_listening_grammar_id(db, student_id=student_id, language_id=language.id)
     ctx, current_hash, learner_context, metadata = await _load_listening_pool_context(
         db, student_id=student_id
     )
@@ -483,7 +543,7 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
     consecutive_failures = 0
     while True:
         active = await _active_unseen_count(
-            db, student_id=student_id, language_id=language.id, level=level
+            db, student_id=student_id, language_id=language.id, level=level, grammar_id=grammar_id
         )
         if listening_pool_deficit(active) <= 0 or not can_generate():
             break
@@ -508,6 +568,7 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
                 language_id=language.id,
                 level=level,
                 newest=True,
+                grammar_id=grammar_id,
             )
             if newest:
                 await _pregenerate_lesson_audio(db, content_item_id=newest.id)
@@ -526,7 +587,11 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
             select(LanguageContentItem.id)
             .where(
                 *_personalized_pool_filters(
-                    student_id=student_id, language_id=language.id, level=level, active_only=True
+                    student_id=student_id,
+                    language_id=language.id,
+                    level=level,
+                    active_only=True,
+                    grammar_id=grammar_id,
                 ),
                 LanguageContentItem.id.notin_(_completed_ids_subquery(student_id)),
             )
@@ -538,7 +603,7 @@ async def background_fill_listening_pool(db: AsyncSession, *, student_id: int) -
             await _pregenerate_lesson_audio(db, content_item_id=content_id)
 
     active = await _active_unseen_count(
-        db, student_id=student_id, language_id=language.id, level=level
+        db, student_id=student_id, language_id=language.id, level=level, grammar_id=grammar_id
     )
     if active < TARGET_UNSEEN_LISTENING_POOL:
         logger.warning(
@@ -606,10 +671,11 @@ async def _resolve_listening_item(
     level: str,
     learner_context: str,
     metadata: dict[str, str],
+    grammar_id: str | None = None,
 ) -> LanguageContentItem | None:
     async def _select() -> LanguageContentItem | None:
         active = await _active_unseen_count(
-            db, student_id=student_id, language_id=language_id, level=level
+            db, student_id=student_id, language_id=language_id, level=level, grammar_id=grammar_id
         )
         if active == 0 and can_generate():
             await _generate_pool_lessons(
@@ -622,7 +688,7 @@ async def _resolve_listening_item(
                 metadata=metadata,
             )
         return await _unseen_personalized(
-            db, student_id=student_id, language_id=language_id, level=level
+            db, student_id=student_id, language_id=language_id, level=level, grammar_id=grammar_id
         )
 
     resolved = await listening_session_reservation_service.resolve_reserved_lesson(
@@ -634,7 +700,7 @@ async def _resolve_listening_item(
     if resolved is None:
         return None
     item = await db.get(LanguageContentItem, resolved.content_item_id)
-    if item is not None:
+    if _is_current_personalized_listening_item(item, student_id=student_id, grammar_id=grammar_id):
         return item
     # Stale pin — content removed; clear and re-select once.
     logger.warning(
@@ -657,7 +723,16 @@ async def _resolve_listening_item(
     )
     if recovered is None:
         return None
-    return await db.get(LanguageContentItem, recovered.content_item_id)
+    recovered_item = await db.get(LanguageContentItem, recovered.content_item_id)
+    if _is_current_personalized_listening_item(recovered_item, student_id=student_id, grammar_id=grammar_id):
+        return recovered_item
+    await listening_session_reservation_service.skip_reservation(
+        db,
+        student_id=student_id,
+        language_id=language_id,
+        content_item_id=recovered.content_item_id,
+    )
+    return None
 
 
 async def skip_listening(db: AsyncSession, *, student_id: int, content_id: int | None = None) -> bool:
@@ -681,6 +756,7 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
     )
     await _evolve_pool(db, student_id=student_id, language_id=language.id, current_hash=current_hash)
 
+    grammar_id = await _current_listening_grammar_id(db, student_id=student_id, language_id=language.id)
     item = await _resolve_listening_item(
         db,
         student_id=student_id,
@@ -688,6 +764,7 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
         level=level,
         learner_context=learner_context,
         metadata=metadata,
+        grammar_id=grammar_id,
     )
     if item is None:
         return None, False
@@ -724,7 +801,7 @@ async def next_listening(db: AsyncSession, *, student_id: int) -> tuple[dict | N
         lesson["playback"] = playback
 
     active_after = await _active_unseen_count(
-        db, student_id=student_id, language_id=language.id, level=level
+        db, student_id=student_id, language_id=language.id, level=level, grammar_id=grammar_id
     )
     # Wave D: per-student attested session for grammar evidence.
     try:

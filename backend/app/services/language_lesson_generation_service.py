@@ -60,9 +60,11 @@ def _parse(raw: str) -> list[dict] | None:
     return items if isinstance(items, list) and items else None
 
 
-def _valid_mcq(body: dict) -> bool:
+def _valid_mcq(body: dict, *, expected_count: int | None = None) -> bool:
     qs = body.get("questions")
     if not isinstance(qs, list) or not qs:
+        return False
+    if expected_count is not None and len(qs) != expected_count:
         return False
     for q in qs:
         ch = q.get("choices")
@@ -225,7 +227,7 @@ def _to_body(skill: str, level: str, raw: dict) -> dict | None:
             instructions=str(raw.get("instructions") or "Listen and answer the questions.").strip(),
             questions=questions,
         )
-        if not _valid_mcq(body):
+        if not _valid_mcq(body, expected_count=4):
             return None
     elif skill == "writing":
         prompt = str(raw.get("prompt") or "").strip()
@@ -278,7 +280,8 @@ async def _published_count(db: AsyncSession, *, language_id: int, skill: str, le
 
 async def generate_and_store(
     db: AsyncSession, *, language_id: int, skill: str, level: str, count: int, topics: str = "",
-    length: str = "", adaptive_context: str = ""
+    length: str = "", adaptive_context: str = "", student_id: int | None = None,
+    source: str | None = None, body_extras: dict | None = None,
 ) -> int:
     """Generate up to `count` lessons for (skill, level) and store the valid, non-duplicate ones.
 
@@ -312,6 +315,10 @@ async def generate_and_store(
             norm = _to_body(skill, level, raw_item if isinstance(raw_item, dict) else {})
             if not norm or norm["title"] in existing:
                 continue
+            if source:
+                norm["body"]["source"] = source
+            if body_extras:
+                norm["body"].update(body_extras)
             if skill == "reading":
                 # Tag the passage's length so the reader can be served the length it asked for.
                 norm["body"]["reading_length"] = length if length in LENGTH_MULTIPLIER else "medium"
@@ -324,6 +331,7 @@ async def generate_and_store(
                     content_type=CONTENT_TYPE[skill],
                     title=norm["title"],
                     body_json=norm["body"],
+                    student_id=student_id,
                     sort_order=0,
                     is_published=True,
                 )
