@@ -23,7 +23,11 @@ from app.services.language_listening_tts import (
     listening_cache_filename,
     synthesize_listening_lesson_audio,
 )
-from app.services.language_supertonic_service import language_tts_audio_extension, synthesize_language_speech
+from app.services.language_supertonic_service import (
+    language_tts_audio_extension,
+    synthesize_language_speech,
+    synthesize_language_speech_segments,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -78,10 +82,41 @@ async def synthesize_exam_audio(text: str, *, voice: str = "en-US-AriaNeural") -
         cleaned,
         language="en",
         output_path=dest,
+        voice_name=voice,
     )
     if ok:
         return "/uploads/" + _storage_key(dest)
-    fallback = await _synthesize_openai_bytes(cleaned)
+    fallback = await _synthesize_openai_bytes(cleaned, voice=voice)
+    if fallback is None:
+        return None
+    audio, ext = fallback
+    dest = out_dir / f"exam_{uuid.uuid4().hex}.{ext}"
+    dest.write_bytes(audio)
+    return "/uploads/" + _storage_key(dest)
+
+
+async def synthesize_exam_audio_segments(segments: list[tuple[str, str]]) -> str | None:
+    """Generate one public placement-exam clip from ordered speaker/voice segments."""
+
+    normalized = [(str(text or "").strip(), str(voice or "").strip()) for text, voice in segments]
+    normalized = [(text, voice) for text, voice in normalized if text]
+    if not normalized or not settings.ENABLE_TTS:
+        return None
+
+    out_dir = Path(settings.UPLOAD_DIR) / "language_exam_audio"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / f"exam_{uuid.uuid4().hex}{language_tts_audio_extension()}"
+    ok = await synthesize_language_speech_segments(
+        normalized,
+        language="en",
+        output_path=dest,
+    )
+    if ok:
+        return "/uploads/" + _storage_key(dest)
+
+    combined = " ".join(text for text, _voice in normalized).strip()
+    fallback_voice = normalized[0][1] if len({voice for _text, voice in normalized}) == 1 else None
+    fallback = await _synthesize_openai_bytes(combined, voice=fallback_voice)
     if fallback is None:
         return None
     audio, ext = fallback
@@ -201,18 +236,28 @@ async def _synthesize_supertonic(
     return _out(row)
 
 
-async def _synthesize_openai_bytes(text: str) -> tuple[bytes, str] | None:
+def _openai_voice_for_exam_voice(voice: str | None) -> str:
+    configured = (getattr(settings, "LANGUAGE_OPENAI_TTS_VOICE", None) or "").strip()
+    raw = str(voice or "").strip().lower()
+    if raw.startswith("m"):
+        return "onyx"
+    if raw.startswith("f"):
+        return configured or "nova"
+    return configured or "nova"
+
+
+async def _synthesize_openai_bytes(text: str, *, voice: str | None = None) -> tuple[bytes, str] | None:
     api_key = (getattr(settings, "OPENAI_API_KEY", None) or "").strip()
     if not settings.ENABLE_TTS or not api_key:
         return None
 
     model = (getattr(settings, "SPEAKING_TTS_MODEL", None) or "gpt-4o-mini-tts").strip()
-    voice = (getattr(settings, "LANGUAGE_OPENAI_TTS_VOICE", None) or "nova").strip()
+    openai_voice = _openai_voice_for_exam_voice(voice)
     timeout_raw = int(getattr(settings, "SPEAKING_TTS_TIMEOUT_SECONDS", 30) or 30)
     timeout_s = max(5, min(120, timeout_raw))
     payload = {
         "model": model,
-        "voice": voice,
+        "voice": openai_voice,
         "input": text,
         "response_format": _OPENAI_AUDIO_FORMAT,
     }

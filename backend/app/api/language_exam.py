@@ -105,7 +105,8 @@ from app.services.language_rate_limit_service import check, check_or_raise
 from app.services.language_speaking_assessment_core_service import build_speaking_assessment_core
 from app.services.language_subscription_service import ensure_language_profile, get_default_language
 from app.services.language_transcription_service import transcribe_english_audio
-from app.services.language_tts_service import synthesize_exam_audio
+from app.services.language_listening_tts import build_synthesis_segments
+from app.services.language_tts_service import synthesize_exam_audio, synthesize_exam_audio_segments
 
 logger = logging.getLogger(__name__)
 
@@ -293,8 +294,23 @@ def _listening_tts_voice_for_text(text: str | None) -> str:
 
     cleaned = str(text or "")
     if _FEMALE_LISTENING_CUES_RE.search(cleaned):
-        return "F1"
-    return (get_settings().LANGUAGE_SUPERTONIC_VOICE or "M1").strip() or "M1"
+        return (get_settings().LANGUAGE_SUPERTONIC_VOICE_FEMALE or "F1").strip() or "F1"
+    return (get_settings().LANGUAGE_SUPERTONIC_VOICE_MALE or "M1").strip() or "M1"
+
+
+def _listening_tts_segments_for_item(item: dict, audio_text: str | None) -> list[tuple[str, str]]:
+    """Return gender-aware synthesis segments when a listening item carries speaker turns."""
+
+    body = item.get("body") if isinstance(item, dict) else None
+    if not isinstance(body, dict):
+        return []
+    body_audio_text = _listening_text_from_body(body)
+    if not body_audio_text or body_audio_text.strip() != str(audio_text or "").strip():
+        return []
+    segments = build_synthesis_segments(body)
+    if len(segments) <= 1:
+        return []
+    return segments
 
 
 def _first_question(body: dict | None) -> dict | None:
@@ -2075,6 +2091,9 @@ async def _resolve_listening_audio_text(db: AsyncSession | None, item: dict) -> 
     text = str(item.get("audio_text") or "").strip()
     if text:
         return text
+    text = _listening_text_from_body(item.get("body") or {})
+    if text:
+        return text
 
     content_item_id = item.get("content_id")
     if not content_item_id or db is None:
@@ -2111,10 +2130,16 @@ async def _materialize_listening_audio(
 
     generated_url = None
     try:
-        voice = _listening_tts_voice_for_text(audio_text)
-        generated_url = await asyncio.wait_for(
-            synthesize_exam_audio(audio_text, voice=voice), timeout=_LISTENING_TTS_TIMEOUT_S
-        )
+        segments = _listening_tts_segments_for_item(item, audio_text)
+        if segments:
+            generated_url = await asyncio.wait_for(
+                synthesize_exam_audio_segments(segments), timeout=_LISTENING_TTS_TIMEOUT_S
+            )
+        else:
+            voice = _listening_tts_voice_for_text(audio_text)
+            generated_url = await asyncio.wait_for(
+                synthesize_exam_audio(audio_text, voice=voice), timeout=_LISTENING_TTS_TIMEOUT_S
+            )
     except Exception as exc:  # pragma: no cover - model/runtime variance
         logger.warning("Placement listening TTS failed error_type=%s", type(exc).__name__)
 

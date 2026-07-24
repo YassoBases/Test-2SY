@@ -186,6 +186,40 @@ async def test_missing_cache_with_successful_synthesis_returns_generated_audio(m
     assert created is True
 
 
+async def test_dialogue_runtime_synthesis_uses_gender_aware_segments(monkeypatch):
+    generated_url = "/uploads/language_exam_audio/generated-dialogue.wav"
+    item = {
+        "body": {
+            "audio_transcript": "Sara: I am ready.\nOmar: I am ready too.",
+        },
+    }
+    calls: dict[str, object] = {}
+
+    async def fake_segment_synth(segments):
+        calls["segments"] = segments
+        return generated_url
+
+    async def unexpected_single_synth(text, *, voice=None):
+        raise AssertionError("dialogue should use segment synthesis")
+
+    monkeypatch.setattr(language_exam, "synthesize_exam_audio_segments", fake_segment_synth)
+    monkeypatch.setattr(language_exam, "synthesize_exam_audio", unexpected_single_synth)
+
+    resolved_url, resolved_text, created = await language_exam._materialize_listening_audio(None, item)
+
+    assert resolved_url == generated_url
+    assert resolved_text == "Sara: I am ready.\nOmar: I am ready too."
+    assert created is True
+    assert calls["segments"] == [
+        ("I am ready.", "F1"),
+        ("I am ready too.", "M1"),
+    ]
+
+
+def test_uncued_single_speaker_placement_voice_defaults_to_male():
+    assert language_exam._listening_tts_voice_for_text("Omar talks about his morning.") == "M1"
+
+
 # 10. A missing cached file plus failed runtime synthesis degrades safely.
 async def test_missing_cache_with_failed_synthesis_degrades_safely(monkeypatch):
     marker = uuid.uuid4().hex[:12]

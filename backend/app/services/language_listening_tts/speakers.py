@@ -8,6 +8,30 @@ from app.services.language_cefr.transcript_format import extract_labeled_turns
 from app.services.language_listening_tts.voice_config import voice_for_gender
 
 _LABEL_PREFIX = re.compile(r"^([A-Za-z][A-Za-z.'\s]{0,30}?)(?:\s*\([^)]*\))?\s*$")
+_FEMALE_NAME_CUES = {
+    "anna",
+    "fatima",
+    "laila",
+    "layla",
+    "leila",
+    "maria",
+    "nadia",
+    "sara",
+    "sarah",
+}
+_MALE_NAME_CUES = {
+    "ahmad",
+    "ahmed",
+    "ali",
+    "ben",
+    "hassan",
+    "john",
+    "khaled",
+    "mohammad",
+    "mohammed",
+    "omar",
+    "sam",
+}
 
 
 def _normalize_label(label: str) -> str:
@@ -55,6 +79,20 @@ def _lookup_speaker(label: str, speakers: list[dict]) -> dict | None:
     return None
 
 
+def _infer_gender_from_label(label: str) -> str | None:
+    norm = _normalize_label(label)
+    tokens = {part for part in re.split(r"[^a-z]+", norm) if part}
+    if tokens & _FEMALE_NAME_CUES:
+        return "female"
+    if tokens & _MALE_NAME_CUES:
+        return "male"
+    if any(token in {"mrs", "ms", "miss", "mother", "wife", "sister", "woman", "girl"} for token in tokens):
+        return "female"
+    if any(token in {"mr", "father", "husband", "brother", "man", "boy"} for token in tokens):
+        return "male"
+    return None
+
+
 def build_synthesis_segments(body: dict | None) -> list[tuple[str, str]]:
     """Return ordered (text, supertonic_voice_name) segments for the lesson."""
     from app.services.language_listening_tts.voice_config import default_voice
@@ -76,7 +114,7 @@ def build_synthesis_segments(body: dict | None) -> list[tuple[str, str]]:
             key = _normalize_label(label)
             if key not in label_voices:
                 meta = _lookup_speaker(label, speakers)
-                label_voices[key] = voice_for_gender(meta.get("gender") if meta else None)
+                label_voices[key] = voice_for_gender(meta.get("gender") if meta else _infer_gender_from_label(label))
             segments.append((turn, label_voices[key]))
         return segments
 

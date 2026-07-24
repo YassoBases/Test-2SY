@@ -30,6 +30,17 @@ def test_listening_synthesis_segments_use_speaker_gender():
     ]
 
 
+def test_listening_synthesis_segments_infer_common_speaker_name_gender():
+    body = {
+        "audio_transcript": "Sara: I am ready.\nOmar: I am ready too.",
+    }
+
+    assert build_synthesis_segments(body) == [
+        ("I am ready.", "F1"),
+        ("I am ready too.", "M1"),
+    ]
+
+
 def test_listening_cache_filename_includes_voice():
     assert listening_cache_filename([("I am ready.", "F1")]) == "supertonic_F1.wav"
     assert listening_cache_filename([("Hi.", "F1"), ("Hello.", "M1")]) == "supertonic_multivoice_F1_M1.wav"
