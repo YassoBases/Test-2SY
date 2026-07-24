@@ -23,38 +23,92 @@
         Cards currently available at level <strong>{{ listMeta.lesson_level }}</strong>.
       </v-alert>
 
-      <v-row class="mb-4" v-if="metrics">
-        <v-col cols="6" sm="3">
-          <v-card class="glass-card kpi-card pa-3 text-center" variant="flat">
-            <div class="text-caption text-medium-emphasis">Total</div>
-            <div class="text-h6 font-weight-bold">{{ metrics.total_words }}</div>
-          </v-card>
-        </v-col>
-        <v-col cols="6" sm="3">
-          <v-card class="glass-card kpi-card kpi-card--success pa-3 text-center" variant="flat">
-            <div class="text-caption text-medium-emphasis">Known</div>
-            <div class="text-h6 font-weight-bold text-success">{{ metrics.known_words }}</div>
-          </v-card>
-        </v-col>
-        <v-col cols="6" sm="3">
-          <v-card class="glass-card kpi-card kpi-card--warning pa-3 text-center" variant="flat">
-            <div class="text-caption text-medium-emphasis">Due today</div>
-            <div class="text-h6 font-weight-bold text-warning">{{ stats?.due_today ?? '—' }}</div>
-          </v-card>
-        </v-col>
-        <v-col cols="6" sm="3">
-          <v-card class="glass-card kpi-card pa-3 text-center" variant="flat">
-            <div class="text-caption text-medium-emphasis">Not Learned Yet</div>
-            <div class="text-h6 font-weight-bold">{{ metrics.new_words }}</div>
-          </v-card>
-        </v-col>
-      </v-row>
+      <v-tabs v-model="vocabTab" color="secondary" class="mb-4">
+        <v-tab value="daily">Today's New Words</v-tab>
+        <v-tab value="bank">Review Bank<template v-if="cards.length"> ({{ cards.length }})</template></v-tab>
+      </v-tabs>
 
-      <!-- Infinite offline vocabulary generator -->
-      <VocabularyGenerator />
+      <v-window v-model="vocabTab">
+        <!-- Daily AI-generated batch (10/day) — a separate mode from the cumulative bank below. -->
+        <v-window-item value="daily">
+          <VocabularyGenerator @graded="onDailyWordGraded" />
+        </v-window-item>
 
-      <!-- Word lookup (AI, English-only) -->
-      <v-card class="glass-card pa-4 mb-4" variant="flat">
+        <!-- Cumulative review bank — every word the student has ever met, with its own filters. -->
+        <v-window-item value="bank">
+          <v-row class="mb-4" v-if="metrics">
+            <v-col cols="6" sm="3">
+              <v-card class="glass-card kpi-card pa-3 text-center" variant="flat">
+                <div class="text-caption text-medium-emphasis">Total</div>
+                <div class="text-h6 font-weight-bold">{{ metrics.total_words }}</div>
+              </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+              <v-card class="glass-card kpi-card kpi-card--success pa-3 text-center" variant="flat">
+                <div class="text-caption text-medium-emphasis">Known</div>
+                <div class="text-h6 font-weight-bold text-success">{{ metrics.known_words }}</div>
+              </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+              <v-card class="glass-card kpi-card kpi-card--warning pa-3 text-center" variant="flat">
+                <div class="text-caption text-medium-emphasis">Due today</div>
+                <div class="text-h6 font-weight-bold text-warning">{{ stats?.due_today ?? '—' }}</div>
+              </v-card>
+            </v-col>
+            <v-col cols="6" sm="3">
+              <v-card class="glass-card kpi-card pa-3 text-center" variant="flat">
+                <div class="text-caption text-medium-emphasis">Not Learned Yet</div>
+                <div class="text-h6 font-weight-bold">{{ metrics.new_words }}</div>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <v-card v-if="metrics" class="glass-card pa-3 mb-4" variant="flat">
+            <div class="d-flex justify-space-between align-center mb-1">
+              <span class="text-caption text-medium-emphasis">Daily goal</span>
+              <span class="text-caption font-weight-bold">
+                {{ metrics.reviewed_today }}/{{ metrics.daily_review_goal }} words learned today
+              </span>
+            </div>
+            <v-progress-linear
+              :model-value="(metrics.reviewed_today / metrics.daily_review_goal) * 100"
+              color="success" height="8" rounded
+            />
+          </v-card>
+
+          <v-chip-group
+            v-if="cards.length"
+            v-model="cardFilter"
+            mandatory
+            selected-class="text-secondary"
+            class="mb-2"
+          >
+            <v-chip value="all" size="small" variant="tonal">All</v-chip>
+            <v-chip value="due" size="small" variant="tonal">Due</v-chip>
+            <v-chip value="difficult" size="small" variant="tonal">Difficult</v-chip>
+          </v-chip-group>
+
+          <EmptyState v-if="!filteredCards.length" preset="languageVocabulary" />
+
+          <v-row v-else class="mt-1">
+            <v-col v-for="card in filteredCards" :key="card.id" cols="12" sm="6" md="4">
+              <VocabularyWordCard
+                :word="card"
+                :image-url="card.image_url || cardImages[card.id] || ''"
+                :image-loading="!!cardImagesLoading[card.id]"
+                :status-label="vocabularyStatusLabel(card.status)"
+                :due-badge="!!card.due"
+                show-grading
+                :grading-quality="gradingId === card.id ? gradingQuality : null"
+                @grade="(quality) => grade(card, quality)"
+              />
+            </v-col>
+          </v-row>
+        </v-window-item>
+      </v-window>
+
+      <!-- Word lookup (AI, English-only) — a shared tool, not tied to either mode above. -->
+      <v-card class="glass-card pa-4 mb-4 mt-4" variant="flat">
         <div class="text-subtitle-2 font-weight-bold mb-2">
           <v-icon size="18" icon="mdi-magnify" /> Look up a word
         </div>
@@ -84,7 +138,10 @@
         </div>
       </v-card>
 
-      <!-- Daily fill-in-the-blanks challenge -->
+      <!-- Daily spelling + pronunciation quiz — tests words already learned, next to the challenge. -->
+      <DailyVocabQuiz />
+
+      <!-- Daily fill-in-the-blanks challenge — also shared, drawn from due words in the bank. -->
       <v-card class="glass-card pa-4 mb-4" variant="flat">
         <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-2">
           <div class="text-subtitle-2 font-weight-bold">
@@ -119,83 +176,25 @@
           <p v-else class="text-body-2 text-medium-emphasis mb-0">{{ challenge.context_hint }}</p>
         </template>
       </v-card>
-
-      <EmptyState v-if="!cards.length" preset="languageVocabulary" />
-
-      <template v-else>
-        <v-card class="glass-card pa-6 mb-4 flashcard" variant="flat">
-          <div class="d-flex justify-space-between align-center mb-3">
-            <v-chip size="small">{{ currentCard?.level || '—' }}</v-chip>
-            <div class="d-flex align-center gap-2">
-              <v-chip v-if="currentCard?.due" size="x-small" color="warning" variant="tonal">due</v-chip>
-              <v-chip size="small" variant="tonal" color="secondary">
-                {{ vocabularyStatusLabel(currentCard?.status) }}
-              </v-chip>
-            </div>
-          </div>
-
-          <div class="text-h4 font-weight-bold mb-2" dir="ltr">{{ currentCard?.word }}</div>
-          <WordPronunciation v-if="currentCard?.word" :word="currentCard.word" class="mb-2" />
-          <div v-if="revealed" class="mt-4">
-            <div class="text-h6 mb-2">{{ currentCard?.translation_ar }}</div>
-            <p v-if="currentCard?.example" class="text-body-2 mb-1" dir="ltr">{{ currentCard.example }}</p>
-          </div>
-          <div v-else class="text-body-2 text-medium-emphasis mt-4">Press "Show meaning" to see the translation.</div>
-
-          <div v-if="!revealed" class="mt-6">
-            <v-btn variant="tonal" block :loading="enriching" @click="reveal">Show meaning</v-btn>
-          </div>
-          <div v-else class="mt-6">
-            <div class="text-caption text-medium-emphasis text-center mb-2">How well did you recall this word?</div>
-            <div class="d-flex gap-2 flex-wrap justify-center">
-              <v-btn size="small" color="error" variant="tonal" :loading="reviewing" @click="grade(1)">Again</v-btn>
-              <v-btn size="small" color="warning" variant="tonal" :loading="reviewing" @click="grade(3)">Hard</v-btn>
-              <v-btn size="small" color="secondary" variant="tonal" :loading="reviewing" @click="grade(4)">Good</v-btn>
-              <v-btn size="small" color="success" variant="flat" :loading="reviewing" @click="grade(5)">Easy</v-btn>
-            </div>
-          </div>
-        </v-card>
-
-        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
-          <v-btn variant="text" :disabled="index <= 0" @click="prev">Previous</v-btn>
-          <span class="text-body-2">{{ index + 1 }} / {{ cards.length }}</span>
-          <v-btn variant="text" :disabled="index >= cards.length - 1" @click="next">Next</v-btn>
-        </div>
-
-        <v-list v-if="cards.length > 1" density="compact" class="mt-4 glass-card rounded-lg">
-          <v-list-item
-            v-for="(card, i) in cards"
-            :key="card.id"
-            :active="i === index"
-            rounded="lg"
-            @click="goTo(i)"
-          >
-            <template #prepend>
-              <v-icon size="10" :color="card.due ? 'warning' : 'success'" class="me-2">mdi-circle</v-icon>
-            </template>
-            <v-list-item-title dir="ltr">{{ card.word }}</v-list-item-title>
-            <template #append>
-              <span class="text-caption">{{ vocabularyStatusLabel(card.status) }}</span>
-            </template>
-          </v-list-item>
-        </v-list>
-      </template>
     </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PageHeader from '../../../components/common/PageHeader.vue'
 import LoadingState from '../../../components/common/LoadingState.vue'
 import EmptyState from '../../../components/common/EmptyState.vue'
 import LanguageModuleTabs from '../../../components/language/LanguageModuleTabs.vue'
 import WordPronunciation from '../../../components/language/WordPronunciation.vue'
 import VocabularyGenerator from '../../../components/language/VocabularyGenerator.vue'
+import VocabularyWordCard from '../../../components/language/VocabularyWordCard.vue'
+import DailyVocabQuiz from '../../../components/language/DailyVocabQuiz.vue'
 import {
   fetchVocabulary,
   fetchVocabularyCard,
   fetchVocabularyStats,
+  fetchVocabularyWordImage,
   reviewVocabularyCard,
   vocabularyStatusLabel,
   analyzeWord,
@@ -210,16 +209,23 @@ const { handleLanguageApiError, getErrorMessage } = useLanguageGate()
 
 const loading = ref(true)
 const loadError = ref('')
+const vocabTab = ref('daily') // 'daily' (today's AI batch) | 'bank' (cumulative review)
 const cards = ref([])
 const metrics = ref(null)
 const stats = ref(null)
 const listMeta = ref(null)
-const index = ref(0)
-const revealed = ref(false)
-const reviewing = ref(false)
-const enriching = ref(false)
+const gradingId = ref(null) // id of the card currently being graded, or null
+const gradingQuality = ref(null) // the SM-2 quality (1/3/4/5) being submitted for that card
 
-const currentCard = computed(() => cards.value[index.value] || null)
+const cardImages = ref({}) // { [cardId]: url }
+const cardImagesLoading = ref({}) // { [cardId]: bool }
+
+const cardFilter = ref('all') // 'all' | 'due' | 'difficult'
+const filteredCards = computed(() => {
+  if (cardFilter.value === 'due') return cards.value.filter((c) => c.due)
+  if (cardFilter.value === 'difficult') return cards.value.filter((c) => c.is_difficult)
+  return cards.value
+})
 const studentLevel = computed(() => listMeta.value?.student_level || 'A2')
 
 // --- Word lookup ---
@@ -302,15 +308,10 @@ async function checkChallenge() {
   }
 }
 
-watch(index, () => {
-  revealed.value = false
-})
-
 onMounted(async () => {
   try {
     await loadAccess(true)
-    await loadCards()
-    await loadStats()
+    await refreshVocabularyData()
   } catch (e) {
     if (!handleLanguageApiError(e, access.value)) {
       loadError.value = getErrorMessage(e, 'Unable to load vocabulary')
@@ -318,81 +319,108 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // Started only after the critical page data has loaded: these lazy background fetches
+  // (up to 6 concurrent) would otherwise saturate the browser's per-origin connection pool
+  // and starve refreshVocabularyData() of a connection, stalling the initial page load.
+  enrichAndIllustrateCards()
 })
 
-async function loadCards() {
-  const res = await fetchVocabulary()
-  listMeta.value = { student_level: res.student_level, lesson_level: res.lesson_level }
-  metrics.value = res.metrics
-  cards.value = res.cards || []
-  if (index.value >= cards.value.length) index.value = 0
+// Run async jobs with bounded concurrency — cards can enrich/illustrate lazily without
+// firing dozens of simultaneous AI calls at once.
+async function runLimited(items, limit, worker) {
+  let i = 0
+  async function lane() {
+    while (i < items.length) {
+      const item = items[i++]
+      await worker(item)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
 }
 
-async function loadStats() {
+async function loadCardImage(card) {
+  if (cardImages.value[card.id] || cardImagesLoading.value[card.id]) return
+  cardImagesLoading.value = { ...cardImagesLoading.value, [card.id]: true }
   try {
-    stats.value = await fetchVocabularyStats()
+    const { image_url } = await fetchVocabularyWordImage(card.id)
+    if (image_url) cardImages.value = { ...cardImages.value, [card.id]: image_url }
   } catch {
-    /* the due-today stat is best-effort */
+    /* illustration is best-effort — the card still works without one */
+  } finally {
+    cardImagesLoading.value = { ...cardImagesLoading.value, [card.id]: false }
   }
 }
 
-async function reveal() {
-  const card = currentCard.value
-  // Stub word (no definition yet) -> fetch detail, which lazily AI-enriches + caches it server-side.
-  if (card && card.enriched === false && !enriching.value) {
-    enriching.value = true
-    try {
-      const fresh = await fetchVocabularyCard(card.id)
-      cards.value[index.value] = fresh
-    } catch (e) {
-      loadError.value = getErrorMessage(e, 'Could not load the meaning')
-    } finally {
-      enriching.value = false
-    }
-  }
-  revealed.value = true
-}
-
-async function grade(quality) {
-  if (!currentCard.value) return
-  reviewing.value = true
+async function enrichCard(card) {
   try {
-    const updated = await reviewVocabularyCard(currentCard.value.id, quality)
-    cards.value[index.value] = updated
-    metrics.value = (await fetchVocabulary()).metrics
-    await loadStats()
-    if (index.value < cards.value.length - 1) {
-      index.value += 1
-    } else {
-      revealed.value = false
-    }
+    const fresh = await fetchVocabularyCard(card.id)
+    const masterIdx = cards.value.findIndex((c) => c.id === fresh.id)
+    if (masterIdx !== -1) cards.value[masterIdx] = fresh
+  } catch {
+    /* leave the stub as-is — it'll retry next load */
+  }
+}
+
+// Every metrics/cards/stats refresh (initial load, a bank-tab grade, a daily-tab grade) goes
+// through this one gate. Each call claims a ticket; if a NEWER refresh has already started by
+// the time this one's response arrives, its result is discarded instead of applied — otherwise
+// a fast post-grade refresh could be overwritten moments later by a slower, older refresh
+// (e.g. the initial page load) resolving out of order, briefly flashing a stale count.
+let vocabRefreshSeq = 0
+
+async function refreshVocabularyData({ withStats = true } = {}) {
+  const mySeq = ++vocabRefreshSeq
+  const [vocabRes, statsRes] = await Promise.all([
+    fetchVocabulary(),
+    withStats ? fetchVocabularyStats().catch(() => null) : Promise.resolve(null),
+  ])
+  if (mySeq !== vocabRefreshSeq) return // superseded — a newer refresh is now the source of truth
+  listMeta.value = { student_level: vocabRes.student_level, lesson_level: vocabRes.lesson_level }
+  metrics.value = vocabRes.metrics
+  cards.value = vocabRes.cards || []
+  if (statsRes) stats.value = statsRes
+}
+
+// Everything on a card must be visible without a click now, so enrich stub words and
+// fetch/generate missing illustrations in the background once the page itself has loaded.
+async function enrichAndIllustrateCards() {
+  const needsEnrich = cards.value.filter((c) => c.enriched === false)
+  const needsImage = cards.value.filter((c) => !c.image_url)
+  await Promise.all([runLimited(needsEnrich, 2, enrichCard), runLimited(needsImage, 2, loadCardImage)])
+}
+
+async function grade(card, quality) {
+  gradingId.value = card.id
+  gradingQuality.value = quality
+  try {
+    const updated = await reviewVocabularyCard(card.id, quality)
+    const masterIdx = cards.value.findIndex((c) => c.id === updated.id)
+    if (masterIdx !== -1) cards.value[masterIdx] = updated
+    await refreshVocabularyData()
   } catch (e) {
     loadError.value = getErrorMessage(e, 'Unable to save review')
   } finally {
-    reviewing.value = false
+    gradingId.value = null
+    gradingQuality.value = null
   }
 }
 
-function prev() {
-  if (index.value > 0) index.value -= 1
-}
-
-function next() {
-  if (index.value < cards.value.length - 1) index.value += 1
-}
-
-function goTo(i) {
-  index.value = i
+// The daily single-card view (VocabularyGenerator) manages its own word/index state and
+// grades independently — it emits 'graded' so this page's "X/10 today" tracker (and the
+// bank's stale card data) stay in sync with reviews recorded from either tab.
+async function onDailyWordGraded() {
+  try {
+    await refreshVocabularyData()
+  } catch {
+    /* best-effort — the tracker will catch up on next load */
+  }
 }
 </script>
 
 <style scoped>
 .page-container {
-  max-width: 720px;
+  max-width: 1100px;
   margin: 0 auto;
-}
-.flashcard {
-  min-height: 280px;
 }
 .challenge-para {
   line-height: 2.1;

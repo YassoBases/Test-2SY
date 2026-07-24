@@ -25,10 +25,22 @@ async def synthesize_english_reply(
     db: AsyncSession,
     *,
     student_id: int,
-    text: str,
+    text: str | None = None,
+    segments: list[dict] | None = None,
+    voice: str | None = None,
 ) -> MediaObject | None:
-    """Generate English reply audio. Returns None when language TTS is disabled or unavailable."""
-    cleaned = (text or "").strip()
+    """Generate English reply audio. Returns None when language TTS is disabled or unavailable.
+
+    Accepts either a plain `text` string (used by the speaking feedback service) or a
+    `segments` list of {"text": ...} dicts (used by the conversation turn/background-task
+    callers — currently always a single reply segment; see build_spoken_segments).
+    """
+    if segments:
+        cleaned = " ".join(
+            s.get("text", "").strip() for s in segments if isinstance(s, dict) and s.get("text", "").strip()
+        )
+    else:
+        cleaned = (text or "").strip()
     if not cleaned:
         return None
 
@@ -45,6 +57,7 @@ async def synthesize_english_reply(
         cleaned,
         language="en",
         output_path=dest,
+        voice_name=voice,
     )
     if not ok or not dest.exists():
         logger.warning("Language conversation reply TTS failed (continuing without audio)")
