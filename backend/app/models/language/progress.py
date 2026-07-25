@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -117,6 +117,9 @@ class LanguageVocabularyProgress(Base):
     interval_days: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     ease_factor: Mapped[float] = mapped_column(Float, default=2.5, server_default="2.5")
     repetition_number: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_difficult: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    consecutive_good_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class LanguageCurriculumProgress(Base):

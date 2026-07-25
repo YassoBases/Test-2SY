@@ -29,6 +29,11 @@ def _run_sql_file(name: str) -> None:
 
 
 def upgrade() -> None:
+    # Alembic auto-creates alembic_version.version_num as VARCHAR(32); several
+    # revision ids in this project exceed that (e.g. 0006_language_listening_reservations,
+    # 37 chars), which fails the version-stamp UPDATE after a later migration's DDL
+    # already ran. Widen it up front so every fresh install can reach head.
+    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(255)")
     _run_sql_file("0001_baseline_schema.sql")
 
 

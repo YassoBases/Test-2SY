@@ -97,8 +97,14 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-5"
 
     # Gemini — retained only for STT fallbacks (student chat, teacher/lesson audio/video)
+
+    # Gemini — STT fallbacks (student chat, teacher/lesson audio/video) + vocabulary word images
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Vocabulary word illustrations — generated on-demand per word, cached on the content item.
+    ENABLE_VOCABULARY_IMAGES: bool = True
+    LANGUAGE_VOCABULARY_IMAGE_MODEL: str = "gemini-2.5-flash-image"
 
     ENABLE_TTS: bool = False
     TTS_PROVIDER: str = "elevenlabs"

@@ -53,6 +53,7 @@ from app.schemas.language_learning import (
     ShadowSentenceListOut,
     ShadowSubmitOut,
     DictionarySearchOut,
+    VocabularyAiGenerateOut,
     VocabularyCardOut,
     LearnerModelProfileOut,
     LearnerPracticeSetOut,
@@ -65,6 +66,11 @@ from app.schemas.language_learning import (
     VocabularySaveOut,
     VocabularyListOut,
     VocabularyReviewIn,
+    VocabQuizOut,
+    VocabQuizSpellingIn,
+    VocabQuizSpellingOut,
+    VocabQuizCompleteIn,
+    VocabQuizCompleteOut,
     WordAnalysisIn,
     WordAnalysisOut,
     WritingListOut,
@@ -169,6 +175,7 @@ from app.services.language_vocabulary_service import (
     analyze_word,
     assess_word_pronunciation,
     say_word,
+    generate_ai_vocabulary_batch,
     generate_vocabulary_challenge,
     get_vocabulary_card,
     list_vocabulary,
@@ -177,6 +184,11 @@ from app.services.language_vocabulary_service import (
     submit_vocabulary_challenge,
 )
 from app.services.language_vocabulary_sr_service import get_vocabulary_stats
+from app.services.language_vocabulary_quiz_service import (
+    build_daily_quiz,
+    check_quiz_spelling,
+    record_quiz_completion,
+)
 from app.services.language_writing.enums import OfficialWritingCEFR, WritingGoal
 from app.services.language_writing_evaluation_runtime.runtime_api import submit_writing_draft_for_evaluation
 from app.services.language_writing_journey.builder import build_writing_journey_bundle
@@ -711,42 +723,26 @@ async def vocabulary_analyze(
     return await analyze_word(word=body.word, level=body.level)
 
 
-class VocabBatchIn(BaseModel):
-    topic: str | None = None
-    level: str | None = None
-
-
-@router.get("/vocabulary/generator/options")
-async def vocabulary_generator_options(
+@router.post("/vocabulary/generate-ai", response_model=VocabularyAiGenerateOut)
+async def vocabulary_generate_ai(
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Available topics + CEFR levels for the infinite vocabulary generator (offline, no LLM)."""
-    from app.services.language_vocabulary_catalog_service import get_options
-
-    return await get_options(db)
+    """AI-generated, interest-aware vocabulary batch (Claude), max 10/day, auto-scheduled for SM-2 review."""
+    return await generate_ai_vocabulary_batch(db, student_id=student.id)
 
 
-@router.post("/vocabulary/generate-batch")
-async def vocabulary_generate_batch(
-    body: VocabBatchIn,
+@router.post("/vocabulary/{content_id}/image")
+async def vocabulary_word_image(
+    content_id: int,
     student: User = Depends(require_language_learning_ready()),
     db: AsyncSession = Depends(get_db),
 ):
-    """A fresh random batch of unseen words (offline). Filters out words this learner has already seen."""
-    from app.services.language_vocabulary_catalog_service import generate_batch
+    """Illustration for a vocabulary word (Gemini), generated once and cached on the content item."""
+    from app.services.language_vocabulary_image_service import get_or_create_word_image
 
-    try:
-        result = await generate_batch(db, student_id=student.id, topic=body.topic, level=body.level)
-        await db.commit()
-        return result
-    except Exception:
-        await db.rollback()
-        logger.warning("vocabulary generate-batch failed", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not generate a batch right now. Please try again.",
-        )
+    url = await get_or_create_word_image(db, content_id=content_id)
+    return {"image_url": url}
 
 
 class WordSayIn(BaseModel):
@@ -805,6 +801,47 @@ async def vocabulary_challenge_submit(
     """Record a finished daily challenge as learner-model evidence (source='daily')."""
     result = await submit_vocabulary_challenge(
         db, student_id=student.id, results=[r.model_dump() for r in body.results]
+    )
+    await db.commit()
+    return result
+
+
+@router.get("/vocabulary/quiz/daily", response_model=VocabQuizOut)
+async def vocabulary_quiz_daily(
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daily spelling + pronunciation quiz over words the student has ALREADY learned —
+    today's served batch, topped up with due/learned words if the batch was short."""
+    language = await get_default_language(db)
+    return await build_daily_quiz(db, student_id=student.id, language_id=language.id)
+
+
+@router.post("/vocabulary/quiz/daily/spelling", response_model=VocabQuizSpellingOut)
+async def vocabulary_quiz_daily_spelling(
+    body: VocabQuizSpellingIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Grade one spelling guess server-side (the target word is never sent to the client
+    beforehand) and reveal the correct word."""
+    language = await get_default_language(db)
+    return await check_quiz_spelling(
+        db, language_id=language.id, content_id=body.item_id, guess=body.guess
+    )
+
+
+@router.post("/vocabulary/quiz/daily/complete", response_model=VocabQuizCompleteOut)
+async def vocabulary_quiz_daily_complete(
+    body: VocabQuizCompleteIn,
+    student: User = Depends(require_language_learning_ready()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record the finished quiz as learner-model evidence (never touches the SM-2 schedule)."""
+    language = await get_default_language(db)
+    result = await record_quiz_completion(
+        db, student_id=student.id, language_id=language.id,
+        results=[r.model_dump() for r in body.results],
     )
     await db.commit()
     return result

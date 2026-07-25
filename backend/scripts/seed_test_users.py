@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.core.test_users import TEST_USER_PASSWORD, TEST_USER_SPECS, verified_at_for
 from app.db.session import AsyncSessionLocal
@@ -109,6 +110,14 @@ async def _upsert_user(db, spec) -> User:
 
 
 async def seed_test_users() -> list[tuple[str, int]]:
+    # Refuse to run against what looks like a production database (DEBUG=false).
+    # This script writes directly to the DB with no dry-run mode, so a misconfigured
+    # environment must fail loudly rather than seed test accounts into production.
+    if not get_settings().DEBUG:
+        raise RuntimeError(
+            "Refusing to seed test users: DEBUG is not enabled. This looks like a "
+            "production database. Set DEBUG=true in .env if this is really a dev/test DB."
+        )
     created: list[tuple[str, int]] = []
     async with AsyncSessionLocal() as db:
         for spec in TEST_USER_SPECS:

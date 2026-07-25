@@ -53,6 +53,8 @@ from app.models.language.progress import (
 )
 from app.models.language.subscription import LanguageSubscription
 from app.models.language.tts_cache import LanguageLessonAudioCache
+from app.models.language.vocabulary_ai_usage import LanguageVocabularyAiDailyUsage
+from app.models.language.vocabulary_word_bank import LanguageVocabularyWordBank
 
 __all__ = [
     "LanguageSkillLevelState",
@@ -92,6 +94,8 @@ __all__ = [
     "LanguageWritingProgress",
     "LanguageSpeakingProgress",
     "LanguageVocabularyProgress",
+    "LanguageVocabularyAiDailyUsage",
+    "LanguageVocabularyWordBank",
     "LanguageCurriculumProgress",
     "LanguageStreak",
     "LanguageActivityLog",

@@ -20,6 +20,7 @@ import app.models  # noqa: F401
 
 from sqlalchemy import select, text
 
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.core.test_users import TEST_USER_PASSWORD
 from app.db.session import AsyncSessionLocal
@@ -726,6 +727,14 @@ async def seed_persona(db, spec: PersonaSpec, *, language_id: int, product_id: i
 
 
 async def seed_all() -> list[dict]:
+    # Refuse to run against what looks like a production database (DEBUG=false).
+    # This script writes directly to the DB with no dry-run mode, so a misconfigured
+    # environment must fail loudly rather than seed QA persona data into production.
+    if not get_settings().DEBUG:
+        raise RuntimeError(
+            "Refusing to seed QA listening personas: DEBUG is not enabled. This looks "
+            "like a production database. Set DEBUG=true in .env if this is really a dev/test DB."
+        )
     language = None
     product = None
     rows: list[dict] = []

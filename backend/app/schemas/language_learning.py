@@ -299,6 +299,8 @@ class VocabularyMetricsOut(BaseModel):
     known_words: int = 0
     learning_words: int = 0
     new_words: int = 0
+    reviewed_today: int = 0
+    daily_review_goal: int = 10
 
 
 class VocabularyCardOut(BaseModel):
@@ -315,6 +317,8 @@ class VocabularyCardOut(BaseModel):
     last_reviewed_at: datetime | None = None
     next_review_at: datetime | None = None
     due: bool = True
+    is_difficult: bool = False
+    image_url: str | None = None
 
 
 class VocabularyListOut(BaseModel):
@@ -327,6 +331,70 @@ class VocabularyListOut(BaseModel):
 class VocabularyReviewIn(BaseModel):
     # SM-2 recall grade 0-5 (1=Again, 3=Hard, 4=Good, 5=Easy).
     quality: int = Field(ge=0, le=5)
+
+
+class VocabularyAiWordOut(BaseModel):
+    """One AI-generated vocabulary word — English only (the platform is English-only)."""
+
+    content_id: int | None = None
+    word: str
+    part_of_speech: str = ""
+    definition: str = ""
+    example_sentence: str = ""
+    example_sentence_ar: str = ""
+    translation_ar: str = ""
+    image_prompt: str = ""
+    cefr_level: str = ""
+
+
+class VocabularyAiGenerateOut(BaseModel):
+    words: list[VocabularyAiWordOut] = Field(default_factory=list)
+    generated_today: int = 0
+    remaining_today: int = 10  # mirrors language_vocabulary_service.AI_GENERATION_DAILY_LIMIT
+
+
+class VocabQuizItemOut(BaseModel):
+    """One quiz item — the target word is deliberately NOT included until after the
+    student submits a spelling guess (see VocabQuizSpellingOut.correct_word)."""
+
+    item_id: int  # = the word's LanguageContentItem id
+    definition: str = ""
+    example_masked: str = ""
+
+
+class VocabQuizOut(BaseModel):
+    items: list[VocabQuizItemOut] = Field(default_factory=list)
+    total: int = 0
+    already_completed_today: bool = False
+
+
+class VocabQuizSpellingIn(BaseModel):
+    item_id: int
+    guess: str = Field(default="", max_length=80)
+
+
+class VocabQuizSpellingOut(BaseModel):
+    correct: bool
+    near_miss: bool
+    correct_word: str
+
+
+class VocabQuizResultItemIn(BaseModel):
+    item_id: int
+    spelling_correct: bool = False
+    spelling_near_miss: bool = False
+    pronunciation_score: int | None = Field(default=None, ge=0, le=100)
+
+
+class VocabQuizCompleteIn(BaseModel):
+    results: list[VocabQuizResultItemIn] = Field(default_factory=list)
+
+
+class VocabQuizCompleteOut(BaseModel):
+    spelling_correct: int = 0
+    spelling_total: int = 0
+    pronunciation_average: float = 0.0
+    recorded: bool = True
 
 
 class WritingPromptOut(BaseModel):
