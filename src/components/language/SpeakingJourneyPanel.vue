@@ -29,138 +29,143 @@
         @action="$emit('start-session')"
       />
 
-      <v-card v-else class="journey-hero pa-6 pa-md-8 mb-6 glass-card" variant="flat">
-        <div class="d-flex align-start gap-4 mb-4">
-          <div class="hero-icon-wrap flex-shrink-0" aria-hidden="true">
-            <v-icon color="primary" size="32">mdi-microphone</v-icon>
+      <template v-else>
+        <div class="spk-mission glass-card mb-4">
+          <div class="spk-mission__glow" aria-hidden="true" />
+          <div class="spk-mission__badge">
+            <v-icon size="26" color="secondary">mdi-microphone</v-icon>
+            <span class="spk-mission__cefr" dir="ltr">{{ officialCefr || '—' }}</span>
           </div>
-          <div class="flex-grow-1 min-width-0">
-            <div class="text-overline text-medium-emphasis mb-1">
+          <div class="spk-mission__copy min-width-0">
+            <p class="spk-mission__kicker mb-1">
               {{ t('student.languages.speakingJourney.hero.eyebrow') }}
-            </div>
-            <h2 class="text-h5 font-weight-bold mb-1" tabindex="-1" data-spk-focus="home">
+            </p>
+            <h2 class="spk-mission__title" tabindex="-1" data-spk-focus="home">
               {{ focusLabel || t('student.languages.speakingJourney.hero.emptyFocus') }}
             </h2>
-            <p class="text-body-2 text-medium-emphasis mb-0">{{ planSummary || focusReason }}</p>
-          </div>
-        </div>
-
-        <v-row dense class="mb-4">
-          <v-col cols="6" sm="3">
-            <div class="hero-stat">
-              <div class="hero-stat-label">{{ t('student.languages.speakingJourney.hero.level') }}</div>
-              <div class="hero-stat-value" dir="ltr">{{ officialCefr || '—' }}</div>
-            </div>
-          </v-col>
-          <v-col cols="6" sm="3">
-            <div class="hero-stat">
-              <div class="hero-stat-label">{{ t('student.languages.speakingJourney.hero.stage') }}</div>
-              <div class="hero-stat-value hero-stat-value--sm" dir="ltr">{{ internalStage || '—' }}</div>
-            </div>
-          </v-col>
-          <v-col cols="6" sm="3">
-            <div class="hero-stat">
-              <div class="hero-stat-label">{{ t('student.languages.speakingJourney.hero.alexTime') }}</div>
-              <div class="hero-stat-value hero-stat-value--sm">{{ alexRemainingLabel }}</div>
-            </div>
-          </v-col>
-          <v-col cols="6" sm="3">
-            <div class="hero-stat">
-              <div class="hero-stat-label">{{ t('student.languages.speakingJourney.hero.readiness') }}</div>
-              <div class="hero-stat-value hero-stat-value--sm">
-                <span class="d-inline-flex align-center gap-1">
-                  <v-icon size="16" :color="spaUnlocked ? 'success' : 'warning'" aria-hidden="true">
+            <p class="spk-mission__hint mb-0">{{ planSummary || focusReason }}</p>
+            <div class="spk-mission__stats">
+              <div class="spk-stat">
+                <span class="spk-stat__value" dir="ltr">{{ officialCefr || '—' }}</span>
+                <span class="spk-stat__label">{{ t('student.languages.speakingJourney.hero.level') }}</span>
+              </div>
+              <div class="spk-stat">
+                <span class="spk-stat__value spk-stat__value--sm" dir="ltr">{{ internalStage || '—' }}</span>
+                <span class="spk-stat__label">{{ t('student.languages.speakingJourney.hero.stage') }}</span>
+              </div>
+              <div class="spk-stat">
+                <span class="spk-stat__value spk-stat__value--sm">{{ alexRemainingLabel }}</span>
+                <span class="spk-stat__label">{{ t('student.languages.speakingJourney.hero.alexTime') }}</span>
+              </div>
+              <div class="spk-stat">
+                <span class="spk-stat__value spk-stat__value--sm d-inline-flex align-center gap-1">
+                  <v-icon size="14" :color="spaUnlocked ? 'success' : 'warning'" aria-hidden="true">
                     {{ spaUnlocked ? 'mdi-lock-open-variant' : 'mdi-lock-outline' }}
                   </v-icon>
                   {{ readinessChip }}
                 </span>
+                <span class="spk-stat__label">{{ t('student.languages.speakingJourney.hero.readiness') }}</span>
               </div>
             </div>
-          </v-col>
-        </v-row>
-
-        <p v-if="nextRecommendation" class="text-body-2 mb-3">{{ nextRecommendation }}</p>
-        <p v-else-if="expectedOutcome" class="text-body-2 mb-3">{{ expectedOutcome }}</p>
-        <v-alert
-          v-if="promotionNextAction"
-          type="info"
-          variant="tonal"
-          density="comfortable"
-          class="mb-4 rounded-lg"
-          role="status"
-        >
-          {{ promotionNextAction }}
-        </v-alert>
-        <ul v-if="objectives.length" class="objectives mb-4">
-          <li v-for="(obj, i) in objectives" :key="i">{{ obj }}</li>
-        </ul>
-
-        <div v-if="support.length" class="mb-4">
-          <div class="text-caption text-medium-emphasis mb-2">
-            {{ t('student.languages.speakingJourney.support.title') }}
           </div>
-          <v-chip
-            v-for="(chip, i) in support"
-            :key="`hsup-${i}`"
-            size="small"
-            variant="tonal"
-            :color="chipApplied(chip) ? 'success' : 'primary'"
-            class="me-1 mb-1"
-          >
-            {{ supportLabel(chip) }}
-          </v-chip>
+          <div class="spk-mission__actions">
+            <v-btn
+              color="secondary"
+              variant="flat"
+              size="large"
+              rounded="lg"
+              class="em-btn em-btn--primary spk-pressable"
+              :loading="starting"
+              prepend-icon="mdi-play"
+              :aria-label="t('student.languages.speakingJourney.actions.startSession')"
+              @click="$emit('start-session')"
+            >
+              {{ t('student.languages.speakingJourney.actions.startSession') }}
+            </v-btn>
+            <v-btn
+              v-if="practiceWithAlexAvailable"
+              variant="tonal"
+              size="large"
+              rounded="lg"
+              class="spk-pressable"
+              :loading="preparingLive"
+              prepend-icon="mdi-account-voice"
+              :aria-label="t('student.languages.speakingJourney.actions.practiceAlex')"
+              @click="$emit('practice-alex')"
+            >
+              {{ t('student.languages.speakingJourney.actions.practiceAlex') }}
+            </v-btn>
+            <v-btn
+              v-if="spaUnlocked"
+              variant="outlined"
+              size="large"
+              rounded="lg"
+              class="spk-pressable"
+              prepend-icon="mdi-trophy-outline"
+              :aria-label="t('student.languages.speakingJourney.actions.viewAssessment')"
+              @click="$emit('go-assessment')"
+            >
+              {{ t('student.languages.speakingJourney.actions.viewAssessment') }}
+            </v-btn>
+          </div>
+
+          <div v-if="missionExtrasVisible" class="spk-mission__extras">
+            <p v-if="nextRecommendation" class="text-body-2 mb-2">{{ nextRecommendation }}</p>
+            <p v-else-if="expectedOutcome" class="text-body-2 mb-2">{{ expectedOutcome }}</p>
+            <v-alert
+              v-if="promotionNextAction"
+              type="info"
+              variant="tonal"
+              density="comfortable"
+              class="mb-3 rounded-lg"
+              role="status"
+            >
+              {{ promotionNextAction }}
+            </v-alert>
+            <ul v-if="objectives.length" class="objectives mb-3">
+              <li v-for="(obj, i) in objectives" :key="i">{{ obj }}</li>
+            </ul>
+            <div v-if="support.length">
+              <div class="text-caption text-medium-emphasis mb-2">
+                {{ t('student.languages.speakingJourney.support.title') }}
+              </div>
+              <v-chip
+                v-for="(chip, i) in support"
+                :key="`hsup-${i}`"
+                size="small"
+                variant="tonal"
+                :color="chipApplied(chip) ? 'success' : 'primary'"
+                class="me-1 mb-1"
+              >
+                {{ supportLabel(chip) }}
+              </v-chip>
+            </div>
+          </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2">
-          <v-btn
-            color="primary"
-            class="em-btn em-btn--primary spk-pressable"
-            :loading="starting"
-            prepend-icon="mdi-play"
-            :aria-label="t('student.languages.speakingJourney.actions.startSession')"
-            @click="$emit('start-session')"
-          >
-            {{ t('student.languages.speakingJourney.actions.startSession') }}
-          </v-btn>
-          <v-btn
-            v-if="practiceWithAlexAvailable"
-            variant="tonal"
-            class="spk-pressable"
-            :loading="preparingLive"
-            prepend-icon="mdi-account-voice"
-            :aria-label="t('student.languages.speakingJourney.actions.practiceAlex')"
-            @click="$emit('practice-alex')"
-          >
-            {{ t('student.languages.speakingJourney.actions.practiceAlex') }}
-          </v-btn>
-          <v-btn
-            v-if="spaUnlocked"
-            variant="outlined"
-            class="spk-pressable"
-            prepend-icon="mdi-trophy-outline"
-            :aria-label="t('student.languages.speakingJourney.actions.viewAssessment')"
-            @click="$emit('go-assessment')"
-          >
-            {{ t('student.languages.speakingJourney.actions.viewAssessment') }}
-          </v-btn>
+        <SkillStagePathMap
+          skill-label="Speaking"
+          skill-key="speaking"
+          :current-cefr="officialCefr"
+          :current-stage="internalStage"
+          current-reason="Complete more speaking practice attempts."
+          class="mb-4"
+        />
+
+        <div class="spk-secondary mb-4">
+          <SpeakingMissionTimeline
+            compact
+            :learning-path="learningPath"
+            :today-missions="todayMissions"
+            :lesson-title="lessonTitle || focusLabel"
+          />
+          <SpeakingTeachingBlocks
+            v-if="teachingBlocks.length"
+            :blocks="teachingBlocks"
+            :support="support"
+          />
         </div>
-      </v-card>
-
-      <SkillStagePathMap
-        skill-label="Speaking"
-        skill-key="speaking"
-        :current-cefr="officialCefr"
-        :current-stage="internalStage"
-        current-reason="Complete more speaking practice attempts."
-        class="mb-4"
-      />
-
-      <SpeakingMissionTimeline
-        :learning-path="learningPath"
-        :today-missions="todayMissions"
-        :lesson-title="lessonTitle || focusLabel"
-      />
-      <SpeakingTeachingBlocks v-if="teachingBlocks.length" :blocks="teachingBlocks" :support="support" />
+      </template>
     </template>
 
     <Transition v-else name="spk-enter" appear>
@@ -346,40 +351,162 @@ const promotionNextAction = computed(() => {
   const action = props.promotionReadiness?.next_action
   return typeof action === 'string' && action.trim() ? action.trim() : ''
 })
+
+const missionExtrasVisible = computed(() =>
+  Boolean(
+    props.nextRecommendation ||
+      props.expectedOutcome ||
+      promotionNextAction.value ||
+      props.objectives.length ||
+      props.support.length,
+  ),
+)
 </script>
 
 <style scoped>
-.journey-hero {
-  border-radius: var(--em-radius-md, 16px);
+.spk-mission {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1rem 1.35rem;
+  align-items: center;
+  padding: 1.25rem 1.35rem;
 }
-.hero-icon-wrap {
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 14px;
+
+.spk-mission__glow {
+  position: absolute;
+  inset: -35% auto auto -8%;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--v-theme-secondary), 0.2), transparent 68%);
+  pointer-events: none;
+}
+
+.spk-mission__badge {
+  position: relative;
+  z-index: 1;
+  width: 88px;
+  height: 88px;
+  border-radius: 26px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgba(var(--v-theme-primary), 0.12);
+  gap: 0.2rem;
+  background: linear-gradient(145deg, rgba(var(--v-theme-secondary), 0.26), rgba(var(--v-theme-primary), 0.1));
+  border: 1px solid rgba(var(--v-theme-secondary), 0.32);
 }
-.hero-stat-label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(var(--v-theme-on-surface), 0.6);
-}
-.hero-stat-value {
-  font-size: 1.35rem;
+
+.spk-mission__cefr {
+  font-size: 1.25rem;
   font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: rgb(var(--v-theme-secondary));
 }
-.hero-stat-value--sm {
-  font-size: 0.95rem;
-  font-weight: 700;
+
+.spk-mission__copy {
+  position: relative;
+  z-index: 1;
 }
+
+.spk-mission__kicker {
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.spk-mission__title {
+  font-size: 1.28rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+  line-height: 1.3;
+}
+
+.spk-mission__hint {
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.spk-mission__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.15rem;
+  margin-top: 0.85rem;
+}
+
+.spk-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.spk-stat__value {
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.spk-stat__value--sm {
+  font-size: 0.9rem;
+}
+
+.spk-stat__label {
+  font-size: 0.68rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.spk-mission__actions {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.spk-mission__extras {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  padding-top: 0.15rem;
+}
+
+.spk-secondary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
 .objectives {
   margin: 0;
   padding-inline-start: 1.25rem;
 }
+
 .min-width-0 {
   min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .spk-secondary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .spk-mission {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

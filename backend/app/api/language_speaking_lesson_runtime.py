@@ -65,9 +65,11 @@ async def get_active_runtime(
 ) -> LessonRuntimeOut:
     language = await get_default_language(db)
     try:
-        return await get_lesson_runtime_api(
+        result = await get_lesson_runtime_api(
             db, student_id=student.id, language_id=language.id
         )
+        await db.commit()
+        return result
     except LessonRuntimeApiError as exc:
         _raise(exc)
         raise AssertionError("unreachable")

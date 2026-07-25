@@ -1,4 +1,4 @@
-"""Verify faster-whisper lesson video transcription (Phase 6.2).
+"""Verify lesson video transcription (Deepgram Nova-3 default).
 
 Usage (from backend/):
     python scripts/verify_lesson_video_transcription.py
@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import inspect
-import subprocess
 import sys
 import tempfile
 import time
@@ -24,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def _static_checks() -> dict[str, bool]:
     from app.core.config import get_settings
     from app.services import voice_service
+    from app.services.video_transcription.factory import get_video_transcription_provider
 
     settings = get_settings()
     vs = inspect.getsource(voice_service)
@@ -32,10 +32,14 @@ def _static_checks() -> dict[str, bool]:
     tasks_path = Path(__file__).resolve().parents[1] / "app" / "services" / "lesson_processing_tasks.py"
     tasks_src = tasks_path.read_text(encoding="utf-8")
 
-    faster_fn = inspect.getsource(voice_service._transcribe_wav_faster_whisper)
     audio_fn = inspect.getsource(voice_service._transcribe_with_whisper_sync)
     gemini_fn = inspect.getsource(voice_service._transcribe_video_with_gemini)
     lesson_video_fn = inspect.getsource(voice_service.transcribe_lesson_video)
+    gemini_fallback_fn = inspect.getsource(voice_service._try_gemini_video_fallback)
+
+    default_provider = get_video_transcription_provider(
+        settings.VIDEO_TRANSCRIPTION_PROVIDER or "deepgram"
+    )
 
     return {
         "lesson_processor_uses_transcribe_lesson_video": "transcribe_lesson_video" in lp
@@ -44,20 +48,24 @@ def _static_checks() -> dict[str, bool]:
         "ffmpeg_extract_present": "_extract_video_to_wav" in vs,
         "structured_logging_present": "_log_video_transcription" in vs
         and "VideoTranscriptionResult" in vs,
-        "faster_whisper_uses_arabic": 'language="ar"' in faster_fn
-        or "language=language" in faster_fn,
+        "default_provider_is_deepgram": default_provider.name == "deepgram"
+        or (settings.VIDEO_TRANSCRIPTION_PROVIDER or "").lower() == "deepgram",
+        "video_provider_config_present": hasattr(settings, "VIDEO_TRANSCRIPTION_PROVIDER"),
+        "deepgram_model_nova3": (settings.DEEPGRAM_STT_MODEL or "") == "nova-3",
         "no_small_en_in_lesson_video": "small.en" not in vs.split("async def transcribe_audio")[0],
-        "no_language_en_in_lesson_video": 'language="en"' not in vs.split("async def transcribe_audio")[0],
         "transcribe_audio_unchanged_arabic": 'language="ar"' in audio_fn,
         "gemini_active_wait": "ACTIVE" in gemini_fn and "get_file" in gemini_fn,
-        "gemini_600s_timeout": str(settings.LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS) == "600"
-        and "timeout_s" in lesson_video_fn,
+        "gemini_timeout_config": str(settings.LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS) == "600"
+        and "LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS" in gemini_fallback_fn,
         "arabic_gemini_video_prompt": "بالعربية" in voice_service.GEMINI_TRANSCRIBE_VIDEO_PROMPT,
         "stale_job_recovery_present": "_recover_stale_lesson_job" in tasks_src
         and "STALE_JOB_SECONDS" in tasks_src,
         "whisper_language_config_ar": settings.LESSON_VIDEO_WHISPER_LANGUAGE == "ar",
         "turbo_maps_to_large_v3_turbo": voice_service._FASTER_WHISPER_MODEL_ALIASES.get("turbo")
         == "large-v3-turbo",
+        "no_silent_whisper_fallback_default": settings.VIDEO_TRANSCRIPTION_ALLOW_WHISPER_FALLBACK
+        is False,
+        "deepgram_wired_in_lesson_video": "get_video_transcription_provider" in lesson_video_fn,
     }
 
 
@@ -65,69 +73,68 @@ async def _flow_mock_checks() -> dict[str, bool]:
     import os
 
     from app.services import voice_service
+    from app.services.video_transcription.types import TranscriptResult
 
     fd, video_name = tempfile.mkstemp(suffix=".mp4")
     os.close(fd)
     video_path = Path(video_name)
+    wav_fd, wav_name = tempfile.mkstemp(suffix=".wav")
+    os.close(wav_fd)
+    wav_path = Path(wav_name)
     try:
         video_path.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00")
+        with wave.open(str(wav_path), "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"\x00\x00" * 1600)
 
-        whisper_result = voice_service.VideoTranscriptionResult(
-            text="مرحبا بالطلاب",
-            engine="faster-whisper",
-            model="large-v3-turbo",
-            duration_s=1.2,
+        deepgram = MagicMock()
+        deepgram.name = "deepgram"
+        deepgram.transcribe = AsyncMock(
+            return_value=TranscriptResult(
+                text="مرحبا بالطلاب",
+                provider="deepgram",
+                model="nova-3",
+                language="ar-SY",
+            )
         )
+        whisper = MagicMock()
+        whisper.name = "whisper"
+        whisper.transcribe = AsyncMock()
+
+        def factory(name=None):
+            chosen = (name or "deepgram").lower()
+            return whisper if chosen == "whisper" else deepgram
 
         with (
-            patch.object(
-                voice_service,
-                "_transcribe_lesson_video_whisper_sync",
-                return_value=whisper_result,
-            ) as whisper_mock,
-            patch.object(
-                voice_service,
-                "_transcribe_video_with_gemini",
-                new_callable=AsyncMock,
-            ) as gemini_mock,
-        ):
-            text = await voice_service.transcribe_lesson_video(video_path)
-            whisper_called = whisper_mock.called
-            gemini_not_called = not gemini_mock.called
-            whisper_text = text == "مرحبا بالطلاب"
-
-        empty_result = voice_service.VideoTranscriptionResult(
-            text="",
-            engine="none",
-            model="",
-            duration_s=0.5,
-            fallback_reason="faster_whisper_empty",
-        )
-        gemini_mock.reset_mock()
-        with (
-            patch.object(
-                voice_service,
-                "_transcribe_lesson_video_whisper_sync",
-                return_value=empty_result,
+            patch.object(voice_service.settings, "VIDEO_TRANSCRIPTION_PROVIDER", "deepgram"),
+            patch.object(voice_service.settings, "VIDEO_TRANSCRIPTION_ALLOW_WHISPER_FALLBACK", False),
+            patch.object(voice_service.settings, "VIDEO_TRANSCRIPTION_ALLOW_GEMINI_FALLBACK", False),
+            patch.object(voice_service, "_extract_video_to_wav", return_value=wav_path),
+            patch(
+                "app.services.video_transcription.factory.get_video_transcription_provider",
+                side_effect=factory,
             ),
             patch.object(
                 voice_service,
                 "_transcribe_video_with_gemini",
                 new_callable=AsyncMock,
-                return_value="نص من جيميني",
             ) as gemini_mock,
-            patch.object(voice_service.settings, "GEMINI_API_KEY", "test-key"),
         ):
             text = await voice_service.transcribe_lesson_video(video_path)
-            gemini_fallback = gemini_mock.called and text == "نص من جيميني"
-            gemini_timeout = gemini_mock.call_args.kwargs.get("timeout_s") == 600
+            deepgram_ok = text == "مرحبا بالطلاب" and deepgram.transcribe.called
+            whisper_not_called = not whisper.transcribe.called
+            gemini_not_called = not gemini_mock.called
 
         return {
-            "whisper_success_skips_gemini": whisper_called and gemini_not_called and whisper_text,
-            "empty_whisper_triggers_gemini": gemini_fallback and gemini_timeout,
+            "deepgram_success_skips_whisper_and_gemini": deepgram_ok
+            and whisper_not_called
+            and gemini_not_called,
         }
     finally:
         video_path.unlink(missing_ok=True)
+        wav_path.unlink(missing_ok=True)
 
 
 def _make_silent_wav(path: Path, *, seconds: float = 1.0, sample_rate: int = 16000) -> None:
@@ -156,24 +163,10 @@ async def _benchmark(video_path: Path | None) -> dict:
             "preview": text[:120],
         }
 
-    wav_fd, wav_name = tempfile.mkstemp(suffix=".wav")
-    os.close(wav_fd)
-    wav_path = Path(wav_name)
-    try:
-        _make_silent_wav(wav_path, seconds=2.0)
-        started = time.perf_counter()
-        result = await asyncio.to_thread(voice_service._transcribe_lesson_video_whisper_sync, wav_path)
-        elapsed = time.perf_counter() - started
-        return {
-            "mode": "silent_wav_whisper_path",
-            "path": str(wav_path),
-            "duration_s": round(elapsed, 2),
-            "engine": result.engine if result else "none",
-            "fallback_reason": result.fallback_reason if result else None,
-            "note": "Silent audio — empty transcript expected; measures ffmpeg-less whisper pipeline timing",
-        }
-    finally:
-        wav_path.unlink(missing_ok=True)
+    return {
+        "mode": "skipped",
+        "note": "Pass --benchmark path/to/video.mp4 to time the configured provider.",
+    }
 
 
 def _print_results(title: str, results: dict[str, bool | str | float | int | None]) -> None:
@@ -189,7 +182,7 @@ async def main() -> int:
     parser.add_argument("--benchmark", type=Path, default=None, help="Optional lesson video for timing")
     args = parser.parse_args()
 
-    print("Phase 6.2 — verify_lesson_video_transcription")
+    print("verify_lesson_video_transcription — Deepgram Nova-3 video STT")
 
     static = _static_checks()
     _print_results("Static checks", static)

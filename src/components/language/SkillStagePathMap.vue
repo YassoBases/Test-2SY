@@ -1,31 +1,35 @@
 <template>
-  <v-card class="skill-path-card pa-5" variant="flat">
+  <v-card class="skill-path-card glass-card" variant="flat">
     <div class="skill-path-head">
       <div>
-        <h3 class="text-subtitle-1 font-weight-bold mb-1">{{ skillLabel }} path</h3>
-        <p class="text-body-2 text-medium-emphasis mb-0">
-          CEFR levels split into Beginner, Intermediate, and Advanced stages.
-        </p>
+        <h3 class="skill-path-title">{{ skillLabel }} journey</h3>
+        <p class="skill-path-sub mb-0">{{ stages.length }} stages · follow the glow</p>
       </div>
-      <v-chip size="small" variant="tonal" color="secondary">{{ stages.length }} stages</v-chip>
+      <div class="path-legend">
+        <span><i class="path-dot path-dot--current" /> Current</span>
+        <span><i class="path-dot path-dot--unlocked" /> Open</span>
+        <span><i class="path-dot path-dot--locked" /> Locked</span>
+      </div>
     </div>
 
-    <div class="path-map">
+    <div class="path-map" dir="rtl">
       <div v-for="level in CEFR_LEVELS" :key="level" class="path-row">
         <div class="path-row__level">{{ level }}</div>
-        <div class="path-row__stages">
+        <div class="path-row__track">
           <div
             v-for="stage in stagesFor(level)"
             :key="`${skillKey}-${stage.cefr_level}-${stage.internal_stage}`"
-            class="stage-pill"
-            :class="`stage-pill--${stage.status}`"
+            class="stage-node"
+            :class="`stage-node--${stage.status}`"
+            :title="stage.reason || statusLabel(stage.status)"
           >
-            <div class="stage-pill__top">
-              <span>{{ stage.internal_stage }}</span>
-              <v-icon :icon="stageIcon(stage.status)" :color="stageColor(stage.status)" size="18" />
+            <div class="stage-node__orb">
+              <v-icon :icon="stageIcon(stage.status)" size="16" />
             </div>
-            <small>{{ statusLabel(stage.status) }}</small>
-            <p class="stage-pill__reason">{{ stage.reason }}</p>
+            <div class="stage-node__meta">
+              <strong>{{ stage.internal_stage }}</strong>
+              <small>{{ statusLabel(stage.status) }}</small>
+            </div>
           </div>
         </div>
       </div>
@@ -107,126 +111,186 @@ function stageIcon(status) {
   return map[status] || 'mdi-circle-outline'
 }
 
-function stageColor(status) {
-  const map = {
-    current: 'secondary',
-    unlocked: 'primary',
-    locked: 'grey',
-  }
-  return map[status] || 'grey'
-}
-
-function stageReason(stage) {
-  if (stage.status === 'current') return props.currentReason
-  if (stage.status === 'unlocked') return 'Ready when you reach this step.'
-  if (stage.cefr !== normalizedCefr.value) return props.nextLevelReason
+function stageReason({ cefr, status }) {
+  if (status === 'current') return props.currentReason
+  if (status === 'unlocked') return 'Ready when you reach this step.'
+  if (cefr !== normalizedCefr.value) return props.nextLevelReason
   return 'Complete the previous stage first.'
 }
 </script>
 
 <style scoped>
 .skill-path-card {
-  border-radius: 20px;
-  background: rgba(var(--v-theme-surface), 0.92);
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  padding: 1.2rem 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .skill-path-head {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
   margin-bottom: 1rem;
 }
 
+.skill-path-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+}
+
+.skill-path-sub {
+  font-size: 0.8125rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.path-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.path-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.path-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.path-dot--current {
+  background: rgb(var(--v-theme-secondary));
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-secondary), 0.25);
+}
+
+.path-dot--unlocked {
+  background: rgb(var(--v-theme-primary));
+}
+
+.path-dot--locked {
+  background: rgba(var(--v-theme-on-surface), 0.28);
+}
+
 .path-map {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.85rem;
 }
 
 .path-row {
   display: grid;
-  grid-template-columns: 4rem 1fr;
-  gap: 0.75rem;
+  grid-template-columns: 44px 1fr;
   align-items: center;
+  gap: 0.65rem;
 }
 
 .path-row__level {
-  font-size: 1.25rem;
-  font-weight: 900;
+  font-weight: 800;
+  font-size: 0.95rem;
   color: rgb(var(--v-theme-secondary));
 }
 
-.path-row__stages {
+.path-row__track {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.45rem;
 }
 
-.stage-pill {
-  min-height: 7rem;
-  border-radius: 10px;
-  padding: 0.9rem;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  background: rgba(var(--v-theme-surface), 0.96);
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.stage-pill__top {
+.stage-node {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.45rem;
+  gap: 0.55rem;
+  min-height: 58px;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  background: rgba(var(--v-theme-surface), 0.45);
 }
 
-.stage-pill span {
-  font-weight: 800;
-  color: rgb(var(--v-theme-on-surface));
+.stage-node__orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
-.stage-pill small {
-  display: block;
-  color: rgba(var(--v-theme-on-surface), 0.66);
-  margin-bottom: 0.45rem;
+.stage-node__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
 }
 
-.stage-pill__reason {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: rgba(var(--v-theme-on-surface), 0.62);
+.stage-node__meta strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
-.stage-pill--current {
-  background: rgba(var(--v-theme-secondary), 0.13);
-  border-color: rgba(var(--v-theme-secondary), 0.9);
+.stage-node__meta small {
+  font-size: 0.65rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stage-pill--unlocked {
-  background: rgba(var(--v-theme-primary), 0.05);
-  border-color: rgba(var(--v-theme-primary), 0.5);
+.stage-node--current {
+  border-color: rgba(var(--v-theme-secondary), 0.7);
+  background: rgba(var(--v-theme-secondary), 0.14);
+  box-shadow:
+    0 0 0 1px rgba(var(--v-theme-secondary), 0.2),
+    0 8px 22px -14px rgba(var(--v-theme-secondary), 0.55);
 }
 
-.stage-pill--locked {
-  background: rgba(var(--v-theme-surface), 0.72);
-  border-color: rgba(var(--v-theme-on-surface), 0.08);
-  opacity: 0.68;
+.stage-node--current .stage-node__orb {
+  background: rgba(var(--v-theme-secondary), 0.22);
+  color: rgb(var(--v-theme-secondary));
+  animation: stage-pulse 2.2s ease-in-out infinite;
+}
+
+.stage-node--unlocked {
+  border-color: rgba(var(--v-theme-primary), 0.4);
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.stage-node--locked {
+  opacity: 0.58;
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--v-theme-secondary), 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(var(--v-theme-secondary), 0);
+  }
 }
 
 @media (max-width: 760px) {
   .path-row {
     grid-template-columns: 1fr;
-    gap: 0.45rem;
   }
 
-  .path-row__stages {
+  .path-row__track {
     grid-template-columns: 1fr;
   }
+}
 
-  .stage-pill {
-    min-height: auto;
+@media (prefers-reduced-motion: reduce) {
+  .stage-node--current .stage-node__orb {
+    animation: none;
   }
 }
 </style>

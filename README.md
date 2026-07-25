@@ -218,7 +218,7 @@ server to start; each provider fails gracefully.
 | **Anthropic (Claude Sonnet 5)** | `ANTHROPIC_API_KEY` | AI tutor, lesson/quiz/insight generation, all text & JSON | Optional (core AI features disabled without it) | Ollama local LLM if `LLM_PROVIDER=ollama` |
 | **Mistral OCR** | `MISTRAL_API_KEY` | Extracting text from uploaded PDFs/images | Optional | PyMuPDF built-in text extraction |
 | **OpenAI (GPT-4o Transcribe)** | `OPENAI_API_KEY` | Language module (English) speech-to-text | Optional | Faster-Whisper → Gemini |
-| **Deepgram (Nova)** | `DEEPGRAM_API_KEY` | Student lesson voice chat STT (Arabic) | Optional | Gemini |
+| **Deepgram (Nova-3)** | `DEEPGRAM_API_KEY` | Uploaded lesson-video STT (`VIDEO_TRANSCRIPTION_PROVIDER=deepgram`) + student lesson voice chat STT | Optional | Video: none unless `VIDEO_TRANSCRIPTION_ALLOW_*_FALLBACK`; chat: Gemini |
 | **ElevenLabs** | `ELEVENLABS_API_KEY` | Teacher voice cloning, lesson TTS | Optional | gTTS |
 | **Google Gemini** | `GEMINI_API_KEY` | STT **fallback only** (not used as an LLM) | Optional | — |
 | **Resend** | `RESEND_API_KEY` | Transactional email (verification, 2FA OTP) | Optional | console/no-op in dev |
@@ -228,6 +228,9 @@ server to start; each provider fails gracefully.
 
 - `LLM_PROVIDER=claude` (default) or `ollama`
 - `LANGUAGE_STT_PROVIDER=openai` (default) — English STT for the Language module
+- `VIDEO_TRANSCRIPTION_PROVIDER=deepgram` (default) — uploaded lesson-video STT only;
+  set `whisper` for explicit rollback. Speaking / placement / teacher voice-sample
+  Whisper flows are unchanged.
 - `TTS_PROVIDER=elevenlabs` and `LANGUAGE_TTS_PROVIDER=supertonic`
 - `ENABLE_FAISS`, `ENABLE_EMBEDDINGS`, `ENABLE_WHISPER`, `ENABLE_TTS`,
   `ENABLE_PGVECTOR` toggle heavier subsystems.
@@ -241,7 +244,7 @@ server to start; each provider fails gracefully.
 | **Claude Sonnet 5** (`CLAUDE_MODEL=claude-sonnet-5`) | Primary LLM — all text & JSON generation | AI tutor, lesson/notebook generation, quiz generation, curated insights, routine/exam JSON | No (API) |
 | **Mistral OCR** (`mistral-ocr-latest`) | Optical character recognition | PDF/image ingestion for lessons | No (API) |
 | **GPT-4o Transcribe** (`gpt-4o-transcribe`) | English speech-to-text | Language module speaking/listening | No (API) |
-| **Deepgram Nova** (`nova-3`) | Arabic speech-to-text | Student lesson voice chat | No (API) |
+| **Deepgram Nova** (`nova-3`) | Speech-to-text | Uploaded lesson-video transcription + student lesson voice chat | No (API) |
 | **ElevenLabs** (`eleven_multilingual_v2`) | Text-to-speech / voice cloning | Teacher AI voice, lesson audio | No (API) |
 | **BGE-M3** (`BAAI/bge-m3`) | Multilingual embeddings for RAG | Lesson content retrieval | **Yes** — downloaded from Hugging Face on first use |
 | **FAISS** (CPU) | Vector similarity index | RAG search over embedded lesson chunks | No (pip package) |

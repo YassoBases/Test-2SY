@@ -4,6 +4,7 @@
     :model-value="activeTab"
     color="secondary"
     show-tabs
+    dir="rtl"
     class="language-module-tabs mb-4"
     @update:model-value="onTab"
   >
@@ -61,7 +62,6 @@ function onTab() {
   /* navigation via :to on v-tab */
 }
 
-// Apply the Neon Glass theme to the whole language module + set the current feature's accent.
 function applyTheme() {
   document.body.classList.add('lang-neon')
   document.body.style.setProperty('--neon', NEON[activeTab.value] || NEON.hub)
@@ -78,6 +78,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.language-module-tabs {
+  direction: rtl;
+}
+
+.language-module-tabs :deep(.v-slide-group__content) {
+  flex-direction: row;
+  justify-content: flex-start;
+}
+
 .language-module-tabs :deep(.v-tab) {
   text-transform: none;
   letter-spacing: 0;

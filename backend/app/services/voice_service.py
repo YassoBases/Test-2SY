@@ -245,50 +245,179 @@ def _transcribe_lesson_video_whisper_sync(video_path: Path) -> VideoTranscriptio
             _safe_unlink(wav_path)
 
 
-async def transcribe_lesson_video(video_path: str | Path) -> str:
-    """Transcribe lesson video — ffmpeg WAV -> faster-whisper -> Gemini."""
+def _gemini_fallback_allowed(provider_name: str) -> bool:
+    if settings.VIDEO_TRANSCRIPTION_ALLOW_GEMINI_FALLBACK:
+        return bool(settings.GEMINI_API_KEY)
+    # Rollback whisper path keeps the historical whisper → Gemini behavior.
+    if provider_name in {"whisper", "faster-whisper", "faster_whisper"}:
+        return bool(settings.GEMINI_API_KEY)
+    return False
+
+
+async def _try_gemini_video_fallback(
+    path: Path,
+    *,
+    started: float,
+    fallback_reason: str | None,
+) -> str | None:
+    if not settings.GEMINI_API_KEY:
+        return None
+    timeout_s = int(settings.LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS or 600)
+    try:
+        text = await _transcribe_video_with_gemini(path, timeout_s=timeout_s)
+        if text.strip():
+            result = VideoTranscriptionResult(
+                text=text.strip(),
+                engine="gemini",
+                model=settings.GEMINI_MODEL,
+                duration_s=time.perf_counter() - started,
+                fallback_reason=fallback_reason,
+            )
+            _log_video_transcription(result, path=path)
+            return result.text
+    except Exception:
+        logger.warning("Gemini lesson video transcription failed")
+    return None
+
+
+async def transcribe_lesson_video(
+    video_path: str | Path,
+    *,
+    language_hint: str | None = None,
+    locale: str | None = None,
+    subject: str | None = None,
+    keyterms: list[str] | None = None,
+) -> str:
+    """Transcribe uploaded lesson video audio into lesson text.
+
+    Default provider is Deepgram Nova-3 (``VIDEO_TRANSCRIPTION_PROVIDER=deepgram``).
+    Whisper / Gemini run only when explicitly selected or fallback flags are enabled.
+    Does not affect Speaking, placement, teacher voice-sample, or student-chat STT.
+    """
+    from app.services.video_transcription.errors import (
+        CATEGORY_EMPTY_AUDIO,
+        VideoTranscriptionError,
+        user_message_for,
+    )
+    from app.services.video_transcription.factory import get_video_transcription_provider
+    from app.services.video_transcription.language import resolve_video_transcription_language
+
     path = Path(video_path)
     if not path.exists():
         return ""
 
     started = time.perf_counter()
-    whisper_result = await asyncio.to_thread(_transcribe_lesson_video_whisper_sync, path)
-
-    if whisper_result and whisper_result.text.strip():
-        _log_video_transcription(whisper_result, path=path)
-        return whisper_result.text
-
-    fallback_reason = whisper_result.fallback_reason if whisper_result else "whisper_disabled"
-    timeout_s = int(settings.LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS or 600)
-    if settings.GEMINI_API_KEY:
-        try:
-            text = await _transcribe_video_with_gemini(path, timeout_s=timeout_s)
-            if text.strip():
-                result = VideoTranscriptionResult(
-                    text=text.strip(),
-                    engine="gemini",
-                    model=settings.GEMINI_MODEL,
-                    duration_s=time.perf_counter() - started,
-                    fallback_reason=fallback_reason,
-                )
-                _log_video_transcription(result, path=path)
-                return result.text
-            fallback_reason = f"{fallback_reason};gemini_empty"
-        except Exception as exc:
-            fallback_reason = f"{fallback_reason};gemini_failed:{exc}"
-            logger.warning("Gemini lesson video transcription failed: %s", exc)
-    else:
-        fallback_reason = f"{fallback_reason};gemini_unconfigured"
-
-    result = VideoTranscriptionResult(
-        text="",
-        engine="none",
-        model="",
-        duration_s=time.perf_counter() - started,
-        fallback_reason=fallback_reason,
+    provider_name = (settings.VIDEO_TRANSCRIPTION_PROVIDER or "deepgram").strip().lower()
+    language = resolve_video_transcription_language(
+        locale=locale,
+        language_hint=language_hint,
+        subject=subject,
     )
-    _log_video_transcription(result, path=path)
-    return ""
+    wav_path: Path | None = None
+    primary_error: VideoTranscriptionError | None = None
+    fallback_reason: str | None = None
+
+    try:
+        try:
+            wav_path = await asyncio.to_thread(_extract_video_to_wav, path)
+        except Exception as exc:
+            raise VideoTranscriptionError(
+                user_message_for(CATEGORY_EMPTY_AUDIO),
+                category=CATEGORY_EMPTY_AUDIO,
+                provider=provider_name,
+            ) from exc
+
+        if not wav_path.exists() or wav_path.stat().st_size == 0:
+            raise VideoTranscriptionError(
+                user_message_for(CATEGORY_EMPTY_AUDIO),
+                category=CATEGORY_EMPTY_AUDIO,
+                provider=provider_name,
+            )
+
+        primary = get_video_transcription_provider(provider_name)
+        try:
+            transcript = await primary.transcribe(
+                wav_path,
+                language=language,
+                mime_type="audio/wav",
+                keyterms=keyterms,
+            )
+            text = transcript.normalized_text()
+            if text:
+                _log_video_transcription(
+                    VideoTranscriptionResult(
+                        text=text,
+                        engine=transcript.provider,
+                        model=transcript.model,
+                        duration_s=time.perf_counter() - started,
+                    ),
+                    path=path,
+                )
+                return text
+            fallback_reason = f"{primary.name}_empty"
+        except VideoTranscriptionError as exc:
+            primary_error = exc
+            fallback_reason = f"{exc.provider or primary.name}:{exc.category}"
+            logger.warning(
+                "Lesson video primary STT failed provider=%s category=%s",
+                exc.provider or primary.name,
+                exc.category,
+            )
+
+        # Explicit Whisper fallback for Deepgram only when the flag is set.
+        if (
+            primary.name == "deepgram"
+            and settings.VIDEO_TRANSCRIPTION_ALLOW_WHISPER_FALLBACK
+            and settings.ENABLE_WHISPER
+        ):
+            try:
+                whisper_provider = get_video_transcription_provider("whisper")
+                transcript = await whisper_provider.transcribe(
+                    wav_path,
+                    language=language,
+                    mime_type="audio/wav",
+                )
+                text = transcript.normalized_text()
+                if text:
+                    _log_video_transcription(
+                        VideoTranscriptionResult(
+                            text=text,
+                            engine=transcript.provider,
+                            model=transcript.model,
+                            duration_s=time.perf_counter() - started,
+                            fallback_reason=fallback_reason,
+                        ),
+                        path=path,
+                    )
+                    return text
+                fallback_reason = f"{fallback_reason};whisper_empty"
+            except VideoTranscriptionError as whisper_exc:
+                fallback_reason = f"{fallback_reason};whisper:{whisper_exc.category}"
+
+        if _gemini_fallback_allowed(primary.name):
+            gemini_text = await _try_gemini_video_fallback(
+                path, started=started, fallback_reason=fallback_reason
+            )
+            if gemini_text:
+                return gemini_text
+            fallback_reason = f"{fallback_reason};gemini_empty_or_failed"
+
+        if primary_error is not None:
+            raise primary_error
+
+        result = VideoTranscriptionResult(
+            text="",
+            engine="none",
+            model="",
+            duration_s=time.perf_counter() - started,
+            fallback_reason=fallback_reason or "empty_transcript",
+        )
+        _log_video_transcription(result, path=path)
+        return ""
+    finally:
+        if wav_path is not None:
+            _safe_unlink(wav_path)
+
 
 
 async def _transcribe_video_with_gemini(path: Path, *, timeout_s: int) -> str:

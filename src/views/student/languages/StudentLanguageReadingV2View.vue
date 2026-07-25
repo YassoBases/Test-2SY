@@ -1,268 +1,306 @@
 <template>
   <div class="reading-v2-page slide-up-enter-active">
+    <LanguageModuleTabs />
     <PageHeader
+      compact
       eyebrow="Learn languages"
       eyebrow-icon="mdi-book-open-page-variant"
       title="Reading Practice"
-      subtitle="Practice with reading activities matched to your level and progress."
+      subtitle="One stage at a time — practice, gather evidence, unlock the next."
     />
-    <LanguageModuleTabs />
 
     <v-alert v-if="loadError" type="error" variant="tonal" class="mb-4 rounded-lg">{{ loadError }}</v-alert>
     <LoadingState v-if="loading" variant="cards" :count="3" class="mb-6" />
 
     <template v-else>
-      <section v-if="viewMode === 'overview'" class="reading-grid">
-        <div class="reading-main">
-          <v-card class="glass-card pa-5 mb-4" variant="flat">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-3">
-              <div>
-                <div class="text-caption text-medium-emphasis mb-1">Current stage</div>
-                <div class="d-flex align-center gap-2 flex-wrap">
-                  <v-chip color="secondary" variant="flat" size="large">{{ overview?.current_cefr || 'A1' }}</v-chip>
-                  <v-chip color="primary" variant="tonal" size="large">{{ overview?.current_stage || 'Beginner' }}</v-chip>
-                  <v-chip v-if="overview?.status" :color="statusColor(overview.status)" variant="tonal">
-                    {{ labelize(overview.status) }}
-                  </v-chip>
-                </div>
-                <div class="readiness-inline mt-3">
-                  <v-chip size="small" :color="readinessColor" variant="tonal">
-                    {{ readinessStatusLabel }}
-                  </v-chip>
-                  <span>{{ readinessInlineText }}</span>
-                </div>
-              </div>
-              <div class="d-flex gap-2 flex-wrap">
-                <v-btn
-                  color="secondary"
-                  variant="flat"
-                  size="large"
-                  prepend-icon="mdi-play"
-                  :loading="startingPractice"
-                  @click="startAttempt('practice')"
-                >
-                  Start Practice
-                </v-btn>
-                <v-btn
-                  v-if="readinessAvailable"
-                  color="warning"
-                  variant="tonal"
-                  size="large"
-                  prepend-icon="mdi-flag-checkered"
-                  :loading="startingReadiness"
-                  @click="startAttempt('readiness')"
-                >
-                  Readiness Test
-                </v-btn>
-              </div>
-            </div>
-
-            <v-divider class="my-4" />
-            <div class="mastery-grid">
-              <div>
-                <div class="text-caption text-medium-emphasis">Current level</div>
-                <div class="text-h6 font-weight-bold">{{ overview?.current_cefr || 'A1' }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">Current stage</div>
-                <div class="text-h6 font-weight-bold">{{ overview?.current_stage || 'Beginner' }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">Mastery score</div>
-                <div class="text-h6 font-weight-bold">{{ formatPercent(displayedMasteryScore) }}</div>
-              </div>
-              <div>
-                <div class="text-caption text-medium-emphasis">Readiness</div>
-                <div class="text-h6 font-weight-bold">
-                  {{ overview?.readiness_available ? 'Available' : 'Locked' }}
-                </div>
-              </div>
-            </div>
-          </v-card>
-
-          <v-card class="glass-card pa-5 mb-4" variant="flat">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
-              <div>
-                <h3 class="text-subtitle-1 font-weight-bold mb-0">Current-stage evidence</h3>
-                <p class="text-body-2 text-medium-emphasis mb-0">
-                  Progress is based on recent practice evidence, not XP alone.
-                </p>
-              </div>
-              <v-chip :color="currentStageEvidence.mastered ? 'success' : 'warning'" size="small" variant="tonal">
-                {{ currentStageEvidence.mastered ? 'Stage mastered' : 'Still building' }}
+      <section v-if="viewMode === 'overview'" class="reading-overview">
+        <!-- Mission hero -->
+        <div class="mission-hero glass-card">
+          <div class="mission-hero__glow" aria-hidden="true" />
+          <div class="mission-hero__badge" :data-status="overview?.status || 'active'">
+            <span class="mission-hero__cefr">{{ overview?.current_cefr || 'A1' }}</span>
+            <span class="mission-hero__stage">{{ overview?.current_stage || 'Beginner' }}</span>
+          </div>
+          <div class="mission-hero__copy">
+            <p class="mission-hero__kicker mb-1">Your reading stage</p>
+            <h2 class="mission-hero__title">
+              {{ currentStageLabel }}
+              <v-chip
+                v-if="overview?.status"
+                class="ml-2"
+                size="small"
+                :color="statusColor(overview.status)"
+                variant="tonal"
+              >
+                {{ labelize(overview.status) }}
               </v-chip>
-            </div>
-
-            <div class="evidence-list">
-              <div v-for="metric in evidenceMetrics" :key="metric.label" class="evidence-row">
-                <v-icon :color="metric.met ? 'success' : 'warning'" :icon="metric.met ? 'mdi-check-circle' : 'mdi-clock-outline'" />
-                <div>
-                  <div class="font-weight-bold">{{ metric.label }}</div>
-                  <div class="text-caption text-medium-emphasis">{{ metric.value }}</div>
-                </div>
+            </h2>
+            <p class="mission-hero__hint mb-0">{{ readinessInlineText }}</p>
+            <div class="mission-hero__stats">
+              <div class="mission-stat">
+                <span class="mission-stat__value">{{ formatPercent(displayedMasteryScore) }}</span>
+                <span class="mission-stat__label">Mastery</span>
+              </div>
+              <div class="mission-stat">
+                <span class="mission-stat__value">{{ evidenceMetCount }}/{{ evidenceTotalCount }}</span>
+                <span class="mission-stat__label">Evidence</span>
+              </div>
+              <div class="mission-stat">
+                <span class="mission-stat__value">{{ readinessStatusLabel }}</span>
+                <span class="mission-stat__label">Readiness</span>
               </div>
             </div>
-
-            <div v-if="weakestSubskills.length" class="mt-4">
-              <div class="text-caption text-medium-emphasis mb-2">Weak subskills</div>
-              <div class="d-flex flex-wrap gap-2">
-                <v-chip v-for="item in weakestSubskills" :key="item.name" color="warning" size="small" variant="tonal">
-                  {{ labelize(item.name) }}: {{ formatPercent(item.score) }}
-                </v-chip>
-              </div>
-            </div>
-
-            <div v-if="underSampledSubskills.length" class="mt-4">
-              <div class="text-caption text-medium-emphasis mb-2">Needs more evidence</div>
-              <div class="d-flex flex-wrap gap-2">
-                <v-chip v-for="item in underSampledSubskills" :key="item.name" color="info" size="small" variant="tonal">
-                  {{ labelize(item.name) }}: {{ Number(item.total || 0) }} / {{ item.required_questions || 3 }} questions
-                </v-chip>
-              </div>
-            </div>
-
-            <v-alert v-if="currentBlockingReasonTexts.length" type="warning" variant="tonal" density="comfortable" class="mt-4">
-              <div class="font-weight-bold mb-1">To unlock the next step</div>
-              <ul class="reason-list">
-                <li v-for="reason in currentBlockingReasonTexts" :key="reason">{{ reason }}</li>
-              </ul>
-            </v-alert>
-            <v-alert v-else type="success" variant="tonal" density="comfortable" class="mt-4">
-              This stage has enough evidence for progression.
-            </v-alert>
-          </v-card>
-
-          <v-card class="glass-card pa-5" variant="flat">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
-              <div>
-                <h3 class="text-subtitle-1 font-weight-bold mb-0">Reading path</h3>
-                <p class="text-body-2 text-medium-emphasis mb-0">CEFR levels split into Beginner, Intermediate, and Advanced stages.</p>
-              </div>
-              <v-chip size="small" variant="tonal" color="secondary">{{ pathStages.length }} stages</v-chip>
-            </div>
-
-            <div class="path-map">
-              <div v-for="level in cefrLevels" :key="level" class="path-row">
-                <div class="path-row__level">{{ level }}</div>
-                <div class="path-row__stages">
-                  <div
-                    v-for="stage in stagesFor(level)"
-                    :key="`${stage.cefr_level}-${stage.internal_stage}`"
-                    class="stage-pill"
-                    :class="`stage-pill--${stageStatus(stage)}`"
-                  >
-                    <div class="stage-pill__top">
-                      <span>{{ stage.internal_stage }}</span>
-                      <v-icon :icon="stageIcon(stage)" :color="statusColor(stageStatus(stage))" size="18" />
-                    </div>
-                    <small>{{ stageStatusLabel(stage) }}</small>
-                    <p v-if="stageReason(stage)" class="stage-pill__reason">{{ stageReason(stage) }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </v-card>
+          </div>
+          <div class="mission-hero__actions">
+            <v-btn
+              color="secondary"
+              variant="flat"
+              size="large"
+              rounded="lg"
+              prepend-icon="mdi-play"
+              :loading="startingPractice"
+              @click="startAttempt('practice')"
+            >
+              Start Practice
+            </v-btn>
+            <v-btn
+              v-if="readinessAvailable"
+              color="warning"
+              variant="tonal"
+              size="large"
+              rounded="lg"
+              prepend-icon="mdi-flag-checkered"
+              :loading="startingReadiness"
+              @click="startAttempt('readiness')"
+            >
+              Readiness Test
+            </v-btn>
+          </div>
         </div>
 
-        <aside class="reading-side">
-          <v-card class="glass-card pa-5 mb-4" variant="flat">
-            <div class="d-flex align-center justify-space-between gap-2 mb-3">
-              <h3 class="text-subtitle-1 font-weight-bold mb-0">Readiness test</h3>
-              <v-chip :color="readinessColor" size="small" variant="tonal">{{ readinessStatusLabel }}</v-chip>
-            </div>
-            <div class="readiness-detail">
-              <div>
-                <span class="text-caption text-medium-emphasis">Target</span>
-                <strong>{{ readinessTargetText }}</strong>
-              </div>
-              <div>
-                <span class="text-caption text-medium-emphasis">Status</span>
-                <strong>{{ readinessDetailText }}</strong>
-              </div>
-            </div>
-            <v-alert
-              v-if="!overview?.readiness_available"
-              type="info"
-              variant="tonal"
-              density="comfortable"
-              class="mt-3"
-            >
-              {{ readinessBlockedText }}
-            </v-alert>
-            <div v-if="retakeStatus?.blocked" class="retake-meter mt-3">
-              <div class="d-flex justify-space-between text-caption text-medium-emphasis mb-1">
-                <span>Advanced practices before retake</span>
-                <span>{{ retakeStatus.completed_additional_practice || 0 }} / {{ retakeStatus.required_additional_practice || 3 }}</span>
-              </div>
-              <v-progress-linear
-                color="warning"
-                height="8"
-                rounded
-                :model-value="retakeProgress"
-              />
-            </div>
-          </v-card>
-
-          <v-card class="glass-card pa-5 mb-4" variant="flat">
-            <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-3">
-              <h3 class="text-subtitle-1 font-weight-bold">Recent history</h3>
-              <v-chip size="small" color="primary" variant="tonal">{{ currentStageLabel }}</v-chip>
-            </div>
-            <div v-if="currentStageHistoryItems.length" class="history-list">
-              <div v-for="item in currentStageHistoryItems" :key="item.attempt_id" class="history-item">
-                <div>
-                  <div class="font-weight-bold">{{ labelize(item.mode) }} · {{ item.cefr_level }} {{ item.internal_stage }}</div>
-                  <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
+        <div class="reading-grid">
+          <div class="reading-main">
+            <!-- Evidence as progress story -->
+            <div class="evidence-panel glass-card">
+              <div class="evidence-panel__head">
+                <div class="evidence-ring" :style="{ '--p': evidenceProgressPercent }">
+                  <span>{{ evidenceProgressPercent }}%</span>
                 </div>
-                <v-chip size="small" :color="historyChipColor(item)" variant="tonal">
-                  {{ historyStatusLabel(item) }}
-                </v-chip>
-              </div>
-            </div>
-            <v-alert v-else type="info" variant="tonal" density="comfortable">
-              No {{ currentStageLabel }} attempts yet. Start practice to build evidence for this stage.
-            </v-alert>
-            <div v-if="previousStageHistoryItems.length" class="previous-history mt-4 pt-4">
-              <v-btn
-                class="previous-history__toggle"
-                color="primary"
-                size="small"
-                variant="text"
-                :append-icon="showPreviousStageHistory ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                @click="showPreviousStageHistory = !showPreviousStageHistory"
-              >
-                {{ previousStageHistoryLabel }}
-              </v-btn>
-              <div v-if="showPreviousStageHistory" class="history-list history-list--compact mt-2">
-                <div
-                  v-for="item in previousStageHistoryItems"
-                  :key="item.attempt_id"
-                  class="history-item history-item--compact"
-                >
-                  <div>
-                    <div class="font-weight-medium">{{ labelize(item.mode) }} - {{ item.cefr_level }} {{ item.internal_stage }}</div>
-                    <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
-                  </div>
-                  <v-chip size="x-small" :color="historyChipColor(item)" variant="tonal">
-                    {{ historyStatusLabel(item) }}
+                <div class="min-w-0">
+                  <h3 class="evidence-panel__title">Stage evidence</h3>
+                  <p class="evidence-panel__sub mb-0">
+                    {{ currentStageEvidence.mastered ? 'Stage mastered — ready to move on.' : 'Build proof through practice, not XP.' }}
+                  </p>
+                  <v-chip
+                    class="mt-2"
+                    size="small"
+                    :color="currentStageEvidence.mastered ? 'success' : 'warning'"
+                    variant="tonal"
+                  >
+                    {{ currentStageEvidence.mastered ? 'Stage mastered' : 'Still building' }}
                   </v-chip>
                 </div>
               </div>
-            </div>
-          </v-card>
 
-          <v-card class="glass-card pa-5" variant="flat">
-            <h3 class="text-subtitle-1 font-weight-bold mb-3">Evidence summary</h3>
-            <div v-if="summaryChips.length" class="d-flex flex-wrap gap-2">
-              <v-chip v-for="chip in summaryChips" :key="chip.label" size="small" variant="tonal" :color="chip.color">
-                {{ chip.label }}: {{ chip.value }}
-              </v-chip>
+              <div class="evidence-checklist">
+                <div
+                  v-for="metric in evidenceMetrics"
+                  :key="metric.label"
+                  class="evidence-check"
+                  :class="{ 'evidence-check--met': metric.met }"
+                  :title="metric.value"
+                >
+                  <v-icon
+                    size="18"
+                    :color="metric.met ? 'success' : 'warning'"
+                    :icon="metric.met ? 'mdi-check-circle' : 'mdi-circle-outline'"
+                  />
+                  <span class="evidence-check__label">{{ metric.label }}</span>
+                  <span class="evidence-check__value">{{ metric.value }}</span>
+                </div>
+              </div>
+
+              <div v-if="weakestSubskills.length || underSampledSubskills.length" class="evidence-tags">
+                <div v-if="weakestSubskills.length" class="evidence-tags__group">
+                  <span class="evidence-tags__label">Focus</span>
+                  <v-chip
+                    v-for="item in weakestSubskills"
+                    :key="item.name"
+                    color="warning"
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ labelize(item.name) }} {{ formatPercent(item.score) }}
+                  </v-chip>
+                </div>
+                <div v-if="underSampledSubskills.length" class="evidence-tags__group">
+                  <span class="evidence-tags__label">Need more</span>
+                  <v-chip
+                    v-for="item in underSampledSubskills"
+                    :key="item.name"
+                    color="info"
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ labelize(item.name) }} {{ Number(item.total || 0) }}/{{ item.required_questions || 3 }}
+                  </v-chip>
+                </div>
+              </div>
+
+              <v-alert
+                v-if="currentBlockingReasonTexts.length"
+                type="warning"
+                variant="tonal"
+                density="comfortable"
+                class="mt-4"
+              >
+                <div class="font-weight-bold mb-1">To unlock the next step</div>
+                <ul class="reason-list">
+                  <li v-for="reason in currentBlockingReasonTexts" :key="reason">{{ reason }}</li>
+                </ul>
+              </v-alert>
+              <v-alert v-else type="success" variant="tonal" density="comfortable" class="mt-4">
+                This stage has enough evidence for progression.
+              </v-alert>
             </div>
-            <v-alert v-else type="info" variant="tonal" density="comfortable">
-              Evidence will appear after a few generated activities.
-            </v-alert>
-          </v-card>
-        </aside>
+
+            <!-- Path as journey map -->
+            <div class="path-panel glass-card">
+              <div class="path-panel__head">
+                <div>
+                  <h3 class="path-panel__title">Reading journey</h3>
+                  <p class="path-panel__sub mb-0">{{ pathStages.length }} stages · follow the glow</p>
+                </div>
+                <div class="path-legend">
+                  <span><i class="path-dot path-dot--current" /> Current</span>
+                  <span><i class="path-dot path-dot--unlocked" /> Open</span>
+                  <span><i class="path-dot path-dot--locked" /> Locked</span>
+                </div>
+              </div>
+
+              <div class="path-map">
+                <div v-for="level in cefrLevels" :key="level" class="path-row">
+                  <div class="path-row__level">{{ level }}</div>
+                  <div class="path-row__track">
+                    <div
+                      v-for="stage in stagesFor(level)"
+                      :key="`${stage.cefr_level}-${stage.internal_stage}`"
+                      class="stage-node"
+                      :class="`stage-node--${stageStatus(stage)}`"
+                      :title="stageReason(stage) || stageStatusLabel(stage)"
+                    >
+                      <div class="stage-node__orb">
+                        <v-icon :icon="stageIcon(stage)" size="16" />
+                      </div>
+                      <div class="stage-node__meta">
+                        <strong>{{ stage.internal_stage }}</strong>
+                        <small>{{ stageStatusLabel(stage) }}</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="reading-side">
+            <div class="side-stack glass-card">
+              <div class="side-block">
+                <div class="side-block__head">
+                  <h3 class="side-block__title">Readiness</h3>
+                  <v-chip :color="readinessColor" size="small" variant="tonal">{{ readinessStatusLabel }}</v-chip>
+                </div>
+                <p class="side-block__line mb-1">
+                  <span>Target</span>
+                  <strong>{{ readinessTargetText }}</strong>
+                </p>
+                <p class="side-block__hint mb-0">{{ readinessDetailText }}</p>
+                <v-alert
+                  v-if="!overview?.readiness_available"
+                  type="info"
+                  variant="tonal"
+                  density="comfortable"
+                  class="mt-3"
+                >
+                  {{ readinessBlockedText }}
+                </v-alert>
+                <div v-if="retakeStatus?.blocked" class="retake-meter mt-3">
+                  <div class="d-flex justify-space-between text-caption text-medium-emphasis mb-1">
+                    <span>Advanced practices before retake</span>
+                    <span>{{ retakeStatus.completed_additional_practice || 0 }} / {{ retakeStatus.required_additional_practice || 3 }}</span>
+                  </div>
+                  <v-progress-linear color="warning" height="8" rounded :model-value="retakeProgress" />
+                </div>
+              </div>
+
+              <div class="side-block">
+                <div class="side-block__head">
+                  <h3 class="side-block__title">Recent</h3>
+                  <v-chip size="small" color="primary" variant="tonal">{{ currentStageLabel }}</v-chip>
+                </div>
+                <div v-if="currentStageHistoryItems.length" class="history-list">
+                  <div v-for="item in currentStageHistoryItems" :key="item.attempt_id" class="history-item">
+                    <div>
+                      <div class="font-weight-bold">{{ labelize(item.mode) }} · {{ item.cefr_level }} {{ item.internal_stage }}</div>
+                      <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
+                    </div>
+                    <v-chip size="small" :color="historyChipColor(item)" variant="tonal">
+                      {{ historyStatusLabel(item) }}
+                    </v-chip>
+                  </div>
+                </div>
+                <v-alert v-else type="info" variant="tonal" density="comfortable">
+                  No {{ currentStageLabel }} attempts yet. Start practice to build evidence for this stage.
+                </v-alert>
+                <div v-if="previousStageHistoryItems.length" class="previous-history mt-3 pt-3">
+                  <v-btn
+                    class="previous-history__toggle"
+                    color="primary"
+                    size="small"
+                    variant="text"
+                    :append-icon="showPreviousStageHistory ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                    @click="showPreviousStageHistory = !showPreviousStageHistory"
+                  >
+                    {{ previousStageHistoryLabel }}
+                  </v-btn>
+                  <div v-if="showPreviousStageHistory" class="history-list history-list--compact mt-2">
+                    <div
+                      v-for="item in previousStageHistoryItems"
+                      :key="item.attempt_id"
+                      class="history-item history-item--compact"
+                    >
+                      <div>
+                        <div class="font-weight-medium">{{ labelize(item.mode) }} - {{ item.cefr_level }} {{ item.internal_stage }}</div>
+                        <div class="text-caption text-medium-emphasis">{{ historyDateLabel(item) }}</div>
+                      </div>
+                      <v-chip size="x-small" :color="historyChipColor(item)" variant="tonal">
+                        {{ historyStatusLabel(item) }}
+                      </v-chip>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="side-block side-block--last">
+                <h3 class="side-block__title mb-2">Snapshot</h3>
+                <div v-if="summaryChips.length" class="d-flex flex-wrap gap-2">
+                  <v-chip
+                    v-for="chip in summaryChips"
+                    :key="chip.label"
+                    size="small"
+                    variant="tonal"
+                    :color="chip.color"
+                  >
+                    {{ chip.label }}: {{ chip.value }}
+                  </v-chip>
+                </div>
+                <v-alert v-else type="info" variant="tonal" density="comfortable">
+                  Evidence will appear after a few generated activities.
+                </v-alert>
+              </div>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <section v-else-if="viewMode === 'practice' && attempt" class="practice-layout">
@@ -623,6 +661,11 @@ const evidenceMetrics = computed(() => {
     },
   ]
 })
+const evidenceMetCount = computed(() => evidenceMetrics.value.filter((m) => m.met).length)
+const evidenceTotalCount = computed(() => evidenceMetrics.value.length || 1)
+const evidenceProgressPercent = computed(() =>
+  Math.round((evidenceMetCount.value / Math.max(1, evidenceTotalCount.value)) * 100),
+)
 const weakestSubskills = computed(() => {
   const weak = currentStageEvidence.value?.weak_subskills
   if (Array.isArray(weak)) {
@@ -1058,148 +1101,459 @@ function historyDateLabel(item) {
 
 .reading-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 18px;
   align-items: start;
 }
 
-.mastery-grid {
+.reading-overview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 18px;
 }
 
-.readiness-inline {
+/* —— Mission hero —— */
+.mission-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 1.25rem 1.5rem;
+  align-items: center;
+  padding: 1.35rem 1.5rem;
+}
+
+.mission-hero__glow {
+  position: absolute;
+  inset: -40% auto auto -10%;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--v-theme-secondary), 0.22), transparent 68%);
+  pointer-events: none;
+}
+
+.mission-hero__badge {
+  position: relative;
+  z-index: 1;
+  width: 92px;
+  height: 92px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, rgba(var(--v-theme-secondary), 0.28), rgba(var(--v-theme-primary), 0.12));
+  border: 1px solid rgba(var(--v-theme-secondary), 0.35);
+  box-shadow: 0 10px 28px -14px rgba(var(--v-theme-secondary), 0.55);
+}
+
+.mission-hero__cefr {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: rgb(var(--v-theme-secondary));
+}
+
+.mission-hero__stage {
+  margin-top: 4px;
+  font-size: 0.65rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+.mission-hero__copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.mission-hero__kicker {
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.mission-hero__title {
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mission-hero__hint {
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.mission-hero__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  margin-top: 0.85rem;
+}
+
+.mission-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.mission-stat__value {
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.mission-stat__label {
+  font-size: 0.68rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mission-hero__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: stretch;
+}
+
+/* —— Evidence panel —— */
+.evidence-panel {
+  padding: 1.2rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.evidence-panel__head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: rgba(var(--v-theme-on-surface), 0.72);
-  font-size: 0.875rem;
-  direction: ltr;
-  text-align: left;
+  gap: 1rem;
+  margin-bottom: 1rem;
 }
 
-.evidence-list {
+.evidence-ring {
+  --p: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, rgba(var(--v-theme-surface), 0.95) 58%, transparent 59%),
+    conic-gradient(
+      rgb(var(--v-theme-secondary)) calc(var(--p) * 1%),
+      rgba(var(--v-theme-on-surface), 0.12) 0
+    );
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: rgb(var(--v-theme-secondary));
+}
+
+.evidence-panel__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.2rem;
+}
+
+.evidence-panel__sub {
+  font-size: 0.8125rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.evidence-checklist {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 0.5rem;
 }
 
-.evidence-row {
-  min-height: 72px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 8px;
-  padding: 12px;
-  background: rgba(var(--v-theme-surface), 0.42);
-  direction: ltr;
-  text-align: left;
-}
-
-.reason-list {
-  margin: 0;
-  padding-inline-start: 18px;
-}
-
-.readiness-detail {
+.evidence-check {
   display: grid;
-  gap: 10px;
-  direction: ltr;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 0.55rem;
+  row-gap: 0.1rem;
+  align-items: start;
   text-align: left;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  background: rgba(var(--v-theme-surface), 0.35);
+  color: inherit;
 }
 
-.readiness-detail > div {
+.evidence-check--met {
+  border-color: rgba(var(--v-theme-success), 0.28);
+  background: rgba(var(--v-theme-success), 0.06);
+}
+
+.evidence-check .v-icon {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
+}
+
+.evidence-check__label {
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.evidence-check__value {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  line-height: 1.3;
+}
+
+.evidence-tags {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.evidence-tags__group {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.evidence-tags__label {
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+  margin-inline-end: 0.15rem;
+}
+
+/* —— Path journey —— */
+.path-panel {
+  padding: 1.2rem 1.25rem;
+}
+
+.path-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  padding-bottom: 8px;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.path-panel__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+}
+
+.path-panel__sub {
+  font-size: 0.8125rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.path-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.path-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.path-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.path-dot--current {
+  background: rgb(var(--v-theme-secondary));
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-secondary), 0.25);
+}
+
+.path-dot--unlocked {
+  background: rgb(var(--v-theme-primary));
+}
+
+.path-dot--locked {
+  background: rgba(var(--v-theme-on-surface), 0.28);
 }
 
 .path-map {
   display: grid;
-  gap: 12px;
+  gap: 0.85rem;
   direction: ltr;
   text-align: left;
 }
 
 .path-row {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 44px 1fr;
   align-items: center;
-  gap: 12px;
+  gap: 0.65rem;
 }
 
 .path-row__level {
   font-weight: 800;
+  font-size: 0.95rem;
   color: rgb(var(--v-theme-secondary));
 }
 
-.path-row__stages {
+.path-row__track {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  direction: ltr;
+  gap: 0.45rem;
+  position: relative;
 }
 
-.stage-pill {
-  min-height: 96px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  padding: 10px;
+.stage-node {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 4px;
-  background: rgba(var(--v-theme-surface), 0.52);
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 58px;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  background: rgba(var(--v-theme-surface), 0.45);
   direction: ltr;
   text-align: left;
 }
 
-.stage-pill__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.stage-node__orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
-.stage-pill span {
+.stage-node__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.stage-node__meta strong {
+  font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.2;
 }
 
-.stage-pill small {
-  color: rgba(var(--v-theme-on-surface), 0.62);
+.stage-node__meta small {
+  font-size: 0.65rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.stage-pill__reason {
-  margin: 2px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.72);
-  font-size: 0.78rem;
-  line-height: 1.3;
+.stage-node--current {
+  border-color: rgba(var(--v-theme-secondary), 0.7);
+  background: rgba(var(--v-theme-secondary), 0.14);
+  box-shadow: 0 0 0 1px rgba(var(--v-theme-secondary), 0.2), 0 8px 22px -14px rgba(var(--v-theme-secondary), 0.55);
 }
 
-.stage-pill--current {
-  border-color: rgba(var(--v-theme-secondary), 0.75);
-  background: rgba(var(--v-theme-secondary), 0.13);
+.stage-node--current .stage-node__orb {
+  background: rgba(var(--v-theme-secondary), 0.22);
+  color: rgb(var(--v-theme-secondary));
+  animation: stage-pulse 2.2s ease-in-out infinite;
 }
 
-.stage-pill--unlocked {
-  border-color: rgba(var(--v-theme-primary), 0.5);
+.stage-node--unlocked {
+  border-color: rgba(var(--v-theme-primary), 0.4);
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.stage-pill--completed,
-.stage-pill--mastered {
-  border-color: rgba(var(--v-theme-success), 0.55);
-  background: rgba(var(--v-theme-success), 0.1);
+.stage-node--completed,
+.stage-node--mastered {
+  border-color: rgba(var(--v-theme-success), 0.45);
+  background: rgba(var(--v-theme-success), 0.08);
 }
 
-.stage-pill--locked {
-  opacity: 0.62;
+.stage-node--locked {
+  opacity: 0.58;
+}
+
+@keyframes stage-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--v-theme-secondary), 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(var(--v-theme-secondary), 0);
+  }
+}
+
+/* —— Side stack —— */
+.side-stack {
+  padding: 0;
+  overflow: hidden;
+}
+
+.side-block {
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.side-block--last {
+  border-bottom: 0;
+}
+
+.side-block__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.side-block__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.side-block__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.side-block__line span {
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.side-block__hint {
+  font-size: 0.78rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+.reason-list {
+  margin: 0;
+  padding-inline-start: 18px;
 }
 
 .history-list,
@@ -1413,17 +1767,37 @@ function historyDateLabel(item) {
   .reading-side {
     order: 2;
   }
+
+  .mission-hero {
+    grid-template-columns: auto 1fr;
+  }
+
+  .mission-hero__actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 640px) {
-  .mastery-grid,
-  .evidence-list,
-  .path-row__stages {
+  .mission-hero {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .evidence-checklist,
+  .path-row__track {
     grid-template-columns: 1fr;
   }
 
   .path-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-node--current .stage-node__orb {
+    animation: none;
   }
 }
 </style>

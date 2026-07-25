@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     LESSON_VIDEO_WHISPER_LANGUAGE: str = "ar"
     LESSON_VIDEO_FASTER_WHISPER_MODEL: str = ""
     LESSON_VIDEO_GEMINI_TIMEOUT_SECONDS: int = 600
+    # Uploaded lesson-video STT only (not Speaking / placement / student chat).
+    # deepgram (default) | whisper (explicit rollback)
+    VIDEO_TRANSCRIPTION_PROVIDER: str = "deepgram"
+    VIDEO_TRANSCRIPTION_ALLOW_WHISPER_FALLBACK: bool = False
+    VIDEO_TRANSCRIPTION_ALLOW_GEMINI_FALLBACK: bool = False
 
     LLM_PROVIDER: str = "claude"  # claude | ollama (local dev fallback)
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
@@ -256,9 +261,13 @@ class Settings(BaseSettings):
     SPEAKING_LIVE_TRANSCRIPTION_MODEL: str = "gpt-realtime-whisper"
     SPEAKING_LIVE_TRANSCRIPTION_TOKEN_TTL_SECONDS: int = 60
 
-    # Student lesson voice chat STT (Deepgram Nova — not used by Language module)
+    # Deepgram STT — student lesson voice chat AND uploaded lesson-video when
+    # VIDEO_TRANSCRIPTION_PROVIDER=deepgram. Not used by Language Speaking module.
     DEEPGRAM_API_KEY: str = ""
     DEEPGRAM_STT_MODEL: str = "nova-3"
+    DEEPGRAM_STT_LANGUAGE: str = "ar-SY"
+    DEEPGRAM_STT_TIMEOUT_SECONDS: int = 300
+    DEEPGRAM_STT_SMART_FORMAT: bool = True
 
     UPLOAD_DIR: str = ""
     MAX_PDF_BYTES: int = 500 * 1024 * 1024

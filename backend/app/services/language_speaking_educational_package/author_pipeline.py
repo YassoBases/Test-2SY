@@ -353,6 +353,11 @@ async def generate_speaking_learning_package(
     author_meta: dict[str, Any] = {}
     if mode == "claude":
         try:
+            # Claude authoring can take a while. Commit the already prepared
+            # grammar/session state first so we do not hold a database
+            # connection or row lock during the outbound provider wait.
+            await db.commit()
+            locked_row = None
             authored: ClaudeAuthorResult = await author_package_json_claude(constraints)
             raw = authored.text
             provider = AUTHOR_PROVIDER_CLAUDE

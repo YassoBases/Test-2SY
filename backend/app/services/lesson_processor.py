@@ -15,6 +15,7 @@ from app.services.lesson_curated_insights_service import curate_and_cache_lesson
 from app.services.pdf_service import chunk_text, extract_text_from_pdf_async
 from app.services.quiz_service import generate_quiz_questions
 from app.services.voice_service import build_persona_prompt, transcribe_audio, transcribe_lesson_video
+from app.services.video_transcription.errors import VideoTranscriptionError
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,23 @@ async def process_lesson(db: AsyncSession, lesson: Lesson) -> Lesson:
                 page_hint = pages_meta[min(idx, len(pages_meta) - 1)] if pages_meta else {}
                 source_chunks.append((content, {"source": "pdf", "page_hint": page_hint}))
         if video_path:
-            video_transcript = (await transcribe_lesson_video(video_path) or "").strip()
+            video_transcript = ""
+            try:
+                video_transcript = (
+                    await transcribe_lesson_video(
+                        video_path,
+                        subject=getattr(lesson, "subject", None),
+                    )
+                    or ""
+                ).strip()
+            except VideoTranscriptionError as exc:
+                if not pdf_path:
+                    raise ValueError(exc.user_message) from exc
+                logger.warning(
+                    "Video transcription failed for lesson %s category=%s",
+                    lesson.id,
+                    exc.category,
+                )
             if video_transcript:
                 video_text = video_transcript
                 source_texts.append(video_text)

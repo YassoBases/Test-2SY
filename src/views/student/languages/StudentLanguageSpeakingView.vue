@@ -1,12 +1,13 @@
 <template>
   <div class="page-container slide-up-enter-active speaking-runtime">
+    <LanguageModuleTabs />
     <PageHeader
+      compact
       :eyebrow="t('student.languages.speakingJourney.page.eyebrow')"
       eyebrow-icon="mdi-microphone"
       :title="t('student.languages.speakingJourney.page.title')"
       :subtitle="t('student.languages.speakingJourney.page.subtitle')"
     />
-    <LanguageModuleTabs />
 
     <v-alert v-if="pageError" type="error" variant="tonal" class="mb-4 rounded-lg" role="alert">
       <div class="d-flex flex-wrap align-center justify-space-between gap-3">
@@ -50,7 +51,8 @@
     <template v-else>
       <v-tabs
         v-model="tab"
-        color="primary"
+        color="secondary"
+        dir="rtl"
         class="mb-4 speaking-tabs"
         show-arrows
         density="comfortable"
@@ -465,6 +467,7 @@ const {
   error: learningPackageError,
   startLearning,
   packageId: ensuredPackageId,
+  clear: clearLearningPackage,
 } = useSpeakingLearningPackage()
 
 const {
@@ -484,6 +487,7 @@ const {
   markBlock: markLessonBlock,
   completeMiniPrep: completeLessonMiniPrep,
   hydrate: hydrateLesson,
+  clear: clearLessonRuntime,
 } = useSpeakingLessonRuntime()
 
 const {
@@ -726,6 +730,9 @@ async function onStartJourneySession() {
 
 /** Resume active lesson → open indexed package → else start-learning pipeline. */
 async function startLessonPipeline({ forceRestartLesson = false } = {}) {
+  clearLessonRuntime()
+  clearLearningPackage()
+  handleMissingDiscussionPackage()
   const started = await startLearning({
     authorMode: 'auto',
     useCache: true,
@@ -762,6 +769,7 @@ async function onContinueLearning() {
       enterLessonTab()
       return
     }
+    clearLearningPackage()
 
     const knownPackageId = ensuredPackageId.value || null
     if (knownPackageId) {
@@ -1035,6 +1043,8 @@ async function onLessonMiniPrep() {
 
 async function onLessonOpenLatest() {
   try {
+    clearLessonRuntime()
+    clearLearningPackage()
     await startLessonPipeline()
   } catch (e) {
     journeyError.value =
@@ -1046,6 +1056,8 @@ async function onLessonOpenLatest() {
 
 async function onLessonRestart() {
   try {
+    clearLessonRuntime()
+    clearLearningPackage()
     await startLessonPipeline({ forceRestartLesson: true })
   } catch (e) {
     journeyError.value =
@@ -1116,7 +1128,11 @@ async function onDiscussionRetry() {
 .english-island {
   unicode-bidi: isolate;
 }
-.speaking-tabs :deep(.v-btn) {
+.speaking-tabs {
+  direction: rtl;
+}
+.speaking-tabs :deep(.v-btn),
+.speaking-tabs :deep(.v-tab) {
   text-transform: none;
   letter-spacing: 0;
 }

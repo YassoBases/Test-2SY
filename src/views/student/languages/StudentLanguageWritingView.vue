@@ -1,19 +1,20 @@
 <template>
   <div class="page-container slide-up-enter-active">
+    <LanguageModuleTabs />
     <PageHeader
+      compact
       eyebrow="Learn languages"
       eyebrow-icon="mdi-pencil"
       :title="t('student.languages.writingJourney.title')"
       :subtitle="t('student.languages.writingJourney.subtitle')"
     />
-    <LanguageModuleTabs />
 
     <v-alert v-if="pageError" type="error" variant="tonal" class="mb-4 rounded-lg">{{ pageError }}</v-alert>
 
     <LoadingState v-if="pageLoading" variant="cards" :count="2" class="mb-6" />
 
     <template v-else>
-      <v-tabs v-model="tab" color="secondary" class="mb-4">
+      <v-tabs v-model="tab" color="secondary" dir="rtl" class="writing-subtabs mb-4">
         <v-tab value="journey">{{ t('student.languages.writingJourney.tabs.journey') }}</v-tab>
         <v-tab value="practice">{{ t('student.languages.writingJourney.tabs.practice') }}</v-tab>
         <v-tab value="promotion">{{ t('student.languages.writingJourney.tabs.promotion') }}</v-tab>
@@ -21,54 +22,62 @@
 
       <v-window v-model="tab">
         <v-window-item value="journey">
-          <WritingJourneyHero
-            :official-cefr="officialCefr"
-            :active-goal-id="activeGoalId"
-            :learning-stage-label="learningStageLabel"
-            :learning-stage="learningStage"
-            :readiness-score="readinessScore"
-            :readiness-band="readinessBand"
-            :estimated-lessons-remaining="estimatedLessonsRemaining"
-            :primary-blockers="primaryBlockers"
-            :can-start-wpa="canStartWpa"
-            :progress-summary="progressSummary"
-            :next-milestone="nextMilestone"
-          />
-          <SkillStagePathMap
-            skill-label="Writing"
-            skill-key="writing"
-            :current-cefr="officialCefr"
-            :current-stage="learningStage"
-            current-reason="Complete more writing practice attempts."
-            class="mb-4"
-          />
-          <WritingGoalPanel
-            :active-goal-id="activeGoalId"
-            :saving="savingGoal"
-            :goal-saved="goalSaved"
-            @select="onSelectGoal"
-          />
-          <v-card class="how-card pa-6 mb-4" variant="flat">
-            <div class="d-flex align-center gap-2 mb-4">
-              <v-icon color="secondary" size="28">mdi-map-marker-path</v-icon>
-              <h3 class="text-h6 font-weight-bold mb-0">{{ t('student.languages.writingJourney.howItWorks.title') }}</h3>
+          <div class="writing-journey" dir="rtl">
+            <WritingJourneyHero
+              :official-cefr="officialCefr"
+              :active-goal-id="activeGoalId"
+              :learning-stage-label="learningStageLabel"
+              :learning-stage="learningStage"
+              :readiness-score="readinessScore"
+              :readiness-band="readinessBand"
+              :estimated-lessons-remaining="estimatedLessonsRemaining"
+              :primary-blockers="primaryBlockers"
+              :can-start-wpa="canStartWpa"
+              :progress-summary="progressSummary"
+              :next-milestone="nextMilestone"
+            />
+
+            <div class="writing-cta glass-card mb-4">
+              <v-btn
+                color="secondary"
+                variant="flat"
+                size="large"
+                rounded="lg"
+                prepend-icon="mdi-pencil"
+                @click="onStartPractice"
+              >
+                {{ t('student.languages.writingJourney.actions.startPractice') }}
+              </v-btn>
             </div>
-            <ol class="how-list">
-              <li v-for="step in howSteps" :key="step">{{ step }}</li>
-            </ol>
-          </v-card>
-          <v-card class="cta-card pa-6 mt-2 mb-6" variant="flat">
-            <v-btn
-              color="secondary"
-              variant="flat"
-              size="x-large"
-              prepend-icon="mdi-pencil"
-              class="px-8"
-              @click="onStartPractice"
-            >
-              {{ t('student.languages.writingJourney.actions.startPractice') }}
-            </v-btn>
-          </v-card>
+
+            <WritingGoalPanel
+              :active-goal-id="activeGoalId"
+              :saving="savingGoal"
+              :goal-saved="goalSaved"
+              @select="onSelectGoal"
+            />
+
+            <SkillStagePathMap
+              skill-label="Writing"
+              skill-key="writing"
+              :current-cefr="officialCefr"
+              :current-stage="learningStage"
+              current-reason="Complete more writing practice attempts."
+              class="mb-4"
+            />
+
+            <v-card class="how-card pa-5 mb-4" variant="flat">
+              <div class="d-flex align-center gap-2 mb-3">
+                <v-icon color="secondary" size="24">mdi-map-marker-path</v-icon>
+                <h3 class="text-subtitle-1 font-weight-bold mb-0">
+                  {{ t('student.languages.writingJourney.howItWorks.title') }}
+                </h3>
+              </div>
+              <ol class="how-list">
+                <li v-for="step in howSteps" :key="step">{{ step }}</li>
+              </ol>
+            </v-card>
+          </div>
         </v-window-item>
 
         <v-window-item value="practice">
@@ -321,15 +330,33 @@ watch(journeyError, (msg) => {
 .page-container {
   max-width: 1100px;
   margin: 0 auto;
+  padding-bottom: 2rem;
 }
-.how-card,
-.cta-card {
+
+.writing-subtabs {
+  direction: rtl;
+}
+
+.writing-subtabs :deep(.v-tab) {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.writing-cta {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0.95rem 1.15rem;
+}
+
+.how-card {
   border-radius: 20px;
 }
+
 .how-list {
   margin: 0;
   padding-inline-start: 1.25rem;
 }
+
 .how-list li + li {
   margin-top: 0.5rem;
 }
