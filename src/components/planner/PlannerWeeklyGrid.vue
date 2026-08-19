@@ -59,7 +59,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:schedule', 'reorder'])
 
-const { t, locale, tm } = useI18n()
+const { t, locale } = useI18n()
 
 const hours = [16, 17, 18, 19, 20, 21]
 const localBlocks = ref([])
@@ -109,24 +109,10 @@ function scheduleToBlocks(list) {
 watch(
   () => props.schedule,
   (v) => {
-    localBlocks.value = scheduleToBlocks(v.length ? v : demoBlocks())
+    localBlocks.value = scheduleToBlocks(v)
   },
   { immediate: true, deep: true },
 )
-
-function demoBlocks() {
-  const subs = tm('common.planner.demoSubjects')
-  const subjects = Array.isArray(subs) ? subs : ['Math', 'Chemistry', 'Physics', 'Arabic']
-  return subjects.map((subject, i) => ({
-    id: `demo-${i}`,
-    subject,
-    scheduled_at: new Date(Date.now() + (i + 1) * 86400000).toISOString(),
-    duration_minutes: 45,
-    status: 'planned',
-    priority: i === 0 ? 5 : 2,
-    reasoning: i === 0 ? t('common.planner.demoReasonWeak') : t('common.planner.demoReasonReview'),
-  }))
-}
 
 function blocksForDay(dayKey) {
   return localBlocks.value.filter((b) => b.day === dayKey)

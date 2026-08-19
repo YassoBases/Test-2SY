@@ -131,6 +131,15 @@ class PlannerChatResponse(BaseModel):
     schedule: list[ScheduleSlotOut] = Field(default_factory=list)
     reasoning: list[str] = Field(default_factory=list)
     profile: PlannerProfileOut | None = None
+    life_events: list[LifeEventOut] = Field(default_factory=list)
+    chat_history: list[PlannerChatMessageOut] = Field(default_factory=list)
+    insights: list[str] = Field(default_factory=list)
+    weekly_plan: list[WeeklyPlanDayOut] = Field(default_factory=list)
+    subject_analytics: list[SubjectAnalyticsOut] = Field(default_factory=list)
+    recommendations: list[PlannerRecommendationOut] = Field(default_factory=list)
+    streak: StudyStreakOut = Field(default_factory=StudyStreakOut)
+    dashboard_snapshot: PlannerDashboardSnapshotOut = Field(default_factory=PlannerDashboardSnapshotOut)
+    plan_stats: PlannerPlanStatsOut = Field(default_factory=PlannerPlanStatsOut)
 
 
 class CompleteSessionRequest(BaseModel):

@@ -38,7 +38,7 @@
                 <div class="d-flex align-center ga-2">
                   <v-icon :color="typeColor(slot.type)" size="16">{{ typeIcon(slot.type) }}</v-icon>
                   <span :class="{ 'text-decoration-line-through text-disabled': slot.status === 'missed' }">
-                    {{ slot.title }}
+                    {{ displayTitle(slot) }}
                   </span>
                 </div>
               </td>
@@ -103,7 +103,7 @@ const props = defineProps({
 
 const emit = defineEmits(['complete', 'miss', 'undo'])
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const jsDay = new Date().getDay()
 const todayIndex = jsDay === 0 ? 6 : jsDay - 1
@@ -161,6 +161,34 @@ function slotRowClass(slot) {
   if (slot.status === 'completed') return 'week-row-completed'
   if (slot.status === 'missed') return 'week-row-missed'
   return ''
+}
+
+function displayTitle(slot) {
+  const title = String(slot?.title || '').trim()
+  const subject = String(slot?.subject || '').trim()
+  if (!title || locale.value !== 'en') return title
+
+  const exactMap = {
+    'فطور': 'Breakfast',
+    'المدرسة': 'School',
+    'غداء وراحة قصيرة': 'Lunch & short break',
+    'غداء': 'Lunch',
+    'راحة أو مشي خفيف': 'Rest or light walk',
+    'عشاء': 'Dinner',
+    'وقت العائلة وتجهيز الغد': 'Family time & prep for tomorrow',
+    'نوم': 'Sleep',
+    'مراجعة عامة': 'General review',
+    'موعد': 'Appointment',
+    'بعد وصول الطالب إلى البيت': 'After getting home',
+  }
+  if (exactMap[title]) return exactMap[title]
+
+  if (title.startsWith('مراجعة مركزة ')) return `Focused review ${subject || title.slice('مراجعة مركزة '.length)}`
+  if (title.startsWith('مراجعة ')) return `Review ${subject || title.slice('مراجعة '.length)}`
+  if (title.startsWith('حل واجبات ')) return `Homework ${subject || title.slice('حل واجبات '.length)}`
+  if (title.startsWith('تدريب ')) return `Practice ${subject || title.slice('تدريب '.length)}`
+
+  return title
 }
 </script>
 

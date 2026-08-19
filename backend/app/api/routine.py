@@ -1,7 +1,7 @@
 """Daily routine API — حياتي."""
 import json
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -247,6 +247,7 @@ async def confirm_summary(
     body: ConfirmSummaryRequest,
     db: AsyncSession = Depends(get_db),
     student: User = Depends(require_student_actor()),
+    accept_language: str = Header("ar", alias="Accept-Language"),
 ):
     """تأكيد بطاقة مراجعة المعلومات (مع تعديلات الأيام إن وُجدت) وبناء الجدول مباشرة."""
     profile = await get_or_create_routine_profile(db, student.id)
@@ -265,7 +266,8 @@ async def confirm_summary(
     await db.flush()
 
     weak = await get_weak_subjects(db, student.id)
-    result = await finalize_routine_schedule(db, profile, day_data, weak)
+    lang = "en" if accept_language.startswith("en") else "ar"
+    result = await finalize_routine_schedule(db, profile, day_data, weak, lang=lang)
     await db.commit()
 
     return {
@@ -312,6 +314,7 @@ async def get_week(
 async def regenerate_schedule(
     db: AsyncSession = Depends(get_db),
     student: User = Depends(require_student_actor()),
+    accept_language: str = Header("ar", alias="Accept-Language"),
 ):
     """إعادة بناء البرنامج الأسبوعي باستخدام بيانات اليوم المحفوظة."""
     profile = await get_or_create_routine_profile(db, student.id)
@@ -321,7 +324,8 @@ async def regenerate_schedule(
 
     had_arabic = week_schedule_contains_arabic(days)
     weak = await get_weak_subjects(db, student.id)
-    result = await regenerate_student_routine(db, profile, weak)
+    lang = "en" if accept_language.startswith("en") else "ar"
+    result = await regenerate_student_routine(db, profile, weak, lang=lang)
     await db.commit()
 
     if not result.get("regenerated"):
@@ -479,11 +483,13 @@ async def review_schedule(
 async def renew_week(
     db: AsyncSession = Depends(get_db),
     student: User = Depends(require_student_actor()),
+    accept_language: str = Header("ar", alias="Accept-Language"),
 ):
     """تجديد البرنامج الأسبوعي — يستخدم بيانات الأسبوع المحفوظة + الامتحانات + المواد الضعيفة."""
     profile = await get_or_create_routine_profile(db, student.id)
     weak = await get_weak_subjects(db, student.id)
-    result = await regenerate_student_routine(db, profile, weak)
+    lang = "en" if accept_language.startswith("en") else "ar"
+    result = await regenerate_student_routine(db, profile, weak, lang=lang)
 
     if result.get("regenerated"):
         await db.commit()

@@ -132,8 +132,8 @@ async def get_planner_state(db: AsyncSession, student_id: int) -> dict:
     ev_result = await db.execute(
         select(PlannerLifeEvent)
         .where(PlannerLifeEvent.student_id == student_id)
-        .order_by(PlannerLifeEvent.created_at.desc())
-        .limit(20)
+        .order_by(PlannerLifeEvent.event_date.asc().nullslast(), PlannerLifeEvent.created_at.desc())
+        .limit(80)
     )
     life_events = ev_result.scalars().all()
 

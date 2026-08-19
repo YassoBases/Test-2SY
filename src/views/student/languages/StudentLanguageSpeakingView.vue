@@ -573,6 +573,7 @@ watch(discussionLastAudio, (audio) => {
 
 const pageLoading = ref(true)
 const alexShellMounted = ref(tab.value === 'alex')
+const ensuringLessonTab = ref(false)
 
 const pageError = computed(() => journeyError.value || '')
 
@@ -661,7 +662,7 @@ watch(tab, (value) => {
   // Hydrated/opened lesson is authoritative until an explicit refresh
   // (open latest, restart, retry). Do not overwrite it on tab enter.
   if (value === 'lesson' && !lessonPackage.value) {
-    loadActiveLesson().catch(() => {})
+    ensureLessonTabContent().catch(() => {})
   }
   if (value === 'discussion') {
     ensureDiscussionSession().catch(() => {})
@@ -678,6 +679,9 @@ onMounted(async () => {
     await loadJourney({ force: true })
     if (tab.value === 'assessment') {
       await loadPromoStatus().catch(() => {})
+    }
+    if (tab.value === 'lesson') {
+      await ensureLessonTabContent().catch(() => {})
     }
     // Dev skip-placement lands here with ?autostart=1 — start today's case without blocking the skip modal.
     if (String(route.query.autostart || '') === '1') {
@@ -697,6 +701,35 @@ onMounted(async () => {
 function enterLessonTab() {
   tab.value = 'lesson'
   focusSpeakingTarget('[data-spk-focus="lesson"], [data-spk-focus="home"]')
+}
+
+async function ensureLessonTabContent() {
+  if (
+    ensuringLessonTab.value ||
+    lessonPackage.value ||
+    lessonLoading.value ||
+    learningStarting.value
+  ) {
+    return null
+  }
+
+  ensuringLessonTab.value = true
+  try {
+    const active = await loadActiveLesson()
+    if (active?.package && active?.state?.package_id) {
+      return active
+    }
+    return await startLessonPipeline()
+  } catch (e) {
+    if (learningPackageError.value || lessonError.value) {
+      journeyError.value = learningPackageError.value || lessonError.value
+    } else if (!handleLanguageApiError(e, access.value)) {
+      journeyError.value = getErrorMessage(e, t('student.languages.speakingJourney.runtime.errors.generic'))
+    }
+    return null
+  } finally {
+    ensuringLessonTab.value = false
+  }
 }
 
 function isNoLearningPackageError(err) {

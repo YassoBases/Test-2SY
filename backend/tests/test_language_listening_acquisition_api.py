@@ -9,6 +9,7 @@ from app.schemas.language_listening_acquisition import (
     ListeningNextResponseOut,
 )
 from app.schemas.language_listening_bundles import LessonExperienceBundleOut
+from app.services.language_listening_acquisition import engine as acquisition_engine
 
 
 class _Db:
@@ -28,6 +29,42 @@ def _bundle() -> LessonExperienceBundleOut:
         lesson_title="Owned Listening Lesson",
         lesson_goal={"id": "grammar", "label": "Practice the current grammar in listening."},
     )
+
+
+@pytest.mark.asyncio
+async def test_acquisition_waits_when_reserved_lesson_audio_is_not_ready(monkeypatch) -> None:
+    async def fake_default_language(_db):
+        return SimpleNamespace(id=1)
+
+    async def fake_level(_db, *, student_id: int, language_id: int):
+        return "B1"
+
+    async def fake_next(_db, *, student_id: int):
+        bundle = _bundle().model_dump(mode="json")
+        bundle["playback"] = {"audio_available": False, "audio_url": None, "questions": []}
+        return bundle, True
+
+    async def fake_reserved_id(_db, *, student_id: int, language_id: int):
+        return 3175
+
+    monkeypatch.setattr(acquisition_engine, "get_default_language", fake_default_language)
+    monkeypatch.setattr(acquisition_engine, "_adaptive_level", fake_level)
+    monkeypatch.setattr(acquisition_engine, "next_listening", fake_next)
+    monkeypatch.setattr(
+        acquisition_engine.listening_session_reservation_service,
+        "load_reserved_content_id",
+        fake_reserved_id,
+    )
+
+    response, schedule_prefill = await acquisition_engine.acquire_next_listening(
+        _Db(), student_id=109, attempt=1
+    )
+
+    assert response.outcome == "acquisition_pending"
+    assert response.acquisition is not None
+    assert response.acquisition.status == "generating"
+    assert response.acquisition.generation_in_progress is True
+    assert schedule_prefill is True
 
 
 @pytest.mark.asyncio

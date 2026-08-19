@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { getSession, clearSession } from '../utils/session.js'
-import { t } from '../i18n/index.js'
+import { t, readStoredLocale } from '../i18n/index.js'
 
 const AUTH_PATHS = ['/auth/login', '/auth/register']
 
@@ -38,6 +38,7 @@ api.interceptors.request.use((config) => {
   if (session?.accessToken) {
     config.headers.Authorization = `Bearer ${session.accessToken}`
   }
+  config.headers['Accept-Language'] = readStoredLocale() || 'ar'
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     delete config.headers['Content-Type']
   }

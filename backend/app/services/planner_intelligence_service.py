@@ -311,7 +311,9 @@ async def get_enriched_planner_state(
     slot_rows = list(slot_result.scalars().all())
 
     ev_result = await db.execute(
-        select(PlannerLifeEvent).where(PlannerLifeEvent.student_id == student_id)
+        select(PlannerLifeEvent)
+        .where(PlannerLifeEvent.student_id == student_id)
+        .order_by(PlannerLifeEvent.event_date.asc().nullslast(), PlannerLifeEvent.created_at.desc())
     )
     life_events = list(ev_result.scalars().all())
 

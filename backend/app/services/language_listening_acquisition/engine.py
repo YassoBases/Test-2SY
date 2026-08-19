@@ -40,6 +40,35 @@ async def acquire_next_listening(
 
     if lesson:
         bundle = LessonExperienceBundleOut.model_validate(lesson)
+        playback = bundle.playback
+        if not playback.audio_available or not playback.audio_url:
+            reserved_id = await listening_session_reservation_service.load_reserved_content_id(
+                db, student_id=student_id, language_id=language.id
+            )
+            acquisition = ListeningAcquisitionStatusOut(
+                status="generating",
+                lesson_ready=False,
+                waiting=True,
+                generation_in_progress=True,
+                temporary_failure=False,
+                retry_after=None,
+                queue_position=1,
+                poll_after=3,
+                reservation_id=str(reserved_id) if reserved_id else None,
+                message_key=f"{MSG_PREFIX}.preparing",
+                attempt=max(1, attempt),
+                acquisition_id=str(uuid.uuid4()),
+            )
+            logger.info(
+                "Listening acquisition waiting for audio student=%s lesson_id=%s attempt=%s",
+                student_id,
+                bundle.lesson_id,
+                attempt,
+            )
+            return (
+                ListeningNextResponseOut(outcome="acquisition_pending", acquisition=acquisition),
+                True,
+            )
         return (
             ListeningNextResponseOut(outcome="lesson_ready", bundle=bundle),
             schedule_prefill,

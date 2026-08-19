@@ -54,6 +54,7 @@ from app.models.language.analytics import LanguageAnalytics
 from app.models.language.content import LanguageContentItem
 from app.models.language.enums import LanguageLevel, LanguageOnboardingStep, LanguageSkill
 from app.models.language.exam import LanguageExamSession
+from app.models.language.placement import LanguagePlacementQuestion, LanguagePlacementSection
 from app.models.language.profile import LanguageStudentProfile
 from app.models.profile import StudentProfile
 from app.models.user import User
@@ -377,6 +378,172 @@ def _is_valid_mcq_item(item: dict) -> bool:
 
 def _is_valid_gap_fill_item(item: dict) -> bool:
     return gap_fill_content_error(item) is None
+
+
+_STATIC_PLACEMENT_LISTENING_FALLBACKS: tuple[dict, ...] = (
+    {
+        "level": "A1",
+        "audio_url": "/language-assets/en/placement/listening/q1.mp3",
+        "audio_text": "Open your books.",
+        "question": "What should you do?",
+        "options": ["Close your books", "Open your books", "Stand up", "Go home"],
+        "correct_index": 1,
+    },
+    {
+        "level": "A2",
+        "audio_url": "/language-assets/en/placement/listening/q3.mp3",
+        "audio_text": "Turn left at the corner.",
+        "question": "What direction?",
+        "options": ["Left", "Right", "Straight", "Back"],
+        "correct_index": 0,
+    },
+    {
+        "level": "B1",
+        "audio_url": "/language-assets/en/placement/listening/q4.mp3",
+        "audio_text": "She has been studying for two hours.",
+        "question": "When did she start?",
+        "options": ["Two hours ago", "In two hours", "Yesterday", "Next week"],
+        "correct_index": 0,
+    },
+    {
+        "level": "B2",
+        "audio_url": "/language-assets/en/placement/listening/q6.mp3",
+        "audio_text": "He apologized for the inconvenience.",
+        "question": "Why?",
+        "options": ["He is proud", "He is sorry", "He is bored", "He is hungry"],
+        "correct_index": 1,
+    },
+    {
+        "level": "C1",
+        "audio_url": "/language-assets/en/placement/listening/q8.mp3",
+        "audio_text": "Her argument was compelling.",
+        "question": "How was it?",
+        "options": ["Weak", "Convincing", "Funny", "Short"],
+        "correct_index": 1,
+    },
+    {
+        "level": "C2",
+        "audio_url": "/language-assets/en/placement/listening/q10.mp3",
+        "audio_text": "The outcome was unprecedented.",
+        "question": "What does it mean?",
+        "options": ["Never happened before", "Very common", "Very small", "Very fast"],
+        "correct_index": 0,
+    },
+)
+
+
+def _static_placement_listening_pool(levels: list[str]) -> dict[str, dict]:
+    """Source-controlled placement-listening fallback for environments with an empty DB bank.
+
+    These items mirror the legacy placement seed rows and their checked-in audio assets, so the
+    browser still receives real audio without calling AI/TTS or exposing a transcript.
+    """
+
+    wanted = set(levels)
+    pool: dict[str, dict] = {}
+    for raw in _STATIC_PLACEMENT_LISTENING_FALLBACKS:
+        level = str(raw.get("level") or "")
+        if level not in wanted or not _is_valid_mcq_item(raw) or not _is_usable_audio_url(raw.get("audio_url")):
+            continue
+        item = dict(raw)
+        item.update(
+            {
+                "skill": "listening",
+                "question_type": "mcq",
+                "source": "static_placement_listening_fallback",
+                "situation": "",
+                "passage": "",
+                "bank_item_id": None,
+                "audio_meta": {"public_url": item["audio_url"]},
+                "body": {
+                    "audio_transcript": item["audio_text"],
+                    "audio_url": item["audio_url"],
+                },
+            }
+        )
+        pool[level] = item
+    return pool
+
+
+def _legacy_placement_question_to_exam_item(
+    row: LanguagePlacementQuestion,
+    section: LanguagePlacementSection,
+) -> dict | None:
+    if section.skill != LanguageSkill.listening:
+        return None
+    prompt = row.prompt_json or {}
+    answer_key = row.answer_key_json or {}
+    level = str(row.level_hint or "").strip().upper()
+    question = str(prompt.get("stem") or prompt.get("question") or "").strip()
+    options = list(prompt.get("choices") or prompt.get("options") or [])
+    correct_index = answer_key.get("correct_index")
+    if level not in ALL_CEFR_LEVELS or not question:
+        return None
+    if not isinstance(correct_index, int) or isinstance(correct_index, bool):
+        return None
+    item = {
+        "level": level,
+        "skill": section.skill.value,
+        "question_type": "mcq",
+        "source": "legacy_placement_questions_fallback",
+        "passage": str(prompt.get("passage") or ""),
+        "situation": "",
+        "question": question,
+        "options": options,
+        "correct_index": correct_index,
+        "bank_item_id": None,
+        "body": dict(prompt),
+    }
+    if not _is_valid_mcq_item(item):
+        return None
+    if section.skill == LanguageSkill.listening:
+        audio_url = str(row.media_url or prompt.get("audio_url") or "").strip()
+        audio_text = str(prompt.get("audio_transcript") or "").strip()
+        if not _is_usable_audio_url(audio_url) or not audio_text:
+            return None
+        item.update(
+            {
+                "audio_url": audio_url,
+                "audio_text": audio_text,
+                "audio_meta": {"public_url": audio_url},
+                "body": {**item["body"], "audio_url": audio_url},
+            }
+        )
+    return item
+
+
+async def _legacy_placement_mcq_pool(
+    db: AsyncSession,
+    *,
+    language_id: int,
+    skill: LanguageSkill,
+    levels: list[str],
+) -> dict[str, dict]:
+    """Compatibility fallback for databases that still have legacy placement rows only."""
+
+    wanted = set(levels)
+    if not wanted:
+        return {}
+    rows = (
+        await db.execute(
+            select(LanguagePlacementQuestion, LanguagePlacementSection)
+            .join(LanguagePlacementSection, LanguagePlacementSection.id == LanguagePlacementQuestion.section_id)
+            .where(
+                LanguagePlacementSection.language_id == language_id,
+                LanguagePlacementSection.skill == skill,
+            )
+            .order_by(LanguagePlacementQuestion.sort_order.asc(), LanguagePlacementQuestion.id.asc())
+        )
+    ).all()
+    pool: dict[str, dict] = {}
+    for row, section in rows:
+        item = _legacy_placement_question_to_exam_item(row, section)
+        if not item:
+            continue
+        level = str(item.get("level") or "")
+        if level in wanted and level not in pool:
+            pool[level] = item
+    return pool
 
 
 # Phase 6: task bundles. A bundle is still one adaptive-pool item/passage (the
@@ -950,6 +1117,15 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
                 skill=LanguageSkill.listening,
                 levels=l_missing,
             )
+            for fallback_level, item in (
+                await _legacy_placement_mcq_pool(
+                    db,
+                    language_id=language_id,
+                    skill=LanguageSkill.listening,
+                    levels=[lv for lv in ALL_CEFR_LEVELS if lv not in l_pool],
+                )
+            ).items():
+                l_pool.setdefault(fallback_level, item)
             await db.rollback()
 
         # External-only preparation.  The database session above is closed before reaching here.
@@ -962,6 +1138,11 @@ async def _prepare_content(session_id: str, language_id: int, level: str) -> Non
             max_steps=READING_ADAPTIVE_MAX_STEPS,
         )
         grammar_vocab_section = _new_adaptive_section(g_pool, start_level) if needs_grammar_vocab else None
+
+        for fallback_level, item in _static_placement_listening_pool(
+            [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
+        ).items():
+            l_pool.setdefault(fallback_level, item)
 
         missing = [lv for lv in ALL_CEFR_LEVELS if lv not in l_pool]
         try:
@@ -3252,11 +3433,18 @@ def _maybe_retrigger_prep(sess: LanguageExamSession, language_id: int, backgroun
         return False
     if state.get(section, {}).get("ready", True):
         return False
+    unavailable_retry = (
+        state.get("content_prep_status") == "content_unavailable"
+        or state.get(section, {}).get("evidence_status") == "content_unavailable"
+    )
     last = state.get("content_prep_at")
     now = datetime.now(timezone.utc)
     if last:
         try:
-            if (now - datetime.fromisoformat(last)).total_seconds() < _PREP_RETRY_AFTER_S:
+            if (
+                not unavailable_retry
+                and (now - datetime.fromisoformat(last)).total_seconds() < _PREP_RETRY_AFTER_S
+            ):
                 return False
         except (ValueError, TypeError):
             pass

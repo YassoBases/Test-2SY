@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.routine import RoutineSlot, StudentRoutineProfile
@@ -9,6 +10,49 @@ from app.models.routine import RoutineSlot, StudentRoutineProfile
 logger = logging.getLogger(__name__)
 
 ARABIC_TEXT_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]")
+
+# ─── Routine slot title translations ──
+_SLOT_TITLES = {
+    "ar": {
+        "breakfast": "فطور",
+        "school": "المدرسة",
+        "lunch_short": "غداء وراحة قصيرة",
+        "lunch": "غداء",
+        "review": "مراجعة {subject}",
+        "homework": "حل واجبات {subject}",
+        "review_focused": "مراجعة مركزة {subject}",
+        "practice": "تدريب {subject}",
+        "rest_walk": "راحة أو مشي خفيف",
+        "dinner": "عشاء",
+        "family_time": "وقت العائلة وتجهيز الغد",
+        "sleep": "نوم",
+        "general_review": "مراجعة عامة",
+        "appointment": "موعد",
+    },
+    "en": {
+        "breakfast": "Breakfast",
+        "school": "School",
+        "lunch_short": "Lunch & short break",
+        "lunch": "Lunch",
+        "review": "Review {subject}",
+        "homework": "Homework {subject}",
+        "review_focused": "Focused review {subject}",
+        "practice": "Practice {subject}",
+        "rest_walk": "Rest or light walk",
+        "dinner": "Dinner",
+        "family_time": "Family time & prep for tomorrow",
+        "sleep": "Sleep",
+        "general_review": "General review",
+        "appointment": "Appointment",
+    },
+}
+
+
+def _slot_title(key: str, lang: str = "ar", **kwargs) -> str:
+    titles = _SLOT_TITLES.get(lang, _SLOT_TITLES["ar"])
+    template = titles.get(key, _SLOT_TITLES["ar"].get(key, key))
+    return template.format(**kwargs) if kwargs else template
+
 
 # ─── LLM token-usage tracking (حياتي) — مجموع تراكمي لكل الاستدعاءات ──
 _llm_usage_totals = {"input": 0, "output": 0, "total": 0, "calls": 0}
@@ -351,10 +395,10 @@ async def _get_upcoming_exams(db: AsyncSession, student_id: int) -> list:
         return []
 
 
-async def finalize_routine_schedule(db: AsyncSession, profile, day_data: dict, weak_subjects: list) -> dict:
+async def finalize_routine_schedule(db: AsyncSession, profile, day_data: dict, weak_subjects: list, lang: str = "ar") -> dict:
     """يبني الجدول الأسبوعي عبر Gemini، يحفظه في قاعدة البيانات فوراً، ويجهز رسالة شرح القرارات.
     تُستخدم من مسار الدردشة (عند كتابة «نعم») ومن بطاقة مراجعة المعلومات قبل البناء."""
-    schedule = await _generate_schedule_claude(db, profile, day_data, weak_subjects)
+    schedule = await _generate_fast_routine_schedule(db, profile, day_data, weak_subjects, lang=lang)
 
     if not schedule:
         profile.chat_stage = "confirm"
@@ -889,6 +933,237 @@ async def _generate_schedule_claude(db: AsyncSession, profile, day_data: dict, w
     return None
 
 
+def _time_to_minutes(value: str | None, default: str) -> int:
+    raw = (value or default or "").strip()
+    try:
+        h, m = raw.split(":", 1)
+        return max(0, min(23 * 60 + 59, int(h) * 60 + int(m[:2])))
+    except Exception:
+        h, m = default.split(":", 1)
+        return int(h) * 60 + int(m)
+
+
+def _minutes_to_time(value: int) -> str:
+    value = max(0, min(23 * 60 + 59, value))
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def _slot(start: int, end: int, activity_type: str, title: str, subject: str | None = None, fixed: bool = False) -> dict:
+    return {
+        "start": _minutes_to_time(start),
+        "end": _minutes_to_time(end),
+        "type": activity_type,
+        "title": title,
+        "subject": subject,
+        "fixed": fixed,
+    }
+
+
+def _normalize_local_day_slots(slots: list[dict]) -> list[dict]:
+    normalized = []
+    cursor = 0
+    for raw in sorted(slots, key=lambda s: s.get("_start", _time_to_minutes(s.get("start"), "00:00"))):
+        start = raw.get("_start", _time_to_minutes(raw.get("start"), "00:00"))
+        end = raw.get("_end", _time_to_minutes(raw.get("end"), "00:00"))
+        if end <= start:
+            continue
+        if start < cursor:
+            duration = end - start
+            start = cursor + 5
+            end = start + duration
+        if end > 23 * 60 + 59 or end - start < 10:
+            continue
+        normalized.append(_slot(start, end, raw.get("type", "other"), raw.get("title", ""), raw.get("subject"), raw.get("fixed", False)))
+        cursor = end
+    return normalized
+
+
+def _activity_details(profile) -> dict:
+    try:
+        activities = json.loads(profile.activities_json or "{}")
+        details = activities.get("details", {})
+        return details if isinstance(details, dict) else {}
+    except Exception:
+        return {}
+
+
+def _fixed_activity_slots_for_day(profile, day_num: int) -> list[dict]:
+    out = []
+    for name, info in _activity_details(profile).items():
+        if not isinstance(info, dict):
+            continue
+        try:
+            days = [int(d) for d in info.get("days", [])]
+        except Exception:
+            days = []
+        if day_num not in days:
+            continue
+        start = _time_to_minutes(info.get("start") or info.get("time"), "17:00")
+        end = _time_to_minutes(info.get("end"), _minutes_to_time(start + 60))
+        if end <= start:
+            end = start + 60
+        activity_type = "private_lesson" if name == "دروس خاصة" else "sport" if name == "رياضة" else "other"
+        title = info.get("subject") if activity_type == "private_lesson" and info.get("subject") else name
+        out.append({
+            "_start": start,
+            "_end": end,
+            "type": activity_type,
+            "title": title,
+            "subject": info.get("subject") or None,
+            "fixed": True,
+        })
+    return out
+
+
+def _time_to_minutes_contextual(value: str, context: str) -> int:
+    minutes = _time_to_minutes(value, "00:00")
+    hour = minutes // 60
+    lowered = context.lower()
+    if hour < 12 and any(marker in lowered for marker in ("مساء", "عصراً", "عصرا", "المغرب", "العشاء", "بالليل")):
+        minutes += 12 * 60
+    elif hour <= 6 and any(marker in lowered for marker in ("ظهراً", "ظهرا", "بعد الظهر", "العصر")):
+        minutes += 12 * 60
+    return min(minutes, 23 * 60 + 59)
+
+
+def _classify_day_data_context(context: str) -> tuple[str, str, str | None]:
+    text = context.strip(" ،.؛-")
+    if any(k in text for k in ("نوم", "نام")):
+        return "sleep", "نوم", None
+    if any(k in text for k in ("دكتور", "طبيب", "موعد")):
+        return "other", "موعد", None
+    if any(k in text for k in ("جدت", "العائلة", "الأهل", "اهلي", "أهلي", "رفيق", "صديق", "زيارة")):
+        return "family", text or "وقت عائلي", None
+    if any(k in text for k in ("درس خصوصي", "خصوصي")):
+        return "private_lesson", text or "درس خصوصي", None
+    if any(k in text for k in ("مباراة", "رياضة", "لعب", "تمرين")):
+        return "sport", text or "رياضة", None
+    if "صلاة" in text:
+        return "prayer", text or "صلاة", None
+    if any(k in text for k in ("دراسة", "درست", "درس", "ذاكرت", "مراجعة")):
+        return "study", text or "دراسة", None
+    if any(k in text for k in ("فطور", "غداء", "عشاء", "أكل", "اكل")):
+        return "meal", text or "وجبة", None
+    return "other", text or "نشاط محفوظ من جدولك", None
+
+
+def _slots_from_day_text(text: str | None) -> list[dict]:
+    if not text:
+        return []
+    slots = []
+    range_re = re.compile(
+        r"([^،.؛\n]{0,55}?)(\d{1,2}:\d{2})\s*(?:-|لغاية|حتى|إلى|الى)\s*(\d{1,2}:\d{2})([^،.؛\n]{0,55})"
+    )
+    occupied_spans: list[tuple[int, int]] = []
+    for match in range_re.finditer(text):
+        context = f"{match.group(1)} {match.group(4)}"
+        activity_type, title, subject = _classify_day_data_context(context)
+        if activity_type == "sleep":
+            continue
+        start = _time_to_minutes_contextual(match.group(2), context)
+        end = _time_to_minutes_contextual(match.group(3), context)
+        if end <= start:
+            continue
+        slots.append({"_start": start, "_end": end, "type": activity_type, "title": title, "subject": subject, "fixed": True})
+        occupied_spans.append(match.span())
+
+    point_re = re.compile(r"([^،.؛\n]{0,35}?)(?:الساعة\s*)?(\d{1,2}:\d{2})([^،.؛\n]{0,55})")
+    for match in point_re.finditer(text):
+        if any(start <= match.start() < end for start, end in occupied_spans):
+            continue
+        context = f"{match.group(1)} {match.group(3)}"
+        activity_type, title, subject = _classify_day_data_context(context)
+        if activity_type == "sleep" or any(k in context for k in ("صحيان", "وصول البيت", "وصل البيت")):
+            continue
+        start = _time_to_minutes_contextual(match.group(2), context)
+        duration = 60 if activity_type in ("other", "family", "sport", "private_lesson") else 45
+        slots.append({"_start": start, "_end": start + duration, "type": activity_type, "title": title, "subject": subject, "fixed": True})
+    return slots
+
+
+async def _routine_exam_subjects(db: AsyncSession, student_id: int) -> list[str]:
+    from app.models.planner import LifeEventType, PlannerLifeEvent
+
+    now = datetime.now(timezone.utc) - timedelta(days=1)
+    cutoff = datetime.now(timezone.utc) + timedelta(days=45)
+    try:
+        result = await db.execute(
+            select(PlannerLifeEvent).where(
+                and_(
+                    PlannerLifeEvent.student_id == student_id,
+                    PlannerLifeEvent.event_type == LifeEventType.exam,
+                    PlannerLifeEvent.event_date >= now,
+                    PlannerLifeEvent.event_date <= cutoff,
+                )
+            ).order_by(PlannerLifeEvent.event_date, PlannerLifeEvent.created_at)
+        )
+        subjects = []
+        for event in result.scalars().all():
+            subject = (event.subject or event.title or "").replace("امتحان", "").strip()
+            if subject and subject not in subjects:
+                subjects.append(subject)
+        return subjects[:6]
+    except Exception:
+        return []
+
+
+async def _generate_fast_routine_schedule(
+    db: AsyncSession,
+    profile,
+    day_data: dict,
+    weak_subjects: list | None,
+    lang: str = "ar",
+) -> dict:
+    """Build a deterministic weekly routine so student uploads never depend on slow LLM JSON."""
+    school_days = []
+    try:
+        school_days = [int(d) for d in json.loads(profile.school_days_json or "[0,1,2,3,4]")]
+    except Exception:
+        school_days = [0, 1, 2, 3, 4]
+
+    exam_subjects = await _routine_exam_subjects(db, profile.student_id)
+    focus_subjects = [s for s in (weak_subjects or []) if s] + [s for s in exam_subjects if s]
+    if not focus_subjects:
+        focus_subjects = [_slot_title("general_review", lang)]
+
+    wake = _time_to_minutes(profile.wake_time, "06:30")
+    sleep = _time_to_minutes(profile.sleep_time, "22:00")
+    if sleep <= wake + 10 * 60:
+        sleep = 22 * 60
+    school_start = _time_to_minutes(profile.school_start, "07:30")
+    school_end = _time_to_minutes(profile.school_end, "13:00")
+
+    days: dict[str, list[dict]] = {}
+    for day_num in range(7):
+        is_school = day_num in school_days
+        subject_a = focus_subjects[day_num % len(focus_subjects)]
+        subject_b = focus_subjects[(day_num + 1) % len(focus_subjects)]
+        slots: list[dict] = _slots_from_day_text(day_data.get(str(day_num)))
+
+        slots.append({"_start": wake, "_end": min(wake + 30, school_start - 10 if is_school else wake + 45), "type": "meal", "title": _slot_title("breakfast", lang), "subject": None, "fixed": True})
+        if is_school:
+            slots.append({"_start": school_start, "_end": school_end, "type": "school", "title": _slot_title("school", lang), "subject": None, "fixed": True})
+            slots.append({"_start": school_end + 15, "_end": school_end + 55, "type": "meal", "title": _slot_title("lunch_short", lang), "subject": None, "fixed": False})
+            study_start = school_end + 75
+            slots.append({"_start": study_start, "_end": study_start + 55, "type": "study", "title": _slot_title("review", lang, subject=subject_a), "subject": subject_a, "fixed": False})
+            slots.append({"_start": study_start + 70, "_end": study_start + 115, "type": "study", "title": _slot_title("homework", lang, subject=subject_b), "subject": subject_b, "fixed": False})
+        else:
+            study_start = wake + 90
+            slots.append({"_start": study_start, "_end": study_start + 75, "type": "study", "title": _slot_title("review_focused", lang, subject=subject_a), "subject": subject_a, "fixed": False})
+            slots.append({"_start": study_start + 95, "_end": study_start + 155, "type": "study", "title": _slot_title("practice", lang, subject=subject_b), "subject": subject_b, "fixed": False})
+            slots.append({"_start": 13 * 60, "_end": 13 * 60 + 40, "type": "meal", "title": _slot_title("lunch", lang), "subject": None, "fixed": False})
+
+        slots.extend(_fixed_activity_slots_for_day(profile, day_num))
+        slots.append({"_start": 18 * 60, "_end": 18 * 60 + 35, "type": "free", "title": _slot_title("rest_walk", lang), "subject": None, "fixed": False})
+        slots.append({"_start": 19 * 60 + 30, "_end": 20 * 60, "type": "meal", "title": _slot_title("dinner", lang), "subject": None, "fixed": False})
+        slots.append({"_start": max(20 * 60 + 15, sleep - 90), "_end": max(20 * 60 + 45, sleep - 45), "type": "family", "title": _slot_title("family_time", lang), "subject": None, "fixed": False})
+        slots.append({"_start": sleep, "_end": 23 * 60 + 59, "type": "sleep", "title": _slot_title("sleep", lang), "subject": None, "fixed": True})
+
+        days[str(day_num)] = _normalize_local_day_slots(slots)
+
+    return days
+
+
 async def _review_schedule_claude(profile, weak_subjects: list, user_suggestion: str = "") -> dict:
     """مراجعة البرنامج المبني وتقديم اقتراحات تحسين — المرحلة الخامسة."""
     from app.core.config import get_settings
@@ -974,6 +1249,7 @@ async def regenerate_student_routine(
     db: AsyncSession,
     profile,
     weak_subjects: list | None = None,
+    lang: str = "ar",
 ) -> dict:
     """Rebuild routine_slots from profile + day_data via the Gemini pipeline."""
     if weak_subjects is None:
@@ -985,7 +1261,7 @@ async def regenerate_student_routine(
         raw_day_data = {}
     day_data = _clean_day_data_for_regeneration(raw_day_data)
 
-    schedule = await _generate_schedule_claude(db, profile, day_data, weak_subjects)
+    schedule = await _generate_fast_routine_schedule(db, profile, day_data, weak_subjects, lang=lang)
     if not schedule:
         return {
             "ok": False,

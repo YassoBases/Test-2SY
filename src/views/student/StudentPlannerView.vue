@@ -181,7 +181,6 @@ async function onChat(message) {
   if (data?.reasoning?.length) {
     bannerMessage.value = data.reasoning[0]
   }
-  await load()
 }
 
 async function onComplete(slotId) {

@@ -111,26 +111,21 @@ export function usePlanner() {
 
   async function sendMessage(message) {
     chatting.value = true
-    chatHistory.value.push({ id: Date.now(), role: 'user', content: message })
+    const userTurn = { id: Date.now(), role: 'user', content: message }
+    chatHistory.value.push(userTurn)
     try {
       if (!isApiMode()) {
         loadError.value = 'المخطط الذكي يتطلب اتصالاً بالخادم'
         return { reply: '', schedule: [], reasoning: [] }
       }
       const data = await sendPlannerChatApi(message)
-      chatHistory.value.push({ id: Date.now() + 1, role: 'ai', content: data.reply })
-      if (data.schedule?.length || data.profile || data.reasoning?.length) {
-        assignPayload(
-          applyPlannerPayload({
-            ...data,
-            schedule: data.schedule,
-            profile: data.profile,
-            reasoning: data.reasoning,
-          }),
-        )
-      }
-      if (data.profile) profile.value = data.profile
-      if (data.reasoning?.length) reasoning.value = data.reasoning
+      const fallbackChat = [...chatHistory.value, { id: Date.now() + 1, role: 'ai', content: data.reply }]
+      assignPayload(
+        applyPlannerPayload({
+          ...data,
+          chat_history: data.chat_history?.length ? data.chat_history : fallbackChat,
+        }),
+      )
       return data
     } catch (err) {
       loadError.value = getErrorMessage(err, 'تعذر إرسال الرسالة للمخطط')

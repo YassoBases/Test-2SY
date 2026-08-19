@@ -77,7 +77,14 @@ async def planner_chat(
     student: User = Depends(require_student_actor()),
 ):
     result = await handle_planner_chat(db, student, body.message)
-    return PlannerChatResponse.model_validate(result)
+    state = await get_enriched_planner_state(db, student.id, auto_generate=False)
+    return PlannerChatResponse.model_validate(
+        {
+            **state,
+            "reply": result.get("reply", ""),
+            "extracted_events": result.get("extracted_events", []),
+        }
+    )
 
 
 @router.post("/sessions/complete", response_model=PlannerStateOut)

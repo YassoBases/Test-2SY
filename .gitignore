@@ -40,6 +40,8 @@ env/
 backend/venv/
 backend/venv.*/
 backend/.venv/
+backend/.venv311/
+.venv311/
 tts_worker/.venv/
 eduspark-venv310/
 

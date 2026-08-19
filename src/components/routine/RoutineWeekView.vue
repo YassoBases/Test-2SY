@@ -28,7 +28,7 @@
                 {{ slot.start }}<br>{{ slot.end }}
               </div>
               <div class="flex-grow-1">
-                <p class="text-body-2 font-weight-bold mb-0">{{ slot.title }}</p>
+                <p class="text-body-2 font-weight-bold mb-0">{{ displayTitle(slot) }}</p>
                 <p v-if="slot.subject" class="text-caption text-medium-emphasis mb-0">{{ slot.subject }}</p>
               </div>
               <v-icon :color="typeColor(slot.type)" size="20">{{ typeIcon(slot.type) }}</v-icon>
@@ -50,7 +50,7 @@ const props = defineProps({
 })
 defineEmits(['refresh'])
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const activeDay = ref(0)
 
@@ -77,6 +77,34 @@ function typeIcon(type) {
   return { school: 'mdi-school', study: 'mdi-book-open', sport: 'mdi-run', meal: 'mdi-food',
     sleep: 'mdi-sleep', prayer: 'mdi-mosque', family: 'mdi-home-heart',
     private_lesson: 'mdi-account-school', free: 'mdi-gamepad-variant' }[type] || 'mdi-calendar'
+}
+
+function displayTitle(slot) {
+  const title = String(slot?.title || '').trim()
+  const subject = String(slot?.subject || '').trim()
+  if (!title) return ''
+  if (locale.value !== 'en') return title
+
+  const exactMap = {
+    'فطور': 'Breakfast',
+    'المدرسة': 'School',
+    'غداء وراحة قصيرة': 'Lunch & short break',
+    'غداء': 'Lunch',
+    'راحة أو مشي خفيف': 'Rest or light walk',
+    'عشاء': 'Dinner',
+    'وقت العائلة وتجهيز الغد': 'Family time & prep for tomorrow',
+    'نوم': 'Sleep',
+    'مراجعة عامة': 'General review',
+    'موعد': 'Appointment',
+  }
+  if (exactMap[title]) return exactMap[title]
+
+  if (title.startsWith('مراجعة مركزة ')) return `Focused review ${subject || title.slice('مراجعة مركزة '.length)}`
+  if (title.startsWith('مراجعة ')) return `Review ${subject || title.slice('مراجعة '.length)}`
+  if (title.startsWith('حل واجبات ')) return `Homework ${subject || title.slice('حل واجبات '.length)}`
+  if (title.startsWith('تدريب ')) return `Practice ${subject || title.slice('تدريب '.length)}`
+
+  return title
 }
 </script>
 

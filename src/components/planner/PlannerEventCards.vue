@@ -28,7 +28,7 @@ defineProps({
   events: { type: Array, default: () => [] },
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const TYPE_META = {
   school: { icon: 'mdi-school', color: 'info' },
@@ -61,10 +61,20 @@ function typeColor(type) {
 
 function eventMeta(ev) {
   const parts = []
-  if (ev.day_of_week != null) parts.push(dayNames.value[ev.day_of_week] || '')
+  if (ev.event_date) {
+    parts.push(formatEventDate(ev.event_date))
+  } else if (ev.day_of_week != null) {
+    parts.push(dayNames.value[ev.day_of_week] || '')
+  }
   if (ev.start_time) parts.push(ev.start_time)
   if (ev.subject) parts.push(ev.subject)
   return parts.filter(Boolean).join(' · ') || t('common.planner.reservedSlot')
+}
+function formatEventDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const dateLocale = locale.value === 'ar' ? 'ar-SY' : 'en'
+  return date.toLocaleDateString(dateLocale, { weekday: 'short', day: 'numeric', month: 'short' })
 }
 </script>
 

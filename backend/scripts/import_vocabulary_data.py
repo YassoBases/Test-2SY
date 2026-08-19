@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.session import AsyncSessionLocal
@@ -35,6 +35,12 @@ from app.services.language_content_service import normalize_word
 from app.services.language_subscription_service import get_default_language
 
 _IN_DIR = Path(__file__).resolve().parents[1] / "db_exports"
+
+
+def _level_value(level: LanguageLevel | str | None) -> str | None:
+    if isinstance(level, LanguageLevel):
+        return level.value
+    return str(level) if level is not None else None
 
 
 async def import_word_bank(db, *, apply: bool) -> dict:
@@ -71,29 +77,45 @@ async def import_content_items(db, *, apply: bool) -> dict:
     rows = json.loads(path.read_text(encoding="utf-8"))
     language = await get_default_language(db)
 
-    existing_words = {
-        w for (w,) in (
+    existing_items = {
+        (normalize_word((item.body_json or {}).get("word") or ""), _level_value(item.level)): item
+        for item in (
             await db.execute(
-                select(func.lower(LanguageContentItem.body_json["word"].astext)).where(
+                select(LanguageContentItem).where(
                     LanguageContentItem.language_id == language.id,
                     LanguageContentItem.content_type == "vocabulary",
                 )
             )
-        ).all()
+        ).scalars().all()
     }
 
     to_insert = []
+    image_url_backfilled = 0
     for r in rows:
-        word = normalize_word((r.get("body_json") or {}).get("word") or "")
-        if not word or word in existing_words:
+        exported_body = r.get("body_json") or {}
+        word = normalize_word(exported_body.get("word") or "")
+        level = LanguageLevel(r["level"]) if r.get("level") else None
+        item_key = (word, _level_value(level))
+        existing_item = existing_items.get(item_key)
+        if not word:
             continue
-        existing_words.add(word)
+        if existing_item is not None:
+            existing_body = dict(existing_item.body_json or {})
+            exported_image_url = str(exported_body.get("image_url") or "").strip()
+            if exported_image_url and not str(existing_body.get("image_url") or "").strip():
+                existing_body["image_url"] = exported_image_url
+                if exported_body.get("image_prompt") and not existing_body.get("image_prompt"):
+                    existing_body["image_prompt"] = exported_body.get("image_prompt")
+                existing_item.body_json = existing_body
+                image_url_backfilled += 1
+            continue
+        existing_items[item_key] = None
         to_insert.append(
             LanguageContentItem(
                 language_id=language.id,
                 student_id=None,
                 skill=LanguageSkill(r["skill"]) if r.get("skill") else LanguageSkill.reading,
-                level=LanguageLevel(r["level"]) if r.get("level") else None,
+                level=level,
                 content_type=r["content_type"],
                 title=r.get("title") or word,
                 body_json=r.get("body_json") or {},
@@ -103,12 +125,25 @@ async def import_content_items(db, *, apply: bool) -> dict:
         )
 
     if not apply:
-        return {"file": path.name, "total_in_file": len(rows), "already_present": len(rows) - len(to_insert), "would_insert": len(to_insert)}
+        return {
+            "file": path.name,
+            "total_in_file": len(rows),
+            "already_present": len(rows) - len(to_insert),
+            "would_insert": len(to_insert),
+            "would_backfill_image_url": image_url_backfilled,
+        }
 
     if to_insert:
         db.add_all(to_insert)
+    if to_insert or image_url_backfilled:
         await db.commit()
-    return {"file": path.name, "total_in_file": len(rows), "already_present": len(rows) - len(to_insert), "inserted": len(to_insert)}
+    return {
+        "file": path.name,
+        "total_in_file": len(rows),
+        "already_present": len(rows) - len(to_insert),
+        "inserted": len(to_insert),
+        "image_url_backfilled": image_url_backfilled,
+    }
 
 
 async def run(*, apply: bool) -> int:

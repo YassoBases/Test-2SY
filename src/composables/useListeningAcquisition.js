@@ -36,8 +36,33 @@ export function useListeningAcquisition() {
     pollAttempt.value = 0
   }
 
+  function _hasPlayableAudio(lesson) {
+    const playback = lesson?.playback || {}
+    return Boolean(playback.audio_available && playback.audio_url)
+  }
+
+  function _audioPendingAcquisition(attempt = 1) {
+    return {
+      status: 'generating',
+      lesson_ready: false,
+      waiting: true,
+      generation_in_progress: true,
+      temporary_failure: false,
+      message_key: 'student.languages.listeningJourney.acquisition.preparing',
+      retry_after: null,
+      poll_after: 3,
+      attempt,
+    }
+  }
+
   async function _handleResponse(data) {
     if (data?.outcome === 'lesson_ready' && data.bundle) {
+      if (!_hasPlayableAudio(data.bundle)) {
+        bundle.value = null
+        acquisition.value = _audioPendingAcquisition(data?.acquisition?.attempt || 1)
+        phase.value = 'pending'
+        return null
+      }
       stopPolling()
       bundle.value = data.bundle
       acquisition.value = null
@@ -116,6 +141,13 @@ export function useListeningAcquisition() {
     try {
       if (resumeLessonId) {
         const lesson = await fetchListeningLesson(resumeLessonId)
+        if (!_hasPlayableAudio(lesson)) {
+          bundle.value = null
+          acquisition.value = _audioPendingAcquisition(attempt)
+          phase.value = 'pending'
+          schedulePoll(acquisition.value, attempt)
+          return null
+        }
         bundle.value = lesson
         phase.value = 'ready'
         return lesson

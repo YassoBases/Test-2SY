@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.schemas.language_exam import CEFRLevel
 from app.api.language_exam import (
@@ -22,6 +22,9 @@ from app.api.language_exam import (
     _expire_exam_if_needed,
     _expired_incomplete_exam_can_be_replaced,
     _is_valid_mcq_pool_item,
+    _is_usable_audio_url,
+    _legacy_placement_question_to_exam_item,
+    _maybe_retrigger_prep,
     _mcq_continuation_level,
     _new_exam_token,
     _apply_writing_route_cap,
@@ -33,13 +36,16 @@ from app.api.language_exam import (
     _reading_weighted_result,
     _speaking_bank_question_text,
     _state_revision,
+    _static_placement_listening_pool,
     _writing_route_from_score,
     _writing_task1_payload,
     canonical_payload_hash,
     evaluation_lease_expired,
     exam_evidence_statuses,
 )
+from app.models.language.enums import LanguageSkill
 from app.models.language.exam import LanguageExamSession
+from app.models.language.placement import LanguagePlacementQuestion, LanguagePlacementSection
 
 
 def test_prompt_tokens_are_opaque_and_not_reused():
@@ -226,6 +232,106 @@ def test_evidence_status_separates_server_content_failure_from_student_omission(
     assert statuses["reading"] == "content_unavailable"
     assert statuses["listening"] == "missing_student_response"
     assert statuses["writing"] == "missing_student_response"
+
+
+def test_static_placement_listening_pool_covers_all_cefr_levels_with_real_audio():
+    pool = _static_placement_listening_pool(["A1", "A2", "B1", "B2", "C1", "C2"])
+
+    assert set(pool) == {"A1", "A2", "B1", "B2", "C1", "C2"}
+    for level, item in pool.items():
+        assert item["level"] == level
+        assert item["source"] == "static_placement_listening_fallback"
+        assert _is_usable_audio_url(item.get("audio_url"))
+        assert item.get("audio_text")
+        assert item.get("question")
+        assert len(item.get("options") or []) >= 2
+        assert 0 <= item["correct_index"] < len(item["options"])
+        assert item.get("bank_item_id") is None
+
+
+def test_legacy_placement_listening_question_converts_to_current_exam_item():
+    section = LanguagePlacementSection(language_id=1, skill=LanguageSkill.listening, title_ar="Listening")
+    row = LanguagePlacementQuestion(
+        section_id=7,
+        question_type="mcq_listening",
+        prompt_json={
+            "stem": "What direction?",
+            "choices": ["Left", "Right", "Straight", "Back"],
+            "audio_transcript": "Turn left at the corner.",
+        },
+        media_url="/language-assets/en/placement/listening/q3.mp3",
+        answer_key_json={"correct_index": 0},
+        level_hint="A2",
+        sort_order=2,
+    )
+
+    item = _legacy_placement_question_to_exam_item(row, section)
+
+    assert item is not None
+    assert item["level"] == "A2"
+    assert item["skill"] == "listening"
+    assert item["source"] == "legacy_placement_questions_fallback"
+    assert item["question"] == "What direction?"
+    assert item["options"] == ["Left", "Right", "Straight", "Back"]
+    assert item["correct_index"] == 0
+    assert item["audio_url"] == "/language-assets/en/placement/listening/q3.mp3"
+    assert item["audio_text"] == "Turn left at the corner."
+    assert item["bank_item_id"] is None
+
+
+def test_legacy_placement_reading_single_question_is_not_used_as_current_reading_bundle():
+    section = LanguagePlacementSection(language_id=1, skill=LanguageSkill.reading, title_ar="Reading")
+    row = LanguagePlacementQuestion(
+        section_id=8,
+        question_type="mcq",
+        prompt_json={
+            "stem": 'Choose the correct meaning of: "rapid"',
+            "choices": ["slow", "quick", "tired", "empty"],
+        },
+        answer_key_json={"correct_index": 1},
+        level_hint="A1",
+        sort_order=0,
+    )
+
+    item = _legacy_placement_question_to_exam_item(row, section)
+
+    assert item is None
+
+
+def test_content_unavailable_retry_bypasses_prep_debounce():
+    now = datetime.now(timezone.utc)
+    state = {
+        "state_revision": 3,
+        "sections": ["speaking", "listening", "reading", "writing"],
+        "cursor": 1,
+        "content_prep_token": "old-prep-token-00000000001",
+        "content_prep_status": "content_unavailable",
+        "content_prep_error_code": "content_preparation_failed",
+        "content_prep_at": now.isoformat(),
+        "speaking": {"done": True},
+        "listening": {
+            "ready": False,
+            "done": False,
+            "asked": [],
+            "pool": {},
+            "evidence_status": "content_unavailable",
+        },
+        "reading": {"ready": False, "done": False, "asked": [], "pool": {}},
+        "writing": {"ready": False, "done": False, "response": None},
+    }
+    session = LanguageExamSession(
+        id="retry-content-unavailable-session",
+        student_id=1,
+        language_id=1,
+        exam_state=state,
+        status="in_progress",
+    )
+
+    assert _maybe_retrigger_prep(session, 1, BackgroundTasks()) is True
+    assert session.exam_state["content_prep_status"] == "preparing"
+    assert "content_prep_error_code" not in session.exam_state
+    assert session.exam_state["content_prep_token"] != "old-prep-token-00000000001"
+    assert session.exam_state["listening"]["evidence_status"] == "retry_required"
 
 
 def test_evidence_statuses_is_sections_driven_for_speaking_and_interview():

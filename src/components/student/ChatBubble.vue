@@ -17,6 +17,28 @@
       :size="34"
     />
 
+    <!-- Audio play button — outside the bubble, on its left -->
+    <button
+      v-if="!isTypewriting && message.role === 'ai' && message.audioUrl"
+      type="button"
+      class="chat-audio-btn flex-shrink-0"
+      :class="{ 'chat-audio-btn--playing': inlineAudioPlaying }"
+      :aria-label="inlineAudioPlaying ? 'إيقاف' : 'تشغيل صوت الأستاذ'"
+      @click="toggleInlineAudio"
+    >
+      <v-icon size="22" color="white">
+        {{ inlineAudioPlaying ? 'mdi-pause' : 'mdi-play' }}
+      </v-icon>
+    </button>
+    <audio
+      v-if="message.audioUrl"
+      ref="inlineAudioEl"
+      :src="message.audioUrl"
+      style="display:none"
+      @ended="inlineAudioPlaying = false"
+      @pause="inlineAudioPlaying = false"
+    />
+
     <div
       class="chat-bubble mx-2"
       :class="[
@@ -105,12 +127,6 @@
           </p>
         </div>
       </div>
-      <audio
-        v-if="!isTypewriting && message.audioUrl"
-        class="chat-bubble__audio"
-        :src="message.audioUrl"
-        controls
-      />
       <PendulumElement
         v-if="!isTypewriting && message.visualElement?.type === 'pendulum'"
         :caption="message.visualElement.caption"
@@ -158,6 +174,21 @@ const props = defineProps({
 const emit = defineEmits(['reveal'])
 
 const showSources = ref(false)
+
+const inlineAudioEl = ref(null)
+const inlineAudioPlaying = ref(false)
+
+function toggleInlineAudio() {
+  const el = inlineAudioEl.value
+  if (!el) return
+  if (el.paused) {
+    el.play()
+    inlineAudioPlaying.value = true
+  } else {
+    el.pause()
+    inlineAudioPlaying.value = false
+  }
+}
 
 const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g
 
@@ -399,6 +430,36 @@ onBeforeUnmount(() => {
 @keyframes cursor-blink {
   0%, 50% { opacity: 1; }
   50.01%, 100% { opacity: 0; }
+}
+
+.chat-audio-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: var(--em-primary, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  align-self: center;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.chat-audio-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.chat-audio-btn--playing {
+  background: var(--em-cyan, #06b6d4);
+  animation: audio-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes audio-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(6, 182, 212, 0); }
 }
 
 .source-snippet {

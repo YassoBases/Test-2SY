@@ -61,9 +61,12 @@ export function upcomingDeadlines(lifeEvents = [], schedule = []) {
       items.push({
         id: `ev-${ev.id}`,
         title: ev.title || 'امتحان',
-        subtitle: ev.subject || 'موعد امتحان',
+        subtitle: [formatEventDateTime(ev.event_date, ev.start_time), ev.subject || 'موعد امتحان']
+          .filter(Boolean)
+          .join(' · '),
         icon: 'mdi-file-document-alert',
         color: 'error',
+        at: ev.event_date,
       })
     }
   }
@@ -79,5 +82,25 @@ export function upcomingDeadlines(lifeEvents = [], schedule = []) {
       })
     }
   }
-  return items.slice(0, 8)
+  return items
+    .sort((a, b) => {
+      if (!a.at && !b.at) return 0
+      if (!a.at) return 1
+      if (!b.at) return -1
+      return new Date(a.at) - new Date(b.at)
+    })
+    .slice(0, 8)
+}
+
+function formatEventDateTime(dateValue, timeValue) {
+  if (!dateValue && !timeValue) return ''
+  const parts = []
+  if (dateValue) {
+    const date = new Date(dateValue)
+    if (!Number.isNaN(date.getTime())) {
+      parts.push(date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }))
+    }
+  }
+  if (timeValue) parts.push(timeValue)
+  return parts.join(' ')
 }
