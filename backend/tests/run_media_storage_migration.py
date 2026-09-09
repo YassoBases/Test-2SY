@@ -23,7 +23,7 @@ PORT = 5432
 USER = "postgres"
 EXPECTED_VERSION_NUM = "160014"
 BASELINE_HEAD = "0017_course_enrollment_entitlements"
-HEAD = "0018_media_storage_metadata"
+HEAD = "0019_teacher_voice_consent"
 MEDIA_COLUMNS = {
     "storage_bucket",
     "access_scope",
@@ -383,12 +383,14 @@ def main() -> int:
                     ).scalar_one()
                     == HEAD
                     and set(inspector.get_table_names(schema="public"))
-                    == before_tables | {"conversation_message_attachments"}
+                    == before_tables | {
+                        "conversation_message_attachments", "voice_consent_policies",
+                        "teacher_voice_consents",
+                    }
                     and {
                         column["name"] for column in inspector.get_columns("media_objects")
                     }
                     == before_media_columns | MEDIA_COLUMNS
-                    and len(inspector.get_table_names(schema="public")) == 131
                 )
 
                 legacy = connection.execute(

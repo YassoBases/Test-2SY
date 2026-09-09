@@ -23,7 +23,7 @@ PORT = 5432
 USER = "postgres"
 EXPECTED_VERSION_NUM = "160014"
 BASELINE_HEAD = "0016_course_units"
-HEAD = "0017_course_enrollment_entitlements"
+HEAD = "0019_teacher_voice_consent"
 NEW_ACCESS_COLUMNS = {
     "enrollment_id",
     "access_status",
@@ -414,7 +414,10 @@ def main() -> int:
                 ).scalar_one()
                 schema_ok = (
                     current == [HEAD]
-                    and after_tables == before_tables | {"course_enrollments"}
+                    and after_tables == before_tables | {
+                        "course_enrollments", "conversation_message_attachments",
+                        "voice_consent_policies", "teacher_voice_consents",
+                    }
                     and after_access_columns == before_access_columns | NEW_ACCESS_COLUMNS
                     and after_payment_columns == before_payment_columns
                     and after_item_columns == before_item_columns

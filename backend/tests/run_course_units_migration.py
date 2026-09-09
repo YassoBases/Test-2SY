@@ -26,7 +26,7 @@ PORT = 5432
 USER = "postgres"
 EXPECTED_VERSION_NUM = "160014"
 BASELINE_HEAD = "0015_merge_vocabulary_fixed_bank"
-HEAD = "0016_course_units"
+HEAD = "0019_teacher_voice_consent"
 
 
 def _pgpass_path() -> Path:
@@ -371,9 +371,16 @@ def main() -> int:
                 indexes = {item["name"]: item for item in inspector.get_indexes("course_units")}
                 uniques = {item["name"]: item for item in inspector.get_unique_constraints("course_units")}
                 schema_ok = (
-                    after_tables == before_tables | {"course_units"}
+                    # The fixture starts before A0.1; head includes all four A0 additions.
+                    after_tables == before_tables | {
+                        "course_units", "course_enrollments",
+                        "conversation_message_attachments", "voice_consent_policies",
+                        "teacher_voice_consents",
+                    }
                     and after_lesson_columns == before_lesson_columns | {"unit_id"}
-                    and after_course_columns == before_course_columns
+                    and after_course_columns == before_course_columns | {
+                        "thumbnail_media_object_id", "banner_media_object_id"
+                    }
                     and "lesson_id" in after_course_columns
                     and constraints["fk_lessons_course_unit"]["constrained_columns"] == ["course_id", "unit_id"]
                     and constraints["fk_lessons_course_unit"]["referred_columns"] == ["course_id", "id"]
