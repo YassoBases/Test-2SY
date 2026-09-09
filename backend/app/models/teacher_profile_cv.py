@@ -97,9 +97,20 @@ class TeacherProfessionalDocument(Base):
     title: Mapped[str] = mapped_column(String(255))
     document_type: Mapped[str] = mapped_column(String(32), default="certificate")
     file_url: Mapped[str] = mapped_column(String(1024))
+    media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_teacher_professional_documents_media_object_id_media_objects",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     original_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     teacher_profile: Mapped["TeacherProfile"] = relationship(back_populates="professional_documents")
+    media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[media_object_id]
+    )

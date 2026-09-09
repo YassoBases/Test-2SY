@@ -3,8 +3,19 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -33,6 +44,14 @@ class MessageKind(str, enum.Enum):
     pdf = "pdf"
     document = "document"
     voice = "voice"
+
+
+class AttachmentKind(str, enum.Enum):
+    file = "file"
+    image = "image"
+    audio = "audio"
+    video = "video"
+    document = "document"
 
 
 class ConversationThread(Base):
@@ -113,6 +132,59 @@ class ConversationMessage(Base):
         default=MessageDeliveryStatus.sent,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    attachments: Mapped[list["ConversationMessageAttachment"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessageAttachment.sort_order, ConversationMessageAttachment.id",
+    )
+
+
+class ConversationMessageAttachment(Base):
+    __tablename__ = "conversation_message_attachments"
+    __table_args__ = (
+        CheckConstraint(
+            "attachment_kind IN ('file', 'image', 'audio', 'video', 'document')",
+            name="ck_conversation_message_attachments_kind",
+        ),
+        UniqueConstraint(
+            "message_id",
+            "media_object_id",
+            name="uq_conversation_message_attachment_message_media",
+        ),
+        Index(
+            "ix_conversation_message_attachments_message_order",
+            "message_id",
+            "sort_order",
+            "id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "conversation_messages.id",
+            name="fk_conversation_message_attachments_message_id_messages",
+            ondelete="CASCADE",
+        )
+    )
+    media_object_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_conversation_message_attachments_media_object",
+            ondelete="RESTRICT",
+        )
+    )
+    attachment_kind: Mapped[str] = mapped_column(String(24))
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    voice_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    message: Mapped["ConversationMessage"] = relationship(back_populates="attachments")
+    media_object: Mapped["MediaObject"] = relationship(back_populates="message_attachments")
 
 
 class ConversationMessageRead(Base):

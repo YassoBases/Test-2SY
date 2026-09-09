@@ -1,7 +1,18 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,10 +45,23 @@ class LessonAssetType(str, enum.Enum):
 
 class Lesson(Base):
     __tablename__ = "lessons"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "unit_id"],
+            ["course_units.course_id", "course_units.id"],
+            name="fk_lessons_course_unit",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "unit_id IS NULL OR course_id IS NOT NULL",
+            name="ck_lessons_unit_requires_course",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     course_id: Mapped[int | None] = mapped_column(ForeignKey("courses.id"), nullable=True, index=True)
+    unit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     title: Mapped[str] = mapped_column(String(500), default="درس جديد")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -66,6 +90,11 @@ class Lesson(Base):
     course: Mapped["Course | None"] = relationship(
         back_populates="lessons",
         foreign_keys=[course_id],
+    )
+    unit: Mapped["CourseUnit | None"] = relationship(
+        back_populates="lessons",
+        primaryjoin="and_(Lesson.course_id == CourseUnit.course_id, Lesson.unit_id == CourseUnit.id)",
+        foreign_keys=[unit_id],
     )
     chunks: Mapped[list["ContentChunk"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
     chat_messages: Mapped[list["ChatMessage"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")

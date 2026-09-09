@@ -25,6 +25,14 @@ class TeacherVoiceSample(Base):
         ForeignKey("teacher_profiles.id", ondelete="CASCADE"), index=True
     )
     storage_path: Mapped[str] = mapped_column(String(1024))
+    source_media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_teacher_voice_samples_source_media_object_id_media_objects",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     processing_status: Mapped[str] = mapped_column(String(32), default=VoiceSampleStatus.pending.value)
@@ -40,7 +48,33 @@ class TeacherVoiceSample(Base):
     noise_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     speech_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     preview_audio_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    preview_media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_teacher_voice_samples_preview_media_object_id_media_objects",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    voice_consent_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "teacher_voice_consents.id",
+            name="fk_teacher_voice_samples_voice_consent",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     teacher_accepted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     quality_details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     teacher_profile: Mapped["TeacherProfile"] = relationship(back_populates="voice_samples")
+    source_media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[source_media_object_id]
+    )
+    preview_media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[preview_media_object_id]
+    )
+    voice_consent: Mapped["TeacherVoiceConsent | None"] = relationship(
+        back_populates="voice_samples",
+        foreign_keys=[voice_consent_id],
+    )

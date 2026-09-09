@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -32,7 +32,19 @@ class User(Base):
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     two_factor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     two_factor_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    avatar_media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_users_avatar_media_object_id_media_objects",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+        nullable=True,
+    )
 
     lessons: Mapped[list["Lesson"]] = relationship(back_populates="teacher")
     profile: Mapped["StudentProfile | None"] = relationship(back_populates="user", uselist=False)
     teacher_profile: Mapped["TeacherProfile | None"] = relationship(back_populates="user", uselist=False)
+    avatar_media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[avatar_media_object_id]
+    )

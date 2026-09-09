@@ -1,6 +1,8 @@
 from app.models.user import User, UserRole
 from app.models.conversation import (
+    AttachmentKind,
     ConversationMessage,
+    ConversationMessageAttachment,
     ConversationMessageRead,
     ConversationParticipant,
     ConversationParticipantRole,
@@ -23,6 +25,12 @@ from app.models.progress import StudentLessonProgress
 from app.models.chat import ChatMessage
 from app.models.quiz import QuizQuestion, QuizAttempt
 from app.models.teacher_voice import TeacherVoiceSample, VoiceSampleStatus
+from app.models.voice_consent import (
+    TeacherVoiceConsent,
+    VoiceConsentPolicy,
+    VoiceConsentSource,
+    VoiceConsentStatus,
+)
 from app.models.teacher_profile_cv import (
     TeacherAchievement,
     TeacherProfessionalDocument,
@@ -63,6 +71,7 @@ from app.models.catalog import (
     TeacherProfile,
     Subject,
     Course,
+    CourseUnit,
     TeacherProfileSubject,
     TeacherProfileGrade,
 )
@@ -71,13 +80,17 @@ from app.models.enrollment import (
     PaymentStatus,
     PaymentMethod,
     PaymentItemProductType,
+    CourseEnrollmentStatus,
+    EntitlementSource,
+    CourseAccessStatus,
     StudentSubjectChoice,
     StudentTeacherChoice,
     StudentCourseAccess,
+    CourseEnrollment,
     Payment,
     PaymentItem,
 )
-from app.models.media import MediaObject, StorageProvider
+from app.models.media import MediaAccessScope, MediaObject, MediaStatus, StorageProvider
 from app.models.audit_log import AuditLog
 from app.models.auth_session import AuthSession
 from app.models.email_token import EmailToken, EmailTokenPurpose
@@ -140,10 +153,12 @@ __all__ = [
     "ConversationThread",
     "ConversationParticipant",
     "ConversationMessage",
+    "ConversationMessageAttachment",
     "ConversationMessageRead",
     "ConversationThreadType",
     "ConversationParticipantRole",
     "MessageDeliveryStatus",
+    "AttachmentKind",
     "User",
     "UserRole",
     "Lesson",
@@ -164,6 +179,10 @@ __all__ = [
     "CourseQuizAttemptStatus",
     "TeacherVoiceSample",
     "VoiceSampleStatus",
+    "VoiceConsentPolicy",
+    "TeacherVoiceConsent",
+    "VoiceConsentStatus",
+    "VoiceConsentSource",
     "TeacherQualification",
     "TeacherTeachingExperience",
     "TeacherAchievement",
@@ -194,17 +213,24 @@ __all__ = [
     "TeacherProfile",
     "Subject",
     "Course",
+    "CourseUnit",
     "TeacherProfileSubject",
     "TeacherProfileGrade",
     "OnboardingStep",
     "PaymentStatus",
     "PaymentMethod",
+    "CourseEnrollmentStatus",
+    "EntitlementSource",
+    "CourseAccessStatus",
     "StudentSubjectChoice",
     "StudentTeacherChoice",
     "StudentCourseAccess",
+    "CourseEnrollment",
     "Payment",
     "PaymentItem",
     "MediaObject",
+    "MediaAccessScope",
+    "MediaStatus",
     "StorageProvider",
     "AuditLog",
     "AuthSession",

@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -63,6 +64,11 @@ class TeacherProfile(Base):
         cascade="all, delete-orphan",
         order_by="TeacherVoiceSample.uploaded_at.desc()",
     )
+    voice_consents: Mapped[list["TeacherVoiceConsent"]] = relationship(
+        back_populates="teacher_profile",
+        cascade="all, delete-orphan",
+        order_by="TeacherVoiceConsent.created_at.desc()",
+    )
     qualifications: Mapped[list["TeacherQualification"]] = relationship(
         back_populates="teacher_profile",
         cascade="all, delete-orphan",
@@ -117,12 +123,40 @@ class Course(Base):
     currency: Mapped[str] = mapped_column(String(10), default="SYP")
     thumbnail_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     banner_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    thumbnail_media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_courses_thumbnail_media_object_id_media_objects",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    banner_media_object_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "media_objects.id",
+            name="fk_courses_banner_media_object_id_media_objects",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     subject: Mapped["Subject"] = relationship(back_populates="courses")
     teacher_profile: Mapped["TeacherProfile"] = relationship(back_populates="courses")
+    thumbnail_media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[thumbnail_media_object_id]
+    )
+    banner_media_object: Mapped["MediaObject | None"] = relationship(
+        foreign_keys=[banner_media_object_id]
+    )
     access_records: Mapped[list["StudentCourseAccess"]] = relationship(back_populates="course")
+    enrollments: Mapped[list["CourseEnrollment"]] = relationship(back_populates="course")
+    units: Mapped[list["CourseUnit"]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+        order_by="CourseUnit.sort_order, CourseUnit.id",
+    )
     lessons: Mapped[list["Lesson"]] = relationship(
         back_populates="course",
         foreign_keys="Lesson.course_id",
@@ -130,6 +164,35 @@ class Course(Base):
     manual_quizzes: Mapped[list["CourseQuiz"]] = relationship(
         back_populates="course",
         cascade="all, delete-orphan",
+    )
+
+
+class CourseUnit(Base):
+    __tablename__ = "course_units"
+    __table_args__ = (
+        UniqueConstraint("course_id", "id", name="uq_course_units_course_id_id"),
+        Index("ix_course_units_course_sort_id", "course_id", "sort_order", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    course_id: Mapped[int] = mapped_column(
+        ForeignKey("courses.id", name="fk_course_units_course_id_courses", ondelete="CASCADE")
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    course: Mapped["Course"] = relationship(back_populates="units")
+    lessons: Mapped[list["Lesson"]] = relationship(
+        back_populates="unit",
+        primaryjoin="and_(CourseUnit.course_id == Lesson.course_id, CourseUnit.id == Lesson.unit_id)",
+        foreign_keys="Lesson.unit_id",
+        order_by="Lesson.sort_order, Lesson.id",
     )
 
 
