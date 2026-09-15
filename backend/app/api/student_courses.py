@@ -17,8 +17,11 @@ from app.schemas.lesson_completion import (
     VerifyCompletionOut,
 )
 from app.schemas.student_courses import (
+    CourseLessonOut,
     StudentCourseDetailOut,
+    StudentCourseResumeLessonOut,
     StudentCourseTeacherProfileOut,
+    StudentCourseUnitOut,
     StudentDashboardOut,
     StudentLessonStatusOut,
 )
@@ -69,6 +72,25 @@ async def get_course(
     return await student_courses_service.get_student_course(db, student.id, course_id)
 
 
+@router.get("/courses/{course_id}/units", response_model=list[StudentCourseUnitOut])
+async def get_course_units(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+    student: User = Depends(require_student_actor()),
+):
+    return await student_courses_service.list_student_course_units(db, student.id, course_id)
+
+
+@router.get("/courses/{course_id}/resume", response_model=StudentCourseResumeLessonOut | None)
+async def get_course_resume(
+    course_id: int,
+    db: AsyncSession = Depends(get_db),
+    student: User = Depends(require_student_actor()),
+):
+    course = await student_courses_service.get_student_course(db, student.id, course_id)
+    return course.resume_lesson
+
+
 @router.get("/courses/{course_id}/teacher-profile", response_model=StudentCourseTeacherProfileOut)
 async def get_course_teacher_profile(
     course_id: int,
@@ -76,6 +98,15 @@ async def get_course_teacher_profile(
     student: User = Depends(require_student_actor()),
 ):
     return await student_courses_service.get_course_teacher_profile(db, student.id, course_id)
+
+
+@router.get("/lessons/{lesson_id}", response_model=CourseLessonOut)
+async def get_lesson(
+    lesson_id: int,
+    db: AsyncSession = Depends(get_db),
+    student: User = Depends(require_student_actor()),
+):
+    return await student_courses_service.get_student_lesson(db, student.id, lesson_id)
 
 
 @router.post(

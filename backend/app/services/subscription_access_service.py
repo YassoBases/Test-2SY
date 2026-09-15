@@ -10,9 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.enrollment import PaymentStatus, StudentCourseAccess
+from app.models.enrollment import CourseAccessStatus, PaymentStatus, StudentCourseAccess
 
-SubscriptionLifecycleStatus = Literal["pending", "active", "expiring_soon", "expired"]
+SubscriptionLifecycleStatus = Literal["pending", "active", "expiring_soon", "expired", "suspended", "revoked"]
 
 COMMUNICATION_REQUIRES_ENROLLMENT = "التواصل متاح فقط للطلاب المشتركين في المادة"
 
@@ -54,7 +54,15 @@ def activate_paid_access(access: StudentCourseAccess, now: datetime | None = Non
 
 
 def is_access_active(access: StudentCourseAccess | None, now: datetime | None = None) -> bool:
-    if access is None or access.payment_status != PaymentStatus.paid:
+    if access is None:
+        return False
+    access_status = (access.access_status or "").strip()
+    if access_status:
+        if access_status != CourseAccessStatus.active.value:
+            return False
+        if _aware(access.revoked_at) is not None:
+            return False
+    elif access.payment_status != PaymentStatus.paid:
         return False
     expires = _aware(access.expires_at)
     if expires is None:
@@ -76,9 +84,16 @@ def subscription_lifecycle_status(
     access: StudentCourseAccess | None,
     now: datetime | None = None,
 ) -> SubscriptionLifecycleStatus:
-    if access is None or access.payment_status == PaymentStatus.pending:
+    if access is None:
         return "pending"
-    if access.payment_status != PaymentStatus.paid:
+    access_status = (access.access_status or "").strip()
+    if access_status in {CourseAccessStatus.revoked.value, CourseAccessStatus.suspended.value}:
+        return access_status  # type: ignore[return-value]
+    if access_status == CourseAccessStatus.expired.value:
+        return "expired"
+    if access_status == CourseAccessStatus.pending.value:
+        return "pending"
+    if not access_status and access.payment_status != PaymentStatus.paid:
         return "pending"
     if not is_access_active(access, now):
         return "expired"

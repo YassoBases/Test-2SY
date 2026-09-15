@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.deps import VIEWER_PARENT, AuthContext, get_auth_context
 from app.core.request_meta import client_ip, user_agent
 from app.core.security import hash_password, verify_password
@@ -27,6 +26,7 @@ from app.schemas.auth import (
     ForgotPasswordResponse,
     LoginRequest,
     LogoutRequest,
+    RefreshTokenRequest,
     RegisterRequest,
     ResendTwoFactorRequest,
     ResendTwoFactorResponse,
@@ -55,7 +55,6 @@ from app.services.two_factor_service import (
 from app.services.user_status_service import build_user_extras
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
@@ -357,15 +356,14 @@ async def register(
     await db.flush()
 
     if role == UserRole.student:
-        from datetime import datetime, timezone
         db.add(
             StudentProfile(
                 user_id=user.id,
                 interests_json="[]",
                 difficulty="medium",
-                onboarding_step=OnboardingStep.complete,
-                onboarding_completed_at=datetime.now(timezone.utc),
-                payment_completed_at=datetime.now(timezone.utc),
+                onboarding_step=OnboardingStep.grade,
+                onboarding_completed_at=None,
+                payment_completed_at=None,
             )
         )
     elif role == UserRole.teacher:
@@ -397,30 +395,12 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     user_found = user is not None
     password_ok = bool(user and verify_password(body.password, user.hashed_password))
 
-    if settings.DEBUG:
-        logger.info(
-            "login_debug email=%s user_found=%s password_ok=%s db_role=%s email_verified=%s",
-            email,
-            user_found,
-            password_ok,
-            user.role.value if user else None,
-            is_email_verified(user) if user else None,
-        )
-
     if not user_found or not password_ok:
-        detail: str | dict = "البريد أو كلمة المرور غير صحيحة"
-        if settings.DEBUG:
-            detail = {
-                "message": "البريد أو كلمة المرور غير صحيحة",
-                "debug": {
-                    "user_found": user_found,
-                    "password_ok": password_ok,
-                    "db_role": user.role.value if user else None,
-                    "email_verified": is_email_verified(user) if user else None,
-                    "reason": "user_not_found" if not user_found else "password_mismatch",
-                },
-            }
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
+        logger.info("login_failed user_found=%s", user_found)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="البريد أو كلمة المرور غير صحيحة",
+        )
 
     viewer_mode = None
     if body.viewer_mode == VIEWER_PARENT:
@@ -446,6 +426,25 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         viewer_mode=viewer_mode,
         device_name=body.device_name,
     )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_session(
+    body: RefreshTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    session, user, access, refresh = await auth_session_service.rotate_refresh_token(
+        db,
+        body.refresh_token,
+    )
+    response = TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        session_id=session.id,
+        user=await _user_out(db, user),
+    )
+    await db.commit()
+    return response
 
 
 @router.post("/logout")

@@ -12,10 +12,10 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.core.demo_guard import is_demo_email, is_demo_teacher_name
 from app.db.sql_types import user_role_equals
-from app.models.catalog import Course, TeacherProfile
+from app.models.catalog import Course, CourseUnit, TeacherProfile
 from app.models.parent_link import ParentStudentLink
 from app.models.user import User, UserRole
-from app.models.enrollment import PaymentStatus, StudentCourseAccess
+from app.models.enrollment import CourseAccessStatus, PaymentStatus, StudentCourseAccess
 from app.services.subscription_access_service import (
     days_until_expiry,
     is_access_active,
@@ -28,7 +28,9 @@ from app.schemas.student_courses import (
     CourseLessonOut,
     StudentCourseCardOut,
     StudentCourseDetailOut,
+    StudentCourseResumeLessonOut,
     StudentCourseTeacherProfileOut,
+    StudentCourseUnitOut,
     StudentDashboardOut,
     StudentLessonStatusOut,
 )
@@ -83,6 +85,20 @@ async def _completed_lesson_ids(db: AsyncSession, student_id: int, lesson_ids: l
     return set(result.scalars().all())
 
 
+async def _progress_map(
+    db: AsyncSession, student_id: int, lesson_ids: list[int]
+) -> dict[int, StudentLessonProgress]:
+    if not lesson_ids:
+        return {}
+    result = await db.execute(
+        select(StudentLessonProgress).where(
+            StudentLessonProgress.student_id == student_id,
+            StudentLessonProgress.lesson_id.in_(lesson_ids),
+        )
+    )
+    return {row.lesson_id: row for row in result.scalars().all()}
+
+
 async def _course_lessons(db: AsyncSession, course_id: int) -> list[Lesson]:
     result = await db.execute(
         select(Lesson)
@@ -98,6 +114,15 @@ async def _course_lessons(db: AsyncSession, course_id: int) -> list[Lesson]:
     return visible
 
 
+async def _course_units(db: AsyncSession, course_id: int) -> list[CourseUnit]:
+    result = await db.execute(
+        select(CourseUnit)
+        .where(CourseUnit.course_id == course_id, CourseUnit.is_visible.is_(True))
+        .order_by(CourseUnit.sort_order, CourseUnit.id)
+    )
+    return list(result.scalars().all())
+
+
 async def _access_map(db: AsyncSession, student_id: int, course_ids: list[int]) -> dict[int, StudentCourseAccess]:
     if not course_ids:
         return {}
@@ -105,15 +130,22 @@ async def _access_map(db: AsyncSession, student_id: int, course_ids: list[int]) 
         select(StudentCourseAccess).where(
             StudentCourseAccess.student_id == student_id,
             StudentCourseAccess.course_id.in_(course_ids),
-        )
+        ).options(selectinload(StudentCourseAccess.enrollment))
     )
     return {a.course_id: a for a in result.scalars().all()}
 
 
 def _lock_reason(access: StudentCourseAccess | None) -> str | None:
-    if access is None or access.payment_status == PaymentStatus.pending:
+    if access is None:
         return "اشترك لفتح المادة"
-    if access.payment_status == PaymentStatus.paid and not is_access_active(access):
+    access_status = access.access_status or ""
+    if access_status == CourseAccessStatus.revoked.value:
+        return "تم إلغاء الوصول لهذه المادة"
+    if access_status == CourseAccessStatus.suspended.value:
+        return "الوصول لهذه المادة موقوف مؤقتاً"
+    if access_status == CourseAccessStatus.pending.value or access.payment_status == PaymentStatus.pending:
+        return "اشترك لفتح المادة"
+    if not is_access_active(access):
         return "انتهى الاشتراك — جدّد للوصول"
     return None
 
@@ -175,6 +207,218 @@ def _subscription_benefits(lessons: list[Lesson], subject_name: str) -> str:
     return "، ".join(parts) + "."
 
 
+def _progress_payload(row: StudentLessonProgress | None) -> dict:
+    if not row:
+        return {
+            "completion_percent": 0,
+            "video_progress_percent": 0.0,
+            "pdf_progress_percent": 0.0,
+            "status": "pending",
+        }
+    if row.completed_at:
+        return {
+            "completion_percent": 100,
+            "video_progress_percent": 100.0,
+            "pdf_progress_percent": 100.0,
+            "status": "completed",
+        }
+    percent = int(round(float(row.completion_percentage or 0)))
+    if percent <= 0:
+        percent = max(
+            int(round(float(row.video_progress_percent or 0))),
+            int(round(float(row.pdf_progress_percent or 0))),
+        )
+    return {
+        "completion_percent": min(100, max(0, percent)),
+        "video_progress_percent": float(row.video_progress_percent or 0),
+        "pdf_progress_percent": float(row.pdf_progress_percent or 0),
+        "status": "in_progress" if percent > 0 or row.started_at else "pending",
+    }
+
+
+async def _lesson_out(
+    db: AsyncSession,
+    lesson: Lesson,
+    *,
+    unlocked: bool,
+    completed: bool,
+    progress: StudentLessonProgress | None,
+    unit_title: str | None = None,
+) -> CourseLessonOut:
+    ctype = resolve_lesson_content_type(lesson)
+    caps = await build_lesson_capabilities(db, lesson)
+    urls = assets_public_urls(lesson)
+    prog = _progress_payload(progress)
+    if completed:
+        prog = {
+            "completion_percent": 100,
+            "video_progress_percent": 100.0,
+            "pdf_progress_percent": 100.0,
+            "status": "completed",
+        }
+
+    return CourseLessonOut(
+        id=lesson.id,
+        unit_id=lesson.unit_id,
+        unit_title=unit_title,
+        title=lesson.title,
+        description=lesson.description or lesson.preview,
+        video_url=urls.get("video") if unlocked and caps["has_video"] else None,
+        pdf_url=urls.get("pdf") if unlocked and caps["has_pdf"] else None,
+        homework_url=urls.get("homework") if unlocked and bool(lesson.homework_path) else None,
+        sort_order=lesson.sort_order,
+        lesson_type=ctype,
+        lesson_type_label=LESSON_TYPE_LABELS.get(ctype, ctype),
+        status=lesson.status.value if hasattr(lesson.status, "value") else str(lesson.status),
+        completed=completed,
+        created_at=lesson.created_at.isoformat() if lesson.created_at else None,
+        completion_percent=int(prog.get("completion_percent") or 0),
+        video_progress_percent=float(prog.get("video_progress_percent") or 0),
+        pdf_progress_percent=float(prog.get("pdf_progress_percent") or 0),
+        **caps,
+    )
+
+
+async def _units_out(
+    db: AsyncSession,
+    *,
+    lessons: list[Lesson],
+    units: list[CourseUnit],
+    unlocked: bool,
+    completed_ids: set[int],
+    progress_by_lesson: dict[int, StudentLessonProgress],
+) -> list[StudentCourseUnitOut]:
+    units_by_id = {unit.id: unit for unit in units}
+    lessons_by_unit: dict[int | None, list[Lesson]] = {unit.id: [] for unit in units}
+    unassigned: list[Lesson] = []
+
+    for lesson in lessons:
+        if lesson.unit_id in units_by_id:
+            lessons_by_unit.setdefault(lesson.unit_id, []).append(lesson)
+        else:
+            unassigned.append(lesson)
+
+    output: list[StudentCourseUnitOut] = []
+    for unit in units:
+        unit_lessons = sorted(lessons_by_unit.get(unit.id, []), key=lambda l: (l.sort_order, l.id))
+        lesson_out = [
+            await _lesson_out(
+                db,
+                lesson,
+                unlocked=unlocked,
+                completed=lesson.id in completed_ids,
+                progress=progress_by_lesson.get(lesson.id),
+                unit_title=unit.title,
+            )
+            for lesson in unit_lessons
+        ]
+        total = len(lesson_out)
+        done = sum(1 for item in lesson_out if item.completed)
+        output.append(
+            StudentCourseUnitOut(
+                id=unit.id,
+                title=unit.title,
+                description=unit.description,
+                sort_order=unit.sort_order,
+                lesson_count=total,
+                completed_lesson_count=done if unlocked else 0,
+                progress_percent=round((done / total) * 100) if unlocked and total else 0,
+                lessons=lesson_out,
+            )
+        )
+
+    if unassigned:
+        lesson_out = [
+            await _lesson_out(
+                db,
+                lesson,
+                unlocked=unlocked,
+                completed=lesson.id in completed_ids,
+                progress=progress_by_lesson.get(lesson.id),
+                unit_title="عام",
+            )
+            for lesson in sorted(unassigned, key=lambda l: (l.sort_order, l.id))
+        ]
+        total = len(lesson_out)
+        done = sum(1 for item in lesson_out if item.completed)
+        output.append(
+            StudentCourseUnitOut(
+                id=None,
+                title="عام",
+                sort_order=-1,
+                lesson_count=total,
+                completed_lesson_count=done if unlocked else 0,
+                progress_percent=round((done / total) * 100) if unlocked and total else 0,
+                lessons=lesson_out,
+            )
+        )
+
+    return output
+
+
+def _resume_lesson(
+    *,
+    course_id: int,
+    lessons: list[Lesson],
+    units_by_id: dict[int, CourseUnit],
+    completed_ids: set[int],
+    progress_by_lesson: dict[int, StudentLessonProgress],
+) -> StudentCourseResumeLessonOut | None:
+    if not lessons:
+        return None
+
+    def sort_key(lesson: Lesson) -> tuple[int, int, int]:
+        unit = units_by_id.get(lesson.unit_id or -1)
+        return ((unit.sort_order if unit else 10_000), lesson.sort_order, lesson.id)
+
+    ordered = sorted(lessons, key=sort_key)
+
+    def activity_ts(row: StudentLessonProgress | None) -> datetime:
+        if row is None:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        return _aware(row.updated_at or row.started_at) or datetime.min.replace(tzinfo=timezone.utc)
+
+    def has_learning_activity(row: StudentLessonProgress | None) -> bool:
+        if row is None:
+            return False
+        return bool(
+            row.started_at
+            or float(row.completion_percentage or 0) > 0
+            or float(row.video_progress_percent or 0) > 0
+            or float(row.pdf_progress_percent or 0) > 0
+            or row.pdf_opened
+            or row.quiz_submitted
+        )
+
+    in_progress = [
+        (lesson, progress_by_lesson.get(lesson.id))
+        for lesson in ordered
+        if lesson.id not in completed_ids and has_learning_activity(progress_by_lesson.get(lesson.id))
+    ]
+    if in_progress:
+        lesson, row = max(in_progress, key=lambda item: activity_ts(item[1]))
+    else:
+        pending = [lesson for lesson in ordered if lesson.id not in completed_ids]
+        lesson = pending[0] if pending else ordered[-1]
+        row = progress_by_lesson.get(lesson.id)
+
+    unit = units_by_id.get(lesson.unit_id or -1)
+    prog = _progress_payload(row)
+    if lesson.id in completed_ids:
+        prog["status"] = "completed"
+        prog["completion_percent"] = 100
+    return StudentCourseResumeLessonOut(
+        course_id=course_id,
+        lesson_id=lesson.id,
+        unit_id=lesson.unit_id,
+        unit_title=unit.title if unit else ("عام" if lesson.unit_id is None else None),
+        title=lesson.title,
+        sort_order=lesson.sort_order,
+        status=str(prog.get("status") or "pending"),
+        completion_percent=int(prog.get("completion_percent") or 0),
+    )
+
+
 async def _build_course_card(
     db: AsyncSession,
     student_id: int,
@@ -206,6 +450,9 @@ async def _build_course_card(
         currency=course.currency,
         unlocked=unlocked,
         subscription_status=status,
+        access_status=row.access_status if row else None,
+        access_source=row.source if row else None,
+        enrollment_status=row.enrollment.status if row and row.enrollment else None,
         activated_at=activated.isoformat() if activated else None,
         expires_at=expires.isoformat() if expires else None,
         days_until_expiry=days_until_expiry(row) if row and unlocked else None,
@@ -337,61 +584,42 @@ async def get_student_course(
         select(StudentCourseAccess).where(
             StudentCourseAccess.student_id == student_id,
             StudentCourseAccess.course_id == course_id,
-        )
+        ).options(selectinload(StudentCourseAccess.enrollment))
     )
     access = access_result.scalar_one_or_none()
     unlocked = is_access_active(access)
-    status = subscription_lifecycle_status(access)
+    subscription_status = subscription_lifecycle_status(access)
 
     lessons = await _course_lessons(db, course_id)
     lesson_ids = [l.id for l in lessons]
     completed = await _completed_lesson_ids(db, student_id, lesson_ids)
+    progress_by_lesson = await _progress_map(db, student_id, lesson_ids) if unlocked else {}
+    units = await _course_units(db, course_id)
+    units_by_id = {unit.id: unit for unit in units}
     total = len(lessons)
     done = len(completed)
     progress = round((done / total) * 100) if total else 0
 
-    lesson_out: list[CourseLessonOut] = []
-    from app.services.lesson_completion_service import get_or_create_progress, progress_to_dict
-
-    for lesson in lessons:
-        ctype = resolve_lesson_content_type(lesson)
-        caps = await build_lesson_capabilities(db, lesson)
-        urls = assets_public_urls(lesson)
-        video_url = urls.get("video")
-        pdf_url = urls.get("pdf")
-        homework_url = urls.get("homework")
-        is_done = lesson.id in completed
-        prog = {"completion_percent": 100 if is_done else 0, "video_progress_percent": 0.0, "pdf_progress_percent": 0.0}
-        if unlocked and not is_done:
-            try:
-                row = await get_or_create_progress(db, student_id, lesson.id)
-                detail = await progress_to_dict(db, student_id, lesson.id, progress=row, caps=caps)
-                prog = detail
-            except Exception:
-                pass
-        elif is_done:
-            prog = {"completion_percent": 100, "video_progress_percent": 100.0, "pdf_progress_percent": 100.0}
-
-        lesson_out.append(
-            CourseLessonOut(
-                id=lesson.id,
-                title=lesson.title,
-                description=lesson.description or lesson.preview,
-                video_url=video_url if unlocked and caps["has_video"] else None,
-                pdf_url=pdf_url if unlocked and caps["has_pdf"] else None,
-                homework_url=homework_url if unlocked and bool(lesson.homework_path) else None,
-                sort_order=lesson.sort_order,
-                lesson_type=ctype,
-                lesson_type_label=LESSON_TYPE_LABELS.get(ctype, ctype),
-                status=lesson.status.value,
-                completed=is_done,
-                created_at=lesson.created_at.isoformat() if lesson.created_at else None,
-                completion_percent=int(prog.get("completion_percent") or 0),
-                video_progress_percent=float(prog.get("video_progress_percent") or 0),
-                pdf_progress_percent=float(prog.get("pdf_progress_percent") or 0),
-                **caps,
-            )
+    unit_out = await _units_out(
+        db,
+        lessons=lessons,
+        units=units,
+        unlocked=unlocked,
+        completed_ids=completed,
+        progress_by_lesson=progress_by_lesson,
+    )
+    lesson_out = [lesson for unit in unit_out for lesson in unit.lessons]
+    resume_lesson = (
+        _resume_lesson(
+            course_id=course_id,
+            lessons=lessons,
+            units_by_id=units_by_id,
+            completed_ids=completed,
+            progress_by_lesson=progress_by_lesson,
         )
+        if unlocked
+        else None
+    )
 
     activated = _aware(access.activated_at) if access else None
     expires = _aware(access.expires_at) if access else None
@@ -419,7 +647,10 @@ async def get_student_course(
         price=course.price,
         currency=course.currency,
         unlocked=unlocked,
-        subscription_status=status,
+        subscription_status=subscription_status,
+        access_status=access.access_status if access else None,
+        access_source=access.source if access else None,
+        enrollment_status=access.enrollment.status if access and access.enrollment else None,
         activated_at=activated.isoformat() if activated else None,
         expires_at=expires.isoformat() if expires else None,
         days_until_expiry=days_until_expiry(access) if access and unlocked else None,
@@ -432,6 +663,8 @@ async def get_student_course(
         has_linked_parent=bool(parent_ids),
         existing_message_thread_id=existing_thread.id if existing_thread else None,
         lessons=lesson_out,
+        units=unit_out,
+        resume_lesson=resume_lesson,
     )
 
 
@@ -494,30 +727,90 @@ async def get_course_teacher_profile(
     )
 
 
-async def get_lesson_status(
-    db: AsyncSession, student_id: int, lesson_id: int
-) -> StudentLessonStatusOut:
+async def list_student_course_units(
+    db: AsyncSession, student_id: int, course_id: int
+) -> list[StudentCourseUnitOut]:
+    course = await get_student_course(db, student_id, course_id)
+    return course.units
+
+
+async def _load_visible_lesson(db: AsyncSession, lesson_id: int) -> Lesson:
     result = await db.execute(
         select(Lesson).where(Lesson.id == lesson_id).options(selectinload(Lesson.assets))
     )
     lesson = result.scalar_one_or_none()
     if not lesson:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الدرس غير موجود")
+    sync_lesson_legacy_columns(lesson)
+    if not lesson.course_id or not lesson_is_visible(lesson):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الدرس غير متاح")
+    course_result = await db.execute(
+        select(Course)
+        .where(Course.id == lesson.course_id, Course.is_active.is_(True))
+        .options(selectinload(Course.teacher_profile))
+    )
+    course = course_result.scalar_one_or_none()
+    if not course or not course.is_published or not course.teacher_profile.active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="الدرس غير متاح")
+    return lesson
+
+
+async def get_student_lesson(
+    db: AsyncSession, student_id: int, lesson_id: int
+) -> CourseLessonOut:
+    lesson = await _load_visible_lesson(db, lesson_id)
+    if not await student_has_lesson_access(db, student_id, lesson):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="المادة مقفلة — اشترك لفتح المحتوى")
+    progress_by_lesson = await _progress_map(db, student_id, [lesson.id])
+    completed = await _completed_lesson_ids(db, student_id, [lesson.id])
+    unit_title: str | None = None
+    if lesson.unit_id:
+        unit = await db.scalar(
+            select(CourseUnit).where(
+                CourseUnit.id == lesson.unit_id,
+                CourseUnit.course_id == lesson.course_id,
+                CourseUnit.is_visible.is_(True),
+            )
+        )
+        unit_title = unit.title if unit else None
+    elif lesson.course_id:
+        unit_title = "عام"
+    return await _lesson_out(
+        db,
+        lesson,
+        unlocked=True,
+        completed=lesson.id in completed,
+        progress=progress_by_lesson.get(lesson.id),
+        unit_title=unit_title,
+    )
+
+
+async def get_lesson_status(
+    db: AsyncSession, student_id: int, lesson_id: int
+) -> StudentLessonStatusOut:
+    lesson = await _load_visible_lesson(db, lesson_id)
     if not await student_has_lesson_access(db, student_id, lesson):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="المادة مقفلة")
-    sync_lesson_legacy_columns(lesson)
     caps = await build_lesson_capabilities(db, lesson)
     return StudentLessonStatusOut(lesson_id=lesson.id, **caps)
 
 
 async def student_has_lesson_access(db: AsyncSession, student_id: int, lesson: Lesson) -> bool:
-    if not lesson.course_id:
+    if not lesson.course_id or not lesson_is_visible(lesson):
+        return False
+    course_result = await db.execute(
+        select(Course)
+        .where(Course.id == lesson.course_id, Course.is_active.is_(True))
+        .options(selectinload(Course.teacher_profile))
+    )
+    course = course_result.scalar_one_or_none()
+    if not course or not course.is_published or not course.teacher_profile.active:
         return False
     access_result = await db.execute(
         select(StudentCourseAccess).where(
             StudentCourseAccess.student_id == student_id,
             StudentCourseAccess.course_id == lesson.course_id,
-        )
+        ).options(selectinload(StudentCourseAccess.enrollment))
     )
     access = access_result.scalar_one_or_none()
     return is_access_active(access)

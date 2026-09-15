@@ -192,6 +192,9 @@ async def get_or_create_progress(
 
 
 async def mark_lesson_started(db: AsyncSession, student_id: int, lesson_id: int) -> None:
+    lesson = await _get_lesson(db, lesson_id)
+    if not await student_has_lesson_access(db, student_id, lesson):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="المادة مقفلة — اشترك لفتح المحتوى")
     progress = await get_or_create_progress(db, student_id, lesson_id)
     if not progress.started_at:
         progress.started_at = _utcnow()
@@ -207,6 +210,8 @@ async def progress_to_dict(
     caps: dict | None = None,
 ) -> dict:
     lesson = await _get_lesson(db, lesson_id)
+    if not await student_has_lesson_access(db, student_id, lesson):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="المادة مقفلة — اشترك لفتح المحتوى")
     if caps is None:
         caps = await build_lesson_capabilities(db, lesson)
     reqs = lesson_requirements(caps)

@@ -43,8 +43,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: dict[str, Any], *, session_id: int | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    payload = {**subject, "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {**subject, "iat": now, "exp": expire, "jti": secrets.token_urlsafe(16)}
     if session_id is not None:
         payload["sid"] = str(session_id)
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)

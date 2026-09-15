@@ -16,6 +16,8 @@ from app.schemas.teacher_profile_cv import (
 
 class CourseLessonOut(BaseModel):
     id: int
+    unit_id: int | None = None
+    unit_title: str | None = None
     title: str
     description: str | None = None
     video_url: str | None = None
@@ -42,6 +44,28 @@ class CourseLessonOut(BaseModel):
     completion_percent: int = 0
     video_progress_percent: float = 0
     pdf_progress_percent: float = 0
+
+
+class StudentCourseUnitOut(BaseModel):
+    id: int | None = None
+    title: str
+    description: str | None = None
+    sort_order: int = 0
+    lesson_count: int = 0
+    completed_lesson_count: int = 0
+    progress_percent: int = 0
+    lessons: list[CourseLessonOut] = Field(default_factory=list)
+
+
+class StudentCourseResumeLessonOut(BaseModel):
+    course_id: int
+    lesson_id: int
+    unit_id: int | None = None
+    unit_title: str | None = None
+    title: str
+    sort_order: int = 0
+    status: str = "pending"
+    completion_percent: int = 0
 
 
 class StudentLessonStatusOut(BaseModel):
@@ -72,6 +96,9 @@ class StudentCourseCardOut(BaseModel):
     currency: str = "SYP"
     unlocked: bool
     subscription_status: str = "pending"
+    access_status: str | None = None
+    access_source: str | None = None
+    enrollment_status: str | None = None
     activated_at: str | None = None
     expires_at: str | None = None
     days_until_expiry: int | None = None
@@ -88,6 +115,8 @@ class StudentCourseDetailOut(StudentCourseCardOut):
     has_linked_parent: bool = False
     existing_message_thread_id: int | None = None
     lessons: list[CourseLessonOut] = Field(default_factory=list)
+    units: list[StudentCourseUnitOut] = Field(default_factory=list)
+    resume_lesson: StudentCourseResumeLessonOut | None = None
 
 
 class StudentCourseTeacherProfileOut(BaseModel):

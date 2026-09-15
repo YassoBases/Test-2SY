@@ -31,12 +31,26 @@ async def get_student_profile(db: AsyncSession, user_id: int) -> StudentProfile:
 
 async def student_flags(db: AsyncSession, user_id: int) -> dict:
     profile = await get_student_profile(db, user_id)
+    if profile is None:
+        return {
+            "onboarding_complete": False,
+            "needs_payment": False,
+            "payment_complete": False,
+            "teacher_setup_complete": True,
+            "onboarding_step": OnboardingStep.grade.value,
+            "grade": None,
+        }
+
     return {
-        "onboarding_complete": True,
+        "onboarding_complete": profile.onboarding_completed_at is not None,
         "needs_payment": False,
-        "payment_complete": True,
+        "payment_complete": profile.payment_completed_at is not None,
         "teacher_setup_complete": True,
-        "onboarding_step": "complete",
+        "onboarding_step": (
+            profile.onboarding_step.value
+            if profile.onboarding_step
+            else OnboardingStep.grade.value
+        ),
         "grade": profile.grade,
     }
 

@@ -44,6 +44,7 @@ async def get_auth_context(
     session_id = int(payload["sid"]) if payload.get("sid") else None
     if session_id:
         await auth_session_service.get_active_session(db, session_id, user.id)
+        await db.commit()
     return AuthContext(user=user, viewer_mode=viewer_mode, session_id=session_id)
 
 

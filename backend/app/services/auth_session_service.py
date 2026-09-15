@@ -73,6 +73,52 @@ async def create_session(
     return session, access, refresh_plain
 
 
+def _invalid_refresh_token() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="رمز تحديث الجلسة غير صالح أو منتهي",
+    )
+
+
+async def rotate_refresh_token(
+    db: AsyncSession,
+    refresh_token: str,
+) -> tuple[AuthSession, User, str, str]:
+    """Atomically replace one active session's refresh token and issue a new token pair."""
+    token_hash = hash_refresh_token(refresh_token)
+    result = await db.execute(
+        select(AuthSession)
+        .where(AuthSession.refresh_token_hash == token_hash)
+        .with_for_update()
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise _invalid_refresh_token()
+
+    now = datetime.now(timezone.utc)
+    expires_at = session.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if session.revoked_at is not None or expires_at <= now:
+        raise _invalid_refresh_token()
+
+    user = await db.get(User, session.user_id)
+    if not user:
+        raise _invalid_refresh_token()
+
+    refresh_plain = generate_refresh_token()
+    session.refresh_token_hash = hash_refresh_token(refresh_plain)
+    session.last_seen_at = now
+    session.expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+    access = create_access_token(
+        {"sub": str(user.id), "role": user.role.value},
+        session_id=session.id,
+    )
+    await db.flush()
+    return session, user, access, refresh_plain
+
+
 def _default_device_name(user_agent: str | None) -> str:
     if not user_agent:
         return "جهاز غير معروف"

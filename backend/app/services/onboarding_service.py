@@ -191,6 +191,12 @@ async def complete_onboarding(db: AsyncSession, student_id: int) -> tuple[list[C
 
         previews.append(await course_to_preview(db, course))
 
+    if not previews:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="لا توجد دورات متاحة لاختيارات المعلمين الحالية",
+        )
+
     profile.onboarding_step = OnboardingStep.complete
     profile.onboarding_completed_at = datetime.now(timezone.utc)
     await db.flush()
