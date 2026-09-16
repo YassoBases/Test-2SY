@@ -194,6 +194,47 @@ async def test_complete_persists_canonical_completed_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_complete_without_published_course_does_not_invent_one(monkeypatch):
+    from app.models.enrollment import OnboardingStep, StudentCourseAccess
+    from app.schemas.onboarding import OnboardingStatusOut
+    from app.services import onboarding_service
+
+    profile = SimpleNamespace(
+        grade=12,
+        onboarding_step=OnboardingStep.teachers,
+        onboarding_completed_at=None,
+    )
+    choice = SimpleNamespace(subject_id=7, teacher_profile_id=8)
+
+    async def profile_for_test(_db, _user_id):
+        return profile
+
+    async def no_course(_db, **_kwargs):
+        return None
+
+    async def completed_status(_db, _user_id):
+        return OnboardingStatusOut(
+            step=OnboardingStep.complete.value,
+            grade=12,
+            onboarding_complete=True,
+        )
+
+    monkeypatch.setattr(onboarding_service, "get_student_profile", profile_for_test)
+    monkeypatch.setattr(onboarding_service, "get_course_for_teacher_subject", no_course)
+    monkeypatch.setattr(onboarding_service, "get_onboarding_status", completed_status)
+
+    db = _FakeDb([_RowsResult(rows=[choice])])
+    previews, status = await onboarding_service.complete_onboarding(db, 42)
+
+    assert profile.onboarding_step == OnboardingStep.complete
+    assert profile.onboarding_completed_at is not None
+    assert previews == []
+    assert not any(isinstance(item, StudentCourseAccess) for item in db.added)
+    assert status.onboarding_complete is True
+
+
+
+@pytest.mark.asyncio
 async def test_teacher_and_parent_flag_semantics_are_unchanged(monkeypatch):
     from app.models.user import UserRole
     from app.services import user_status_service

@@ -40,6 +40,7 @@ async def student_dashboard(
 ):
     try:
         result = await student_courses_service.list_student_dashboard(db, student.id)
+        await db.commit()
         logger.info(
             "GET /student/dashboard ok student_id=%s grade=%s courses=%s",
             student.id,
@@ -131,7 +132,9 @@ async def subscriptions_catalog(
     db: AsyncSession = Depends(get_db),
     student: User = Depends(require_student_actor()),
 ):
-    return await student_courses_service.list_subscriptions_catalog(db, student.id)
+    result = await student_courses_service.list_subscriptions_catalog(db, student.id)
+    await db.commit()
+    return result
 
 
 @router.post("/subscriptions/subscribe", response_model=SubscribeCourseOut)

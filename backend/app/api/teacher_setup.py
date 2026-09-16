@@ -56,7 +56,9 @@ async def setup_status(
     db: AsyncSession = Depends(get_db),
     teacher: User = Depends(require_role(UserRole.teacher)),
 ):
-    return await teacher_setup_service.get_setup_status(db, teacher)
+    status = await teacher_setup_service.get_setup_status(db, teacher)
+    await db.commit()
+    return status
 
 
 @router.put("/profile", response_model=TeacherSetupStatusOut)

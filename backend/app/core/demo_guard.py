@@ -31,9 +31,7 @@ def is_demo_email(email: str | None) -> bool:
     if not email:
         return False
     normalized = email.strip().lower()
-    if normalized in DEMO_EMAILS:
-        return True
-    return normalized.endswith(DEMO_EMAIL_DOMAIN)
+    return normalized in DEMO_EMAILS
 
 
 _LEGACY_NAME_FRAGMENTS = ("أحمد الحسين", "كريم العلي", "أستاذ أحمد", "أ. كريم", "أ. سارة")

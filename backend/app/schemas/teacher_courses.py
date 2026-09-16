@@ -34,7 +34,7 @@ class TeacherCourseCreate(BaseModel):
     description: str | None = None
     subject_id: int
     grade: int = Field(ge=MIN_ACADEMIC_GRADE, le=MAX_ACADEMIC_GRADE)
-    price: float = Field(ge=0)
+    price: float = Field(default=0, ge=0)
     currency: str = "SYP"
     is_published: bool = True
 

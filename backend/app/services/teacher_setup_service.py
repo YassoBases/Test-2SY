@@ -181,7 +181,6 @@ async def update_teaching(
 
     await db.execute(delete(TeacherProfileSubject).where(TeacherProfileSubject.teacher_profile_id == tp.id))
     await db.execute(delete(TeacherProfileGrade).where(TeacherProfileGrade.teacher_profile_id == tp.id))
-
     for sid in unique_subject_ids:
         db.add(TeacherProfileSubject(teacher_profile_id=tp.id, subject_id=sid))
     for g in sorted(grade_set):

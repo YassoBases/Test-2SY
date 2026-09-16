@@ -5,11 +5,10 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.academic_grades import validate_academic_grade
 
-from app.models.catalog import Course, Subject
+from app.models.catalog import Subject
 from app.models.enrollment import (
     OnboardingStep,
     PaymentStatus,
@@ -19,7 +18,11 @@ from app.models.enrollment import (
 )
 from app.schemas.catalog import CoursePreviewOut
 from app.schemas.onboarding import OnboardingStatusOut, TeacherChoiceItem
-from app.services.catalog_service import course_to_preview, get_course_for_teacher_subject
+from app.services.catalog_service import (
+    course_to_preview,
+    get_course_for_teacher_subject,
+    teacher_is_selectable_for_subject,
+)
 from app.services.user_status_service import get_student_profile
 
 
@@ -126,13 +129,13 @@ async def save_teachers(
 
     await db.execute(delete(StudentTeacherChoice).where(StudentTeacherChoice.student_id == student_id))
     for c in choices:
-        course = await get_course_for_teacher_subject(
+        selectable = await teacher_is_selectable_for_subject(
             db,
-            subject_id=c.subject_id,
             teacher_profile_id=c.teacher_profile_id,
+            subject_id=c.subject_id,
             grade=profile.grade,
         )
-        if not course:
+        if not selectable:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="المعلم المختار غير متاح لهذه المادة",
@@ -190,12 +193,6 @@ async def complete_onboarding(db: AsyncSession, student_id: int) -> tuple[list[C
             access.payment_status = PaymentStatus.pending
 
         previews.append(await course_to_preview(db, course))
-
-    if not previews:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="لا توجد دورات متاحة لاختيارات المعلمين الحالية",
-        )
 
     profile.onboarding_step = OnboardingStep.complete
     profile.onboarding_completed_at = datetime.now(timezone.utc)

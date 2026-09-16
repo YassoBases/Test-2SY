@@ -42,7 +42,9 @@ async def list_courses(
     db: AsyncSession = Depends(get_db),
     teacher: User = Depends(require_role(UserRole.teacher)),
 ):
-    return await teacher_courses_service.list_teacher_courses(db, teacher)
+    result = await teacher_courses_service.list_teacher_courses(db, teacher)
+    await db.commit()
+    return result
 
 
 @router.post("/courses", response_model=TeacherCourseOut)

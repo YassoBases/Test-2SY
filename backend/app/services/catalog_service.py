@@ -48,20 +48,19 @@ async def list_teachers_for_subject(
     if not subj or subj.grade != grade:
         return []
 
-    # IMPORTANT: Teacher appears in onboarding only if they are actually selectable.
-    # We define "selectable" as: teacher is active AND has an active, published course
-    # for (grade, subject). This must match onboarding selection validation.
+    # Teacher discovery is profile-based: completed + active teacher who saved this
+    # subject and grade. A Course row is not required and must not be auto-created.
     result = await db.execute(
         select(TeacherProfile)
         .join(User, TeacherProfile.user_id == User.id)
-        .join(Course, Course.teacher_profile_id == TeacherProfile.id)
+        .join(TeacherProfileSubject, TeacherProfileSubject.teacher_profile_id == TeacherProfile.id)
+        .join(TeacherProfileGrade, TeacherProfileGrade.teacher_profile_id == TeacherProfile.id)
         .where(
             TeacherProfile.active.is_(True),
+            TeacherProfile.setup_completed_at.is_not(None),
             user_role_equals(UserRole.teacher),
-            Course.subject_id == subject_id,
-            Course.grade == grade,
-            Course.is_active.is_(True),
-            Course.is_published.is_(True),
+            TeacherProfileSubject.subject_id == subject_id,
+            TeacherProfileGrade.grade == grade,
         )
         .options(selectinload(TeacherProfile.user))
     )
@@ -83,6 +82,13 @@ async def list_teachers_for_subject(
             )
         )
     return cards
+
+
+async def teacher_is_selectable_for_subject(
+    db: AsyncSession, *, teacher_profile_id: int, subject_id: int, grade: int
+) -> bool:
+    teachers = await list_teachers_for_subject(db, subject_id=subject_id, grade=grade)
+    return any(card.id == teacher_profile_id for card in teachers)
 
 
 async def get_course_for_teacher_subject(
