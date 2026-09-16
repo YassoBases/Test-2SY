@@ -45,16 +45,14 @@ def _infer_kind(mime: str, filename: str) -> MessageKind:
     )
 
 
-def save_message_file(
+def prepare_message_file(
     *,
-    uploader_id: int,
-    thread_id: int,
     content: bytes,
     filename: str,
     mime_type: str,
     voice_duration_ms: int | None = None,
-) -> tuple[MessageKind, str, str, str]:
-    """Returns (kind, public_url, stored_name, mime)."""
+) -> tuple[MessageKind, str, str]:
+    """Validate a message upload without deciding where it is stored."""
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="الملف فارغ")
 
@@ -74,15 +72,7 @@ def save_message_file(
         MessageKind.voice: ".webm",
         MessageKind.document: ".bin",
     }.get(kind, ".bin")
-
-    root = Path(settings.UPLOAD_DIR) / "messages" / f"thread_{thread_id}"
-    root.mkdir(parents=True, exist_ok=True)
-    safe_name = f"{kind.value}_{uploader_id}_{uuid.uuid4().hex}{ext}"
-    dest = root / safe_name
-    dest.write_bytes(content)
-    rel = dest.resolve().relative_to(Path(settings.UPLOAD_DIR).resolve())
-    public = "/uploads/" + "/".join(rel.parts)
-    stored_name = filename or safe_name
+    stored_name = filename or f"{kind.value}_{uuid.uuid4().hex}{ext}"
     mime = (mime_type or "").split(";")[0].strip() or "application/octet-stream"
     if kind == MessageKind.voice:
         if ext in {".webm"} or mime in ("application/octet-stream", ""):
@@ -93,7 +83,41 @@ def save_message_file(
             mime = "audio/ogg"
     if kind == MessageKind.voice and voice_duration_ms is not None and voice_duration_ms < 0:
         voice_duration_ms = None
+    return kind, stored_name, mime
+
+
+def save_message_file(
+    *,
+    uploader_id: int,
+    thread_id: int,
+    content: bytes,
+    filename: str,
+    mime_type: str,
+    voice_duration_ms: int | None = None,
+) -> tuple[MessageKind, str, str, str]:
+    """Legacy local /uploads storage. New message attachments use MediaObject storage."""
+    kind, stored_name, mime = prepare_message_file(
+        content=content,
+        filename=filename,
+        mime_type=mime_type,
+        voice_duration_ms=voice_duration_ms,
+    )
+    ext = Path(stored_name).suffix or {
+        MessageKind.image: ".jpg",
+        MessageKind.pdf: ".pdf",
+        MessageKind.voice: ".webm",
+        MessageKind.document: ".bin",
+    }.get(kind, ".bin")
+
+    root = Path(settings.UPLOAD_DIR) / "messages" / f"thread_{thread_id}"
+    root.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{kind.value}_{uploader_id}_{uuid.uuid4().hex}{ext}"
+    dest = root / safe_name
+    dest.write_bytes(content)
+    rel = dest.resolve().relative_to(Path(settings.UPLOAD_DIR).resolve())
+    public = "/uploads/" + "/".join(rel.parts)
     return kind, public, stored_name, mime
+
 
 
 def preview_label_for_kind(kind: MessageKind | str, name: str | None = None) -> str:

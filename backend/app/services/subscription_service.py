@@ -39,11 +39,24 @@ async def subscribe_course(
     if not course:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="المادة غير متاحة لصفك")
 
-    from app.services.subscription_access_service import activate_paid_access, is_access_active
+    from app.services.subscription_access_service import (
+        activate_paid_access,
+        is_access_active,
+        subscription_lifecycle_status,
+    )
 
     now = datetime.now(timezone.utc)
     access = await ensure_course_access(db, student_id, course_id)
-    if access.payment_status == PaymentStatus.paid and is_access_active(access, now):
+    lifecycle = subscription_lifecycle_status(access, now)
+    if lifecycle in ("revoked", "suspended"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="الوصول لهذه المادة غير متاح")
+    # Fully active (not expiring) stays idempotent. Expiring/expired/pending go through
+    # activate_paid_access so a DEV subscribe/renew actually extends the entitlement.
+    if (
+        access.payment_status == PaymentStatus.paid
+        and is_access_active(access, now)
+        and lifecycle == "active"
+    ):
         return SubscribeCourseOut(ok=True, course_id=course_id, reference="ALREADY-PAID", unlocked=True)
 
     if method not in METHOD_MAP:

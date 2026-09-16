@@ -12,7 +12,9 @@ from sqlalchemy.orm import selectinload
 
 from app.models.catalog import Course, TeacherProfile
 from app.models.conversation import (
+    AttachmentKind,
     ConversationMessage,
+    ConversationMessageAttachment,
     ConversationMessageRead,
     ConversationParticipant,
     ConversationParticipantRole,
@@ -22,6 +24,7 @@ from app.models.conversation import (
     MessageKind,
 )
 from app.models.notification import NotificationType
+from app.models.media import MediaAccessScope
 from app.models.parent_link import ParentStudentLink
 from app.models.user import User, UserRole
 from app.schemas.messaging import (
@@ -40,6 +43,7 @@ from app.schemas.messaging import (
     ThreadParticipantsUpdateIn,
 )
 from app.services import messaging_media_service, notification_service
+from app.services.media_storage.upload import build_object_key, store_and_register_media
 from app.services.parent_link_service import resolve_parent_student_id
 from app.services.subscription_access_service import assert_student_active_enrollment
 from app.services.teacher_student_service import assert_student_in_teacher_scope
@@ -557,6 +561,26 @@ def _message_kind_value(msg: ConversationMessage) -> MessageKind:
         return MessageKind.text
 
 
+
+def _attachment_kind_for_message(kind: MessageKind) -> str:
+    if kind == MessageKind.image:
+        return AttachmentKind.image.value
+    if kind == MessageKind.voice:
+        return AttachmentKind.audio.value
+    if kind in {MessageKind.pdf, MessageKind.document}:
+        return AttachmentKind.document.value
+    return AttachmentKind.file.value
+
+
+def _storage_kind_for_message(kind: MessageKind) -> str:
+    if kind == MessageKind.image:
+        return "image"
+    if kind == MessageKind.voice:
+        return "audio"
+    if kind == MessageKind.pdf:
+        return "pdf"
+    return "document"
+
 async def _message_to_out(
     db: AsyncSession,
     msg: ConversationMessage,
@@ -571,6 +595,27 @@ async def _message_to_out(
     deleted = msg.deleted_at is not None
     body = "تم حذف الرسالة" if deleted else (msg.body or "")
     avatars = sender_avatars or {}
+    linked_attachment = await db.scalar(
+        select(ConversationMessageAttachment)
+        .where(ConversationMessageAttachment.message_id == msg.id)
+        .options(selectinload(ConversationMessageAttachment.media_object))
+        .order_by(ConversationMessageAttachment.sort_order, ConversationMessageAttachment.id)
+        .limit(1)
+    )
+    linked_media = linked_attachment.media_object if linked_attachment else None
+    attachment_media_id = linked_attachment.media_object_id if linked_attachment and not deleted else None
+    attachment_url = None
+    attachment_name = msg.attachment_name
+    attachment_mime = msg.attachment_mime
+    voice_duration_ms = msg.voice_duration_ms
+    if not deleted and linked_attachment:
+        attachment_url = f"/api/media/{linked_attachment.media_object_id}/download-url"
+        attachment_name = linked_attachment.display_name or attachment_name
+        attachment_mime = (linked_media.mime_type if linked_media else None) or attachment_mime
+        voice_duration_ms = linked_attachment.voice_duration_ms or voice_duration_ms
+    elif not deleted:
+        attachment_url = msg.attachment_url
+
     return ConversationMessageOut(
         id=msg.id,
         thread_id=msg.thread_id,
@@ -579,10 +624,11 @@ async def _message_to_out(
         sender_avatar_url=avatars.get(msg.sender_id),
         body=body,
         message_kind=kind,
-        attachment_url=None if deleted else msg.attachment_url,
-        attachment_name=msg.attachment_name,
-        attachment_mime=msg.attachment_mime,
-        voice_duration_ms=msg.voice_duration_ms,
+        attachment_media_id=attachment_media_id,
+        attachment_url=attachment_url,
+        attachment_name=attachment_name,
+        attachment_mime=attachment_mime,
+        voice_duration_ms=voice_duration_ms,
         is_deleted=deleted,
         status=st,
         created_at=msg.created_at.isoformat() if msg.created_at else "",
@@ -1254,13 +1300,27 @@ async def send_message_with_attachment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="المحادثة غير موجودة")
     await _assert_course_communication_allowed(db, thread, user)
 
-    kind, public_url, stored_name, mime = messaging_media_service.save_message_file(
-        uploader_id=user.id,
-        thread_id=thread_id,
+    kind, stored_name, mime = messaging_media_service.prepare_message_file(
         content=file_content,
         filename=filename,
         mime_type=mime_type,
         voice_duration_ms=voice_duration_ms,
+    )
+    stored = await store_and_register_media(
+        db,
+        content=file_content,
+        filename=stored_name,
+        mime_type=mime,
+        uploaded_by_user_id=user.id,
+        access_scope=MediaAccessScope.private.value,
+        object_key=build_object_key("messages", f"thread_{thread_id}", filename=stored_name),
+        kind=_storage_kind_for_message(kind),
+        metadata_json={
+            "domain": "messaging",
+            "thread_id": thread_id,
+            "owner_user_id": user.id,
+            "message_kind": kind.value,
+        },
     )
     text = caption.strip()
     if not text:
@@ -1271,13 +1331,26 @@ async def send_message_with_attachment(
         sender_id=user.id,
         body=text,
         message_kind=kind.value,
-        attachment_url=public_url,
+        attachment_url=stored.client_url,
         attachment_name=stored_name,
-        attachment_mime=mime,
+        attachment_mime=stored.mime_type,
         voice_duration_ms=voice_duration_ms if kind == MessageKind.voice else None,
         status=MessageDeliveryStatus.delivered,
     )
     db.add(msg)
+    await db.flush()
+
+    if isinstance(stored.media.metadata_json, dict):
+        stored.media.metadata_json = {**stored.media.metadata_json, "message_id": msg.id}
+    db.add(
+        ConversationMessageAttachment(
+            message_id=msg.id,
+            media_object_id=stored.media.id,
+            attachment_kind=_attachment_kind_for_message(kind),
+            display_name=stored_name,
+            voice_duration_ms=voice_duration_ms if kind == MessageKind.voice else None,
+        )
+    )
     await db.flush()
 
     preview = messaging_media_service.preview_label_for_kind(kind, stored_name)

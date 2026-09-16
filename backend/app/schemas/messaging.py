@@ -25,6 +25,7 @@ class ConversationMessageOut(BaseModel):
     sender_avatar_url: str | None = None
     body: str
     message_kind: MessageKind = MessageKind.text
+    attachment_media_id: int | None = None
     attachment_url: str | None = None
     attachment_name: str | None = None
     attachment_mime: str | None = None

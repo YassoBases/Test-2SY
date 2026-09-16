@@ -36,13 +36,21 @@ def compute_expires_at(activated_at: datetime, *, term_days: int | None = None) 
 def activate_paid_access(access: StudentCourseAccess, now: datetime | None = None) -> None:
     """Mark access paid and set/extend activation window (renewal restores access)."""
     now = _aware(now) or datetime.now(timezone.utc)
+    current_status = (access.access_status or "").strip()
+    if current_status in {CourseAccessStatus.revoked.value, CourseAccessStatus.suspended.value}:
+        return
+
     extend_from_current = (
         access.payment_status == PaymentStatus.paid
         and is_access_active(access, now)
         and _aware(access.expires_at) is not None
     )
     access.payment_status = PaymentStatus.paid
+    access.access_status = CourseAccessStatus.active.value
+    access.source = access.source or "payment"
     access.unlocked_at = access.unlocked_at or now
+    access.revoked_at = None
+    access.revocation_reason = None
 
     if extend_from_current:
         base = _aware(access.expires_at)

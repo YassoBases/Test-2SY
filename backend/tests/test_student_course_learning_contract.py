@@ -93,7 +93,9 @@ def _access(**overrides):
         "enrollment": SimpleNamespace(status="active"),
         "activated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
         "expires_at": datetime(2027, 1, 1, tzinfo=timezone.utc),
+        "unlocked_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
         "revoked_at": None,
+        "revocation_reason": None,
     }
     data.update(overrides)
     return SimpleNamespace(**data)
@@ -300,3 +302,58 @@ async def test_progress_update_and_completion_use_valid_access(monkeypatch):
     assert result["success"] is True
     assert progress.completed_at is not None
     assert progress.completion_type == service.COMPLETION_TYPE_VERIFIED
+
+
+def test_activate_paid_access_promotes_pending_and_sets_window():
+    from app.core.config import get_settings
+    from app.models.enrollment import PaymentStatus
+    from app.services.subscription_access_service import activate_paid_access, is_access_active
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    access = _access(
+        payment_status=PaymentStatus.pending,
+        access_status="pending",
+        source=None,
+        unlocked_at=None,
+        activated_at=None,
+        expires_at=None,
+    )
+    activate_paid_access(access, now)
+
+    assert access.payment_status == PaymentStatus.paid
+    assert access.access_status == "active"
+    assert access.source == "payment"
+    assert access.activated_at == now
+    assert access.expires_at == now + timedelta(days=get_settings().SUBSCRIPTION_TERM_DAYS)
+    assert is_access_active(access, now) is True
+
+
+def test_activate_paid_access_extends_expiring_paid_window():
+    from app.core.config import get_settings
+    from app.models.enrollment import PaymentStatus
+    from app.services.subscription_access_service import (
+        activate_paid_access,
+        subscription_lifecycle_status,
+    )
+
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    expires = now + timedelta(days=5)
+    access = _access(
+        payment_status=PaymentStatus.paid,
+        access_status="active",
+        expires_at=expires,
+    )
+    assert subscription_lifecycle_status(access, now) == "expiring_soon"
+    activate_paid_access(access, now)
+    assert access.expires_at == expires + timedelta(days=get_settings().SUBSCRIPTION_TERM_DAYS)
+    assert subscription_lifecycle_status(access, now) == "active"
+
+
+def test_activate_paid_access_does_not_restore_revoked():
+    from app.models.enrollment import PaymentStatus
+    from app.services.subscription_access_service import activate_paid_access, is_access_active
+
+    access = _access(payment_status=PaymentStatus.paid, access_status="revoked")
+    activate_paid_access(access, datetime.now(timezone.utc))
+    assert access.access_status == "revoked"
+    assert is_access_active(access) is False
