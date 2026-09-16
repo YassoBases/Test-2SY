@@ -85,12 +85,48 @@ async def update_profile(db: AsyncSession, user: User, full_name: str, bio: str 
 
 
 def save_profile_image(user_id: int, filename: str, content: bytes) -> str:
+    """Legacy local-only helper (kept for callers); prefer save_profile_image_async."""
     upload_root = Path(settings.UPLOAD_DIR) / "teachers" / str(user_id)
     upload_root.mkdir(parents=True, exist_ok=True)
     dest = upload_root / filename
     dest.write_bytes(content)
     rel = dest.resolve().relative_to(Path(settings.UPLOAD_DIR).resolve())
     return "/uploads/" + "/".join(rel.parts)
+
+
+async def save_profile_image_async(
+    db: AsyncSession,
+    user: User,
+    *,
+    filename: str,
+    content: bytes,
+    mime_type: str | None = None,
+) -> str:
+    """Upload teacher avatar via storage provider; public-safe on edumind-public when supabase."""
+    from app.models.media import MediaAccessScope
+    from app.services.media_storage.upload import build_object_key, store_and_register_media
+
+    object_key = build_object_key(
+        "avatars",
+        f"teacher_{user.id}",
+        filename=filename or "avatar.jpg",
+    )
+    stored = await store_and_register_media(
+        db,
+        content=content,
+        filename=filename or "avatar.jpg",
+        mime_type=mime_type,
+        uploaded_by_user_id=user.id,
+        access_scope=MediaAccessScope.public.value,
+        object_key=object_key,
+        kind="avatar",
+        max_bytes=5 * 1024 * 1024,
+        metadata_json={"kind": "teacher_avatar", "user_id": user.id},
+        keep_local_working_copy=False,
+    )
+    user.avatar_media_object_id = stored.media.id
+    await db.flush()
+    return stored.client_url
 
 
 async def set_profile_image(db: AsyncSession, user: User, image_url: str) -> TeacherSetupStatusOut:

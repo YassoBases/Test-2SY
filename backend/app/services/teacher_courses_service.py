@@ -22,7 +22,7 @@ from app.models.catalog import (
     TeacherProfileGrade,
     TeacherProfileSubject,
 )
-from app.models.lesson import ContentChunk, Lesson, LessonAssetType, LessonContentType, LessonStatus
+from app.models.lesson import ContentChunk, Lesson, LessonAsset, LessonAssetType, LessonContentType, LessonStatus
 from app.models.enrollment import PaymentStatus, StudentCourseAccess
 from app.models.progress import StudentLessonProgress
 from app.models.quiz import QuizAttempt, QuizQuestion
@@ -315,7 +315,7 @@ def _lesson_out(lesson: Lesson) -> TeacherCourseLessonOut:
         asset_rows.append(
             LessonAssetOut(
                 asset_type=at,
-                url=_public_url(a.storage_path),
+                url=urls.get(at) or _public_url(a.storage_path),
                 original_filename=a.original_filename,
             )
         )
@@ -336,7 +336,7 @@ def _lesson_out(lesson: Lesson) -> TeacherCourseLessonOut:
         has_pdf=bool(urls.get("pdf")),
         has_audio=bool(urls.get("audio")),
         sort_order=lesson.sort_order,
-        status=lesson.status.value,
+        status=lesson.status.value if hasattr(lesson.status, "value") else str(lesson.status),
         is_visible=lesson.is_visible,
     )
 
@@ -347,7 +347,7 @@ async def list_course_lessons(db: AsyncSession, user: User, course_id: int) -> l
     result = await db.execute(
         select(Lesson)
         .where(Lesson.course_id == course_id)
-        .options(selectinload(Lesson.assets))
+        .options(selectinload(Lesson.assets).selectinload(LessonAsset.media_object))
         .order_by(Lesson.sort_order, Lesson.id)
     )
     return [_lesson_out(l) for l in result.scalars().all()]
@@ -607,7 +607,9 @@ async def update_course_lesson_content(
     )
 
     refreshed = await db.execute(
-        select(Lesson).where(Lesson.id == lesson.id).options(selectinload(Lesson.assets))
+        select(Lesson).where(Lesson.id == lesson.id).options(
+            selectinload(Lesson.assets).selectinload(LessonAsset.media_object)
+        )
     )
     lesson = refreshed.scalar_one()
     detail = await get_course_lesson_detail(db, user, course_id, lesson_id)
@@ -625,7 +627,7 @@ async def _owned_lesson_in_course(
             Lesson.course_id == course_id,
             Lesson.teacher_id == user.id,
         )
-        .options(selectinload(Lesson.assets))
+        .options(selectinload(Lesson.assets).selectinload(LessonAsset.media_object))
     )
     lesson = result.scalar_one_or_none()
     if not lesson:
@@ -658,11 +660,6 @@ async def add_video_lesson(
 ) -> tuple[TeacherCourseLessonOut, bool]:
     course = await _owned_course(db, user, course_id)
     subj = await db.get(Subject, course.subject_id)
-    upload_dir = Path(settings.UPLOAD_DIR) / f"teacher_{user.id}" / f"course_{course_id}"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(filename or "video.mp4").suffix or ".mp4"
-    video_path = upload_dir / f"{uuid.uuid4().hex}{ext}"
-    video_path.write_bytes(video_bytes)
 
     if lesson_id:
         lesson = await _owned_lesson_in_course(db, user, course_id, lesson_id)
@@ -670,7 +667,6 @@ async def add_video_lesson(
             lesson.title = title.strip()
         if description is not None:
             lesson.description = description
-        lesson.video_url = str(video_path)
     else:
         lesson = Lesson(
             teacher_id=user.id,
@@ -679,18 +675,30 @@ async def add_video_lesson(
             description=description,
             subject=subj.name_ar if subj else "مادة",
             grade=str(course.grade),
-            video_url=str(video_path),
             sort_order=sort_order,
             status=LessonStatus.draft,
             is_visible=True,
         )
         db.add(lesson)
+        await db.flush()
+
+    await save_lesson_file(
+        db,
+        lesson,
+        LessonAssetType.video,
+        video_bytes,
+        filename or "video.mp4",
+        user_id=user.id,
+        course_id=course_id,
+        mime_type="video/mp4",
+    )
 
     _sync_lesson_content_type(lesson)
     await db.flush()
     await _clear_lesson_ai_artifacts(db, lesson)
     _mark_lesson_needs_reprocessing(lesson)
     await db.flush()
+    lesson = await _owned_lesson_in_course(db, user, course_id, lesson.id)
     return _lesson_out(lesson), True
 
 
@@ -710,11 +718,6 @@ async def add_pdf_lesson(
     """Save PDF and optionally queue the existing AI pipeline. Returns (lesson, should_schedule)."""
     course = await _owned_course(db, user, course_id)
     subj = await db.get(Subject, course.subject_id)
-    upload_dir = Path(settings.UPLOAD_DIR) / f"teacher_{user.id}" / f"course_{course_id}"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(filename or "file.pdf").suffix or ".pdf"
-    pdf_path = upload_dir / f"{uuid.uuid4().hex}{ext}"
-    pdf_path.write_bytes(pdf_bytes)
 
     if lesson_id:
         lesson = await _owned_lesson_in_course(db, user, course_id, lesson_id)
@@ -722,7 +725,6 @@ async def add_pdf_lesson(
             lesson.title = title.strip()
         if description is not None:
             lesson.description = description
-        lesson.pdf_path = str(pdf_path)
     else:
         lesson = Lesson(
             teacher_id=user.id,
@@ -731,17 +733,29 @@ async def add_pdf_lesson(
             description=description,
             subject=subj.name_ar if subj else "مادة",
             grade=str(course.grade),
-            pdf_path=str(pdf_path),
             sort_order=sort_order,
             status=LessonStatus.draft,
             is_visible=True,
         )
         db.add(lesson)
+        await db.flush()
+
+    await save_lesson_file(
+        db,
+        lesson,
+        LessonAssetType.pdf,
+        pdf_bytes,
+        filename or "file.pdf",
+        user_id=user.id,
+        course_id=course_id,
+        mime_type="application/pdf",
+    )
 
     _sync_lesson_content_type(lesson)
     lesson.status = LessonStatus.draft
     lesson.error_message = None
     await db.flush()
+    lesson = await _owned_lesson_in_course(db, user, course_id, lesson.id)
     return _lesson_out(lesson), schedule_ai
 
 
@@ -816,7 +830,9 @@ async def create_lesson_with_assets(
     _sync_lesson_content_type(lesson)
     await db.flush()
     refreshed = await db.execute(
-        select(Lesson).where(Lesson.id == lesson.id).options(selectinload(Lesson.assets))
+        select(Lesson).where(Lesson.id == lesson.id).options(
+            selectinload(Lesson.assets).selectinload(LessonAsset.media_object)
+        )
     )
     lesson = refreshed.scalar_one()
     await log_audit(
@@ -848,11 +864,6 @@ async def add_homework_lesson(
 ) -> TeacherCourseLessonOut:
     course = await _owned_course(db, user, course_id)
     subj = await db.get(Subject, course.subject_id)
-    upload_dir = Path(settings.UPLOAD_DIR) / f"teacher_{user.id}" / f"course_{course_id}"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(filename or "homework.pdf").suffix or ".pdf"
-    hw_path = upload_dir / f"hw_{uuid.uuid4().hex}{ext}"
-    hw_path.write_bytes(file_bytes)
 
     if lesson_id:
         lesson = await _owned_lesson_in_course(db, user, course_id, lesson_id)
@@ -860,7 +871,6 @@ async def add_homework_lesson(
             lesson.title = title.strip()
         if description is not None:
             lesson.description = description
-        lesson.homework_path = str(hw_path)
     else:
         lesson = Lesson(
             teacher_id=user.id,
@@ -869,15 +879,27 @@ async def add_homework_lesson(
             description=description,
             subject=subj.name_ar if subj else "مادة",
             grade=str(course.grade),
-            homework_path=str(hw_path),
             sort_order=sort_order,
             status=LessonStatus.processed,
             is_visible=True,
         )
         db.add(lesson)
+        await db.flush()
+
+    await save_lesson_file(
+        db,
+        lesson,
+        LessonAssetType.homework,
+        file_bytes,
+        filename or "homework.pdf",
+        user_id=user.id,
+        course_id=course_id,
+        mime_type="application/pdf",
+    )
 
     _sync_lesson_content_type(lesson)
     await db.flush()
+    lesson = await _owned_lesson_in_course(db, user, course_id, lesson.id)
     return _lesson_out(lesson)
 
 

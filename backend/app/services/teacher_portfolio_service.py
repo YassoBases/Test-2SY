@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
@@ -202,6 +201,7 @@ async def delete_why_study_point(db: AsyncSession, user: User, entry_id: int) ->
 
 
 def save_teacher_document(user_id: int, filename: str, content: bytes) -> str:
+    """Legacy local-only helper; prefer store path in upload_professional_document."""
     upload_root = Path(settings.UPLOAD_DIR) / "teachers" / str(user_id) / "documents"
     upload_root.mkdir(parents=True, exist_ok=True)
     dest = upload_root / filename
@@ -227,6 +227,9 @@ async def upload_professional_document(
     file: UploadFile,
     sort_order: int = 0,
 ) -> TeacherProfessionalDocumentOut:
+    from app.models.media import MediaAccessScope
+    from app.services.media_storage.upload import build_object_key, store_and_register_media
+
     content = await file.read()
     if not content or len(content) < 32:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="الملف فارغ أو غير صالح")
@@ -237,18 +240,34 @@ async def upload_professional_document(
     if mime == "application/pdf" and len(content) > settings.MAX_PDF_BYTES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="حجم ملف PDF كبير جداً")
 
-    ext = Path(file.filename or "document.pdf").suffix or ".pdf"
-    filename = f"doc_{uuid.uuid4().hex[:12]}{ext}"
-    url = save_teacher_document(user.id, filename, content)
+    filename = file.filename or "document.pdf"
+    object_key = build_object_key(
+        "teacher-documents",
+        f"teacher_{user.id}",
+        filename=filename,
+    )
+    stored = await store_and_register_media(
+        db,
+        content=content,
+        filename=filename,
+        mime_type=mime,
+        uploaded_by_user_id=user.id,
+        access_scope=MediaAccessScope.private.value,
+        object_key=object_key,
+        kind="teacher-document",
+        metadata_json={"kind": "teacher_professional_document", "user_id": user.id},
+        keep_local_working_copy=False,
+    )
 
     tp = await get_or_create_teacher_profile(db, user)
     row = TeacherProfessionalDocument(
         teacher_profile_id=tp.id,
         title=title.strip(),
         document_type=document_type,
-        file_url=url,
+        file_url=stored.client_url,
+        media_object_id=stored.media.id,
         original_filename=file.filename,
-        mime_type=mime,
+        mime_type=stored.mime_type,
         sort_order=sort_order,
     )
     db.add(row)

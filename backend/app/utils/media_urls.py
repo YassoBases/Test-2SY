@@ -15,7 +15,7 @@ def public_upload_url(path: str | None) -> str | None:
     raw = path.strip()
     if raw.startswith("http://") or raw.startswith("https://"):
         return raw
-    if raw.startswith("/uploads/"):
+    if raw.startswith("/uploads/") or raw.startswith("/api/media/"):
         return raw
     if raw.startswith("uploads/"):
         return "/" + raw.lstrip("/")

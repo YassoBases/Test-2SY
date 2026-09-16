@@ -103,7 +103,13 @@ async def upload_avatar(
         )
     ext = Path(file.filename or "avatar.jpg").suffix or ".jpg"
     filename = f"avatar_{uuid.uuid4().hex[:10]}{ext}"
-    url = teacher_setup_service.save_profile_image(teacher.id, filename, content)
+    url = await teacher_setup_service.save_profile_image_async(
+        db,
+        teacher,
+        filename=filename,
+        content=content,
+        mime_type=file.content_type,
+    )
     status = await teacher_setup_service.set_profile_image(db, teacher, url)
     await db.commit()
     return status

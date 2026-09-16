@@ -279,6 +279,18 @@ class Settings(BaseSettings):
     MAX_PDF_BYTES: int = 500 * 1024 * 1024
     MAX_AUDIO_BYTES: int = 10 * 1024 * 1024
     MAX_VOICE_SAMPLE_BYTES: int = 50 * 1024 * 1024
+
+    # A6.0 — media storage (local DEV fallback remains default)
+    # MEDIA_STORAGE_PROVIDER=local|supabase. When supabase is selected but credentials
+    # are missing, the backend falls back to local safely.
+    MEDIA_STORAGE_PROVIDER: str = "local"
+    SUPABASE_URL: str = ""
+    # Server-side only. Never expose to Android / API responses / client bundles.
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_PUBLIC_BUCKET: str = "edumind-public"
+    SUPABASE_PRIVATE_BUCKET: str = "edumind-private"
+    SUPABASE_SIGNED_URL_TTL_SECONDS: int = 300
+
     VOICE_SAMPLE_MIN_SECONDS: int = 60
     VOICE_CLONE_MIN_QUALITY_SCORE: int = 65
     VOICE_CLONE_MIN_CLONE_CONFIDENCE: int = 60

@@ -1,4 +1,4 @@
-"""Provider-agnostic media storage — local disk today, S3/R2/MinIO later."""
+"""Provider-agnostic media storage — local disk today, Supabase when configured (A6.0)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,14 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.media import MediaObject, StorageProvider
+from app.models.media import MediaAccessScope, MediaObject, MediaStatus, StorageProvider
+from app.services.media_storage.constants import (
+    PRIVATE_BUCKET,
+    PUBLIC_BUCKET,
+    bucket_for_access_scope,
+    normalize_storage_key,
+)
+from app.services.media_storage.config import effective_storage_provider
 
 settings = get_settings()
 
@@ -32,17 +39,50 @@ async def register_media_object(
     uploaded_by_user_id: int | None = None,
     storage_provider: str = StorageProvider.local.value,
     storage_key: str | None = None,
+    storage_bucket: str | None = None,
+    access_scope: str | None = None,
+    status: str = MediaStatus.ready.value,
+    metadata_json: dict | None = None,
+    checksum_sha256: str | None = None,
 ) -> MediaObject:
     """Persist media metadata; binary already on disk or uploaded to cloud separately."""
-    key = storage_key or storage_path
+    # Keep local as the safe default until upload flows are converted (later A6).
+    # Callers opt into supabase by passing storage_provider=StorageProvider.supabase.value.
+    provider = (storage_provider or StorageProvider.local.value).strip().lower()
+    if provider == StorageProvider.supabase.value and effective_storage_provider() != StorageProvider.supabase.value:
+        # Misconfigured supabase → refuse silent metadata-only supabase rows; stay local.
+        provider = StorageProvider.local.value
+    key = normalize_storage_key(storage_key or storage_path)
+    scope = (access_scope or MediaAccessScope.legacy_public.value).strip().lower()
+
+    bucket = storage_bucket
+    public_url: str | None
+    if provider == StorageProvider.supabase.value:
+        bucket = (bucket or bucket_for_access_scope(scope)).strip()
+        # Do not persist a permanent public URL for private supabase objects.
+        if scope == MediaAccessScope.public.value and bucket == PUBLIC_BUCKET:
+            public_url = None  # resolved at download time via public object URL
+        else:
+            public_url = None
+            if not bucket:
+                bucket = PRIVATE_BUCKET
+    else:
+        public_url = _public_url_for_path(storage_path)
+        bucket = None
+
     media = MediaObject(
-        storage_provider=storage_provider,
+        storage_provider=provider,
         storage_key=key,
-        public_url=_public_url_for_path(storage_path),
+        storage_bucket=bucket,
+        public_url=public_url,
+        access_scope=scope,
+        status=status,
         mime_type=mime_type,
         file_size_bytes=file_size_bytes,
         original_filename=original_filename,
         uploaded_by_user_id=uploaded_by_user_id,
+        metadata_json=metadata_json,
+        checksum_sha256=checksum_sha256,
     )
     db.add(media)
     await db.flush()

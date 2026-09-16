@@ -22,7 +22,7 @@ from app.services.subscription_access_service import (
     subscription_lifecycle_status,
     _aware,
 )
-from app.models.lesson import Lesson, LessonContentType, LessonStatus
+from app.models.lesson import Lesson, LessonAsset, LessonContentType, LessonStatus
 from app.models.progress import StudentLessonProgress
 from app.schemas.student_courses import (
     CourseLessonOut,
@@ -103,7 +103,7 @@ async def _course_lessons(db: AsyncSession, course_id: int) -> list[Lesson]:
     result = await db.execute(
         select(Lesson)
         .where(Lesson.course_id == course_id)
-        .options(selectinload(Lesson.assets))
+        .options(selectinload(Lesson.assets).selectinload(LessonAsset.media_object))
         .order_by(Lesson.sort_order, Lesson.id)
     )
     visible: list[Lesson] = []
@@ -736,7 +736,9 @@ async def list_student_course_units(
 
 async def _load_visible_lesson(db: AsyncSession, lesson_id: int) -> Lesson:
     result = await db.execute(
-        select(Lesson).where(Lesson.id == lesson_id).options(selectinload(Lesson.assets))
+        select(Lesson).where(Lesson.id == lesson_id).options(
+            selectinload(Lesson.assets).selectinload(LessonAsset.media_object)
+        )
     )
     lesson = result.scalar_one_or_none()
     if not lesson:

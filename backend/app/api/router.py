@@ -30,6 +30,7 @@ from app.api import (
     language_writing_official_promotion,
     language_writing_promotion_test,
     lesson_publish,
+    media,
     notifications,
     onboarding,
     parent,
@@ -52,6 +53,7 @@ from app.api import (
 api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(notifications.router)
+api_router.include_router(media.router)
 api_router.include_router(ai_jobs.router)
 api_router.include_router(audit_admin.router)
 api_router.include_router(catalog.router)
